@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui";
@@ -74,7 +75,7 @@ export default function ErrorPage({
             Try again
           </Button>
           <Button asChild>
-            <a href="/agents">Go to workspace</a>
+            <Link href="/agents">Go to workspace</Link>
           </Button>
         </div>
       </main>
