@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-hover: var(--surface-hover);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-text-subtle: var(--text-subtle);
+  --shadow-elevated: var(--shadow-elevated);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  /* Surfaces */
+  --background: oklch(0.971 0.003 270); /* #F7F7F9 */
+  --foreground: oklch(0.148 0.045 264); /* #0F1629 */
+  --card: oklch(1 0 0); /* #ffffff */
+  --card-foreground: oklch(0.148 0.045 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.148 0.045 264);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(0.96 0.004 270); /* neutral gray, matches --background/--card hue */
+  --surface-hover: oklch(0.934 0.014 92.99); /* #ece9df */
+  --bg-elevated: oklch(1 0 0);
+
+  /* Brand */
+  --primary: oklch(0.575 0.249 288.14); /* #7b4bff iris */
+  --primary-foreground: oklch(1 0 0);
+
+  /* Secondary / Muted */
+  --secondary: oklch(0.958 0.01 93.57);
+  --secondary-foreground: oklch(0.148 0.045 264);
+  --muted: oklch(0.958 0.004 270); /* neutral gray, matches --background/--card hue */
+  --muted-foreground: oklch(0.514 0.022 90.67); /* #6c6759 */
+
+  /* Accent (selected / hover-tinted state) */
+  --accent: oklch(0.575 0.249 288.14 / 9%); /* iris-soft */
+  --accent-foreground: oklch(0.148 0.045 264);
+
+  /* Status */
+  --destructive: oklch(0.611 0.16 25.66); /* #d2554f red */
+  --destructive-foreground: oklch(1 0 0);
+  --destructive-soft: oklch(0.611 0.16 25.66 / 10%);
+  --success: oklch(0.612 0.128 156.57); /* #2e9a63 green */
+  --success-soft: oklch(0.612 0.128 156.57 / 10%);
+  --warning: oklch(0.681 0.144 57.92); /* #d97f2e amber */
+  --warning-soft: oklch(0.681 0.144 57.92 / 10%);
+
+  /* Border / Input / Ring */
+  --border: oklch(0.907 0.017 91.56); /* #e4e0d4 */
+  --border-soft: oklch(0.94 0.014 92.99); /* #eeebe1 */
+  --input: oklch(0.907 0.017 91.56);
+  --ring: oklch(0.575 0.249 288.14); /* iris */
+
+  /* Tertiary text */
+  --text-subtle: oklch(0.67 0.024 89.85); /* #9b9585 */
+
+  /* Elevation */
+  --shadow-elevated: 0 12px 32px oklch(0.215 0.027 91.53 / 10%); /* #1e190a */
+
+  /* Radius */
+  --radius: 0.625rem;
+}
+
+.dark {
+  /* Surfaces */
+  --background: oklch(0.159 0.007 270.98); /* #0c0d10 */
+  --foreground: oklch(0.95 0.006 274.96); /* #edeef2 */
+  --card: oklch(0.202 0.012 277.81); /* #15161c */
+  --card-foreground: oklch(0.95 0.006 274.96);
+  --popover: oklch(0.183 0.01 276.41); /* #111217 */
+  --popover-foreground: oklch(0.95 0.006 274.96);
+  --surface: oklch(0.202 0.012 277.81);
+  --surface-raised: oklch(0.229 0.016 279.49); /* #1b1c24 */
+  --surface-hover: oklch(0.26 0.019 280.52); /* #22232d */
+  --bg-elevated: oklch(0.183 0.01 276.41);
+
+  /* Brand */
+  --primary: oklch(0.575 0.249 288.14); /* #7b4bff iris */
+  --primary-foreground: oklch(1 0 0);
+
+  /* Secondary / Muted */
+  --secondary: oklch(0.229 0.016 279.49);
+  --secondary-foreground: oklch(0.95 0.006 274.96);
+  --muted: oklch(0.229 0.016 279.49);
+  --muted-foreground: oklch(0.682 0.016 277.73); /* #9698a3 */
+
+  /* Accent (selected / hover-tinted state) */
+  --accent: oklch(0.575 0.249 288.14 / 16%); /* iris-soft */
+  --accent-foreground: oklch(0.95 0.006 274.96);
+
+  /* Status */
+  --destructive: oklch(0.687 0.165 22.4); /* #ef6a6a red */
+  --destructive-foreground: oklch(1 0 0);
+  --destructive-soft: oklch(0.687 0.165 22.4 / 14%);
+  --success: oklch(0.751 0.143 157.5); /* #4fc98a green */
+  --success-soft: oklch(0.751 0.143 157.5 / 14%);
+  --warning: oklch(0.785 0.132 68.48); /* #f0a852 amber */
+  --warning-soft: oklch(0.785 0.132 68.48 / 14%);
+
+  /* Border / Input / Ring */
+  --border: oklch(0.296 0.02 277); /* #2a2c37 */
+  --border-soft: oklch(0.233 0.015 279.52); /* #1c1d25 */
+  --input: oklch(0.296 0.02 277);
+  --ring: oklch(0.575 0.249 288.14); /* iris */
+
+  /* Tertiary text */
+  --text-subtle: oklch(0.491 0.018 277.54); /* #5e606b */
+
+  /* Elevation */
+  --shadow-elevated: 0 12px 32px oklch(0 0 0 / 55%);
+}
+
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(to right, color-mix(in oklch, var(--border-soft) 60%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklch, var(--border-soft) 60%, transparent) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(to bottom, black, transparent 85%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans, Arial, sans-serif);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  html {
+    @apply font-sans;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+.react-flow__controls {
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--muted);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: none;
+}

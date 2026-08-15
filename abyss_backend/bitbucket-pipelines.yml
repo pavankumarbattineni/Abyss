@@ -1,0 +1,80 @@
+image: google/cloud-sdk:slim
+
+options:
+  size: 2x
+
+definitions:
+  services:
+    docker:
+      memory: 7168
+  steps:
+    - step: &pre-build-checks
+        name: Pre-Build Checks
+        image: python:3.11-slim
+        caches:
+          - pip
+        script:
+          - apt-get update && apt-get install -y libmagic1 --quiet
+          - pip install -r requirements-test.txt --quiet
+          # No test suite exists yet — treat "no tests collected" (exit 5) as a
+          # pass so the pipeline isn't blocked; real test failures (exit 1) still fail it.
+          # Bitbucket runs script lines under `set -e`, so the failing command must
+          # sit directly on the left of `||` — a bare `cmd; code=$?` aborts the step
+          # the instant pytest returns non-zero, before the code is ever inspected.
+          - pytest --tb=short -x || { code=$?; if [ "$code" -eq 0 ] || [ "$code" -eq 5 ]; then exit 0; else exit "$code"; fi; }
+
+pipelines:
+  branches:
+    development:
+      - step: *pre-build-checks
+      - step:
+          name: Deploy Development
+          services:
+            - docker
+          script:
+            - apt-get update
+            - apt-get install -y python3 curl
+            - python3 --version
+            - export IMAGE_NAME="$IMAGE_NAME_DEV"
+            - export WEBHOOK="$DOKPLOY_WEBHOOK_URL_DEV"
+            - export COMPOSE_ID="$COMPOSE_ID_DEV"
+            - export HEALTH_CHECK_URL="$HEALTH_CHECK_URL_DEV"
+            - export CONFIG_JSON="$CONFIG_JSON_DEV"
+            - chmod +x deploy.sh
+            - bash deploy.sh
+
+    uat:
+      - step: *pre-build-checks
+      - step:
+          name: Deploy UAT
+          services:
+            - docker
+          script:
+            - apt-get update
+            - apt-get install -y python3 curl
+            - python3 --version
+            - export IMAGE_NAME="$IMAGE_NAME_UAT"
+            - export WEBHOOK="$DOKPLOY_WEBHOOK_URL_UAT"
+            - export COMPOSE_ID="$COMPOSE_ID_UAT"
+            - export HEALTH_CHECK_URL="$HEALTH_CHECK_URL_UAT"
+            - export CONFIG_JSON="$CONFIG_JSON_UAT"
+            - chmod +x deploy.sh
+            - bash deploy.sh
+
+    prod:
+      - step: *pre-build-checks
+      - step:
+          name: Deploy Production
+          services:
+            - docker
+          script:
+            - apt-get update
+            - apt-get install -y python3 curl
+            - python3 --version
+            - export IMAGE_NAME="$IMAGE_NAME_PROD"
+            - export WEBHOOK="$DOKPLOY_WEBHOOK_URL_PROD"
+            - export COMPOSE_ID="$COMPOSE_ID_PROD"
+            - export HEALTH_CHECK_URL="$HEALTH_CHECK_URL_PROD"
+            - export CONFIG_JSON="$CONFIG_JSON_PROD"
+            - chmod +x deploy.sh
+            - bash deploy.sh

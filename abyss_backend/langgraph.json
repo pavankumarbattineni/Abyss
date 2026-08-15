@@ -1,0 +1,8 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "thinkloop_agent": "./studio/graph.py:get_graph"
+  },
+  "lifespan": "./studio/graph.py:lifespan",
+  "env": ".env"
+}
