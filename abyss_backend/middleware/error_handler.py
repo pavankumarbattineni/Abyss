@@ -1,4 +1,4 @@
-"""Global exception handler middleware for the Thinkloop backend.
+"""Global exception handler middleware for the Abyss backend.
 
 This middleware catches all unhandled exceptions and returns a consistent
 error response structure while logging complete exception tracebacks.

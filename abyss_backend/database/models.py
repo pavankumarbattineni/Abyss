@@ -29,7 +29,7 @@ class User(BasicModel):
 
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     thinking_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 

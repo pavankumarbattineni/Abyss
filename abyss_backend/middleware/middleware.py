@@ -1,4 +1,4 @@
-"""Middleware configuration and setup for the Thinkloop backend.
+"""Middleware configuration and setup for the Abyss backend.
 
 This module centralizes all middleware configuration including:
 - Global exception handler middleware

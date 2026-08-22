@@ -1,0 +1,12 @@
+# Local reference projects and secrets
+Ocean-AI/
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Local development artifacts
+**/.venv/
+**/node_modules/
+**/.next/
+**/__pycache__/
+**/.pytest_cache/

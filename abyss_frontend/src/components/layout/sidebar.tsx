@@ -83,10 +83,11 @@ export function Sidebar() {
         )}
       >
         <Image
-          src="/images/thinkloop-logo1.png"
-          alt="ThinkLoop"
+          src="/images/abyss-mark.png"
+          alt="Abyss-AI"
           width={collapsed ? 28 : 34}
           height={collapsed ? 28 : 34}
+          style={{ height: "auto" }}
         />
         {!collapsed && (
           <Heading
@@ -94,7 +95,7 @@ export function Sidebar() {
             size="lg"
             className="bg-linear-to-r from-primary to-warning bg-clip-text font-mono font-semibold text-transparent"
           >
-            ThinkLoop
+            Abyss-AI
           </Heading>
         )}
         <Button
@@ -233,8 +234,8 @@ export function Sidebar() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                authService.logout();
+              onClick={async () => {
+                await authService.logout();
                 refreshAuthState();
                 router.push("/auth/login");
               }}

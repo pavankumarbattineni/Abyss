@@ -5,6 +5,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --color-bg0: var(--bg0);
+  --color-bg1: var(--bg1);
+  --color-bg2: var(--bg2);
+  --color-bg3: var(--bg3);
+  --color-bg4: var(--bg4);
+  --color-border2: var(--border2);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -147,6 +153,130 @@
   --shadow-elevated: 0 12px 32px oklch(0 0 0 / 55%);
 }
 
+/* Abyss design tokens. Components consume the semantic aliases below, so the
+   palette stays consistent across light/dark surfaces and shared UI primitives. */
+:root {
+  /* Abyss light palette */
+  --bg0: #f7f7f5;
+  --bg1: #ffffff;
+  --bg2: #efefec;
+  --bg3: #e5e5e1;
+  --bg4: #d9d9d4;
+  --border: #d6d6d0;
+  --border2: #bdbdb5;
+  --muted: #696967;
+  --body: #454542;
+  --head: #171716;
+  --accent: #397f88;
+  --accent-h: #2d6e77;
+  --accent-dim: rgba(57, 127, 136, 0.1);
+  --accent-dim2: rgba(57, 127, 136, 0.18);
+  --success-bg: rgba(75, 135, 95, 0.12);
+  --success: #39784e;
+  --warn-bg: rgba(174, 132, 45, 0.13);
+  --warn: #8e6b20;
+  --error-bg: rgba(170, 70, 70, 0.11);
+  --error: #a33f3f;
+  --info-bg: rgba(57, 127, 136, 0.1);
+  --info: #397f88;
+  --font: "Söhne", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --r: 8px;
+  --rl: 12px;
+  --rxl: 16px;
+  --sidebar: 220px;
+  --topbar: 52px;
+
+  --background: var(--bg0);
+  --foreground: var(--head);
+  --card: var(--bg1);
+  --card-foreground: var(--head);
+  --popover: var(--bg1);
+  --popover-foreground: var(--head);
+  --surface: var(--bg1);
+  --surface-raised: var(--bg2);
+  --surface-hover: var(--bg3);
+  --bg-elevated: var(--bg1);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--bg2);
+  --secondary-foreground: var(--head);
+  --muted-foreground: var(--muted);
+  --accent-foreground: var(--head);
+  --destructive: var(--error);
+  --destructive-foreground: #ffffff;
+  --destructive-soft: var(--error-bg);
+  --success-soft: var(--success-bg);
+  --warning: var(--warn);
+  --warning-soft: var(--warn-bg);
+  --border-soft: var(--border);
+  --input: var(--border2);
+  --ring: var(--accent);
+  --text-subtle: var(--muted);
+  --shadow-elevated: 0 16px 36px rgba(25, 25, 20, 0.12);
+  --radius: var(--r);
+}
+
+.dark {
+  /* Abyss dark palette */
+  --bg0: #121211;
+  --bg1: #1e1e1d;
+  --bg2: #262625;
+  --bg3: #2e2e2c;
+  --bg4: #363634;
+  --border: #343432;
+  --border2: #444442;
+  --muted: #787878;
+  --body: #c3c2b7;
+  --head: #e1e0d7;
+  --accent: #529aa3;
+  --accent-h: #64afb9;
+  --accent-dim: rgba(82, 154, 163, 0.12);
+  --accent-dim2: rgba(82, 154, 163, 0.2);
+  --success-bg: rgba(100, 160, 120, 0.15);
+  --success: #64a078;
+  --warn-bg: rgba(195, 160, 90, 0.15);
+  --warn: #c3a05a;
+  --error-bg: rgba(180, 90, 90, 0.15);
+  --error: #b45a5a;
+  --info-bg: rgba(82, 154, 163, 0.12);
+  --info: #529aa3;
+  --font: "Söhne", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --r: 8px;
+  --rl: 12px;
+  --rxl: 16px;
+  --sidebar: 220px;
+  --topbar: 52px;
+
+  --background: var(--bg0);
+  --foreground: var(--head);
+  --card: var(--bg1);
+  --card-foreground: var(--head);
+  --popover: var(--bg2);
+  --popover-foreground: var(--head);
+  --surface: var(--bg1);
+  --surface-raised: var(--bg2);
+  --surface-hover: var(--bg3);
+  --bg-elevated: var(--bg2);
+  --primary: var(--accent);
+  --primary-foreground: #101514;
+  --secondary: var(--bg2);
+  --secondary-foreground: var(--head);
+  --muted-foreground: var(--muted);
+  --accent-foreground: var(--head);
+  --destructive: var(--error);
+  --destructive-foreground: var(--head);
+  --destructive-soft: var(--error-bg);
+  --success-soft: var(--success-bg);
+  --warning: var(--warn);
+  --warning-soft: var(--warn-bg);
+  --border-soft: var(--border);
+  --input: var(--border2);
+  --ring: var(--accent);
+  --text-subtle: var(--muted);
+  --shadow-elevated: 0 16px 36px rgba(0, 0, 0, 0.28);
+  --radius: var(--r);
+}
+
 .bg-grid-pattern {
   background-image:
     linear-gradient(to right, color-mix(in oklch, var(--border-soft) 60%, transparent) 1px, transparent 1px),
@@ -155,13 +285,26 @@
   mask-image: linear-gradient(to bottom, black, transparent 85%);
 }
 
+.abyss-orb {
+  animation: abyss-drift 12s ease-in-out infinite alternate;
+}
+
+.abyss-orb-delay {
+  animation-delay: -5s;
+}
+
+@keyframes abyss-drift {
+  from { transform: translate3d(-2%, -1%, 0) scale(1); }
+  to { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-sans, Arial, sans-serif);
+    font-family: var(--font);
     font-size: 0.875rem;
     line-height: 1.5;
   }

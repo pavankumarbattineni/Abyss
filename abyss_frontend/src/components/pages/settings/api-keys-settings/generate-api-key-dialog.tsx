@@ -171,7 +171,7 @@ export function GenerateApiKeyDialog({ onCreated }: GenerateApiKeyDialogProps) {
               <Label htmlFor="api-key-name">Name</Label>
               <Input
                 id="api-key-name"
-                placeholder="e.g. Thinkloop-v1"
+                placeholder="e.g. Abyss-v1"
                 {...register("name")}
               />
               <FormError message={errors.name?.message} />

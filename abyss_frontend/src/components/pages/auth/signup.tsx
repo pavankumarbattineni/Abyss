@@ -7,9 +7,11 @@ import { useMutation } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { createUserWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 
 import { Button, Card, FormError, Input, Label } from "@/components/ui";
 import { authService } from "@/services";
+import { firebaseAuth, googleProvider } from "@/lib/firebase";
 import { GoogleIcon } from "./google-icon";
 import { PasswordInput } from "./password-input";
 
@@ -39,19 +41,44 @@ export const SignupPage = () => {
   });
 
   const { mutate: signup, isPending } = useMutation({
-    mutationFn: (values: SignupValues) =>
-      authService.signup({
-        username: values.username,
-        email: values.email,
-        password: values.password,
-        confirm_password: values.confirmPassword,
-      }),
-    onSuccess: () => {
-      toast.success("Account created — sign in to continue");
-      router.push("/auth/login");
+    mutationFn: async (values: SignupValues) => {
+      const result = await createUserWithEmailAndPassword(firebaseAuth, values.email, values.password);
+      return authService.loginWithFirebase(await result.user.getIdToken());
     },
-    onError: () => {
-      toast.error("Failed to create account. Please try again.");
+    onSuccess: () => {
+      toast.success("Welcome to Abyss!");
+      router.push("/agents");
+    },
+    onError: (error) => {
+      const code = (error as { code?: string })?.code;
+      if (code === "auth/email-already-in-use") {
+        toast.error("An account with this email already exists. Try signing in.");
+      } else if (code === "auth/weak-password") {
+        toast.error("Choose a stronger password.");
+      } else if (code === "auth/network-request-failed") {
+        toast.error("Unable to reach Firebase. Check your connection and try again.");
+      } else {
+        toast.error("Account creation could not be completed. Please try again.");
+      }
+    },
+  });
+
+  const { mutate: signupWithGoogle, isPending: isGooglePending } = useMutation({
+    mutationFn: async () => {
+      const result = await signInWithPopup(firebaseAuth, googleProvider);
+      return authService.loginWithFirebase(await result.user.getIdToken());
+    },
+    onSuccess: () => {
+      toast.success("Welcome to Abyss!");
+      router.push("/agents");
+    },
+    onError: (error) => {
+      const code = (error as { code?: string })?.code;
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+        toast.info("Google sign-up was cancelled.");
+      } else {
+        toast.error("Google sign-up could not be completed. Please try again.");
+      }
     },
   });
 
@@ -67,7 +94,7 @@ export const SignupPage = () => {
             Create your account
           </h2>
           <p className="text-sm text-muted-foreground">
-            Start building AI agents with ThinkLoop.
+            Start building AI agents with Abyss-AI.
           </p>
         </div>
 
@@ -75,7 +102,8 @@ export const SignupPage = () => {
           type="button"
           variant="outline"
           className="h-11 w-full"
-          onClick={() => toast.info("Google sign-in is coming soon")}
+          onClick={() => signupWithGoogle()}
+          loading={isGooglePending}
         >
           <GoogleIcon className="size-4" />
           Continue with Google

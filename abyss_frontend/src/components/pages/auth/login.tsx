@@ -1,17 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { useMutation } from "@tanstack/react-query";
-import Cookies from "js-cookie";
 import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
 
 import { Button, Card, Checkbox, FormError, Input, Label } from "@/components/ui";
 import { useAuth } from "@/providers";
+import { firebaseAuth, googleProvider } from "@/lib/firebase";
 import { authService } from "@/services";
 import { GoogleIcon } from "./google-icon";
 import { PasswordInput } from "./password-input";
@@ -23,8 +23,6 @@ const loginSchema = z.object({
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
-
-const KEEP_SIGNED_IN_DAYS = 30;
 
 export const LoginPage = () => {
   const router = useRouter();
@@ -40,20 +38,47 @@ export const LoginPage = () => {
   });
 
   const { mutate: login, isPending } = useMutation({
-    mutationFn: (values: LoginValues) =>
-      authService.login({ email: values.email, password: values.password }),
-    onSuccess: (data, values) => {
-      const cookieOptions = values.keepSignedIn
-        ? { expires: KEEP_SIGNED_IN_DAYS }
-        : undefined;
-      Cookies.set("a_token", data.access_token, cookieOptions);
-      Cookies.set("r_token", data.refresh_token, cookieOptions);
+    mutationFn: async (values: LoginValues) => {
+      const result = await signInWithEmailAndPassword(firebaseAuth, values.email, values.password);
+      return authService.loginWithFirebase(await result.user.getIdToken());
+    },
+    onSuccess: () => {
       refreshAuthState();
       toast.success("Welcome back!");
       router.push("/agents");
     },
-    onError: () => {
-      toast.error("Invalid email or password. Please try again.");
+    onError: (error) => {
+      const code = (error as { code?: string })?.code;
+      if (code === "auth/invalid-credential" || code === "auth/user-not-found") {
+        toast.error("The email or password is incorrect.");
+      } else if (code === "auth/user-disabled") {
+        toast.error("This account has been disabled. Contact an administrator.");
+      } else if (code === "auth/network-request-failed") {
+        toast.error("Unable to reach Firebase. Check your connection and try again.");
+      } else {
+        toast.error("Sign in could not be completed. Please try again.");
+      }
+    },
+  });
+
+  const { mutate: loginWithGoogle, isPending: isGooglePending } = useMutation({
+    mutationFn: async () => {
+      const result = await signInWithPopup(firebaseAuth, googleProvider);
+      const idToken = await result.user.getIdToken();
+      return authService.loginWithFirebase(idToken);
+    },
+    onSuccess: () => {
+      refreshAuthState();
+      toast.success("Welcome to Abyss!");
+      router.push("/agents");
+    },
+    onError: (error) => {
+      const code = (error as { code?: string })?.code;
+      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+        toast.info("Google sign-in was cancelled.");
+      } else {
+        toast.error("Google sign-in could not be completed. Please try again.");
+      }
     },
   });
 
@@ -64,13 +89,13 @@ export const LoginPage = () => {
   return (
     <div className="w-full max-w-md">
 
-      <Card className="p-10">
+      <Card className="border-border2 bg-bg1/95 p-10 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
         <div className="mb-6 flex flex-col gap-1">
           <h2 className="font-heading text-xl font-semibold text-foreground">
-            Welcome back
+            Welcome to Abyss-AI
           </h2>
           <p className="text-sm text-muted-foreground">
-            Sign in to continue to your workspace.
+            Continue your journey into deeper intelligence.
           </p>
         </div>
 
@@ -78,7 +103,8 @@ export const LoginPage = () => {
           type="button"
           variant="outline"
           className="h-11 w-full"
-          onClick={() => toast.info("Google sign-in is coming soon")}
+          onClick={() => loginWithGoogle()}
+          loading={isGooglePending}
         >
           <GoogleIcon className="size-4" />
           Continue with Google
@@ -116,12 +142,9 @@ export const LoginPage = () => {
               {...register("password")}
             />
             <FormError message={errors.password?.message} />
-            <Link
-              href="/auth/reset-password"
-              className="ml-auto w-fit text-xs font-medium text-primary hover:underline"
-            >
-              Forgot password?
-            </Link>
+            <span className="ml-auto text-xs text-muted-foreground">
+              Passwords are managed securely by Firebase
+            </span>
           </div>
 
           <div className="flex items-center gap-2">

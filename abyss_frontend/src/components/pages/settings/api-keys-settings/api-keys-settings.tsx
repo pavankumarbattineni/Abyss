@@ -100,7 +100,7 @@ export const ApiKeysSettingsPage = () => {
     <div className="flex flex-col gap-5">
       <PageHeader
         title="API Keys"
-        description="Generate keys to access the ThinkLoop platform API programmatically."
+        description="Generate keys to access the Abyss platform API programmatically."
         actions={
           <GenerateApiKeyDialog
             onCreated={() => queryClient.invalidateQueries({ queryKey: ["api-keys"] })}
