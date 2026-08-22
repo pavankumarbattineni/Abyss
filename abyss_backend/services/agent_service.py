@@ -247,7 +247,7 @@ class AgentService:
     async def get_sample_questions(
         self, session: AsyncSession, agent_id: str, user_id: str
     ) -> list[str]:
-        """Return the predefined sample questions for the ThinkLoop Guide agent.
+        """Return the predefined sample questions for the Abyss Guide agent.
 
         Matched by name — every other agent (including a user's own agent
         that happens to share other attributes) gets an empty list, not an
@@ -260,7 +260,7 @@ class AgentService:
             user_id: The authenticated user's ID (ownership check).
 
         Returns:
-            The 5 sample questions if this is the ThinkLoop Guide, else [].
+            The 5 sample questions if this is the Abyss Guide, else [].
 
         Raises:
             ValueError: If the agent does not exist or does not belong to the user.
@@ -283,7 +283,7 @@ class AgentService:
             return []
 
         return [
-            "What is ThinkLoop and how do I get started?",
+            "What is Abyss and how do I get started?",
             "How does delegation between a parent agent and its sub-agents "
             "actually work, and can multiple sub-agents run at once?",
             "If I mark a tool as 'Requires Approval,' walk me through exactly "

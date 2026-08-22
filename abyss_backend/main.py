@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from sqlalchemy import update
+from sqlalchemy import text, update
 
 from constants import (
     API_V1_PREFIX,
@@ -100,6 +100,11 @@ async def _mark_orphaned_schedule_runs() -> None:
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Passwords are managed by Firebase; keep the legacy column nullable
+        # for existing databases while new users authenticate externally.
+        await conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
+        # Firebase UID is deliberately not an Abyss persistence field.
+        await conn.execute(text("ALTER TABLE users DROP COLUMN IF EXISTS firebase_uid CASCADE"))
     await init_checkpointer()
     await _mark_orphaned_streams()
     await _mark_orphaned_schedule_runs()
@@ -112,7 +117,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Thinkloop",
+    title="Abyss-AI",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url=None,
@@ -145,7 +150,7 @@ async def redoc_html():
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Thinkloop - ReDoc</title>
+    <title>Abyss-AI - ReDoc</title>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">

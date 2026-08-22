@@ -223,7 +223,7 @@ async def get_agent_sample_questions(
 ):
     """Return predefined sample questions for the given agent, if it has any.
 
-    Only the ThinkLoop Guide (matched by name) currently has predefined
+    Only the Abyss Guide (matched by name) currently has predefined
     questions — every other agent gets an empty list, not an error.
 
     Args:

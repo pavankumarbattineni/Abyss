@@ -15,7 +15,7 @@ export const AppearanceSettingsPage = () => {
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title="Appearance" description="Choose how ThinkLoop looks on this device." />
+      <PageHeader title="Appearance" description="Choose how Abyss looks on this device." />
 
       <Card className="flex flex-col gap-4 p-5">
         <div className="inline-flex w-fit rounded-lg border border-border p-1">

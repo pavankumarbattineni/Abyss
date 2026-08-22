@@ -30,7 +30,7 @@ export default function NotFound() {
           }}
         />
         <span className="font-heading text-base font-semibold tracking-tight">
-          ThinkLoop
+          Abyss-AI
         </span>
       </header>
 
@@ -77,7 +77,7 @@ export default function NotFound() {
       {/* Footer */}
       <footer className="relative z-10 px-8 py-6 text-center">
         <p className="text-xs text-muted-foreground/50">
-          ThinkLoop · No-Code AI Agent Platform
+          Abyss-AI · Intelligence without limits
         </p>
       </footer>
     </div>

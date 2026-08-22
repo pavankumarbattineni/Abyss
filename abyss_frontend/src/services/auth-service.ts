@@ -1,23 +1,15 @@
 import Cookies from "js-cookie";
 
 import { api } from "@/lib/axios";
-import type {
-  LoginRequest,
-  LoginResponse,
-  SignupRequest,
-  SignupResponse,
-  UpdateSettingsRequest,
-  User,
-} from "@/types";
+import { firebaseAuth } from "@/lib/firebase";
+import { signOut } from "firebase/auth";
+import type { LoginResponse, UpdateSettingsRequest, User } from "@/types";
 
 class AuthService {
-  async login(payload: LoginRequest): Promise<LoginResponse> {
-    const { data } = await api.post<LoginResponse>("/auth/signin", payload);
-    return data;
-  }
-
-  async signup(payload: SignupRequest): Promise<SignupResponse> {
-    const { data } = await api.post<SignupResponse>("/auth/signup", payload);
+  async loginWithFirebase(idToken: string): Promise<LoginResponse> {
+    const { data } = await api.post<LoginResponse>("/auth/firebase", { id_token: idToken });
+    Cookies.set("a_token", data.access_token, { path: "/" });
+    Cookies.set("r_token", data.refresh_token, { path: "/" });
     return data;
   }
 
@@ -27,7 +19,7 @@ class AuthService {
   }
 
   async updateSettings(payload: UpdateSettingsRequest): Promise<User> {
-    const { data } = await api.patch<User>("/auth/settings", payload);
+    const { data } = await api.patch<User>("/auth/setting", payload);
     return data;
   }
 
@@ -35,9 +27,10 @@ class AuthService {
     return !!Cookies.get("a_token");
   }
 
-  logout(): void {
-    Cookies.remove("a_token");
-    Cookies.remove("r_token");
+  async logout(): Promise<void> {
+    await signOut(firebaseAuth);
+    Cookies.remove("a_token", { path: "/" });
+    Cookies.remove("r_token", { path: "/" });
   }
 }
 

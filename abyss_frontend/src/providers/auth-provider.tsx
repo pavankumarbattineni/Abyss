@@ -45,7 +45,7 @@ export function AuthProvider({ children, initialIsAuthenticated }: AuthProviderP
   }, [isAuthenticated, queryClient]);
 
   useEffect(() => {
-    if (!isAuthenticated && !pathname?.startsWith("/auth")) {
+    if (!isAuthenticated && pathname !== "/" && !pathname?.startsWith("/auth")) {
       router.replace("/auth/login");
     }
   }, [isAuthenticated, pathname, router]);

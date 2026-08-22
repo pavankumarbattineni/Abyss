@@ -7,10 +7,13 @@ import { Toaster } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: {
-    default: "ThinkLoop",
-    template: "%s | ThinkLoop",
+          default: "Abyss-AI",
+    template: "%s | Abyss-AI",
   },
-  description: "No-code AI agent platform",
+  description: "Intelligence without limits",
+  icons: {
+    icon: [{ url: "/favicon.ico?v=2", type: "image/png" }],
+  },
 };
 
 export default async function RootLayout({

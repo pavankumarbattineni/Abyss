@@ -1,4 +1,4 @@
-"""Seed LangGraph Studio with one assistant per Thinkloop agent.
+"""Seed LangGraph Studio with one assistant per Abyss agent.
 
 Run this script ONCE after starting `langgraph dev` to pre-populate every
 active agent for a user as a named LangGraph Platform assistant.  After
@@ -7,7 +7,7 @@ any entry to start a conversation with no further configuration required.
 
 Usage
 -----
-    # Terminal 1 — start Studio dev server (from Thinkloop/ directory):
+    # Terminal 1 — start Studio dev server (from Abyss/ directory):
     langgraph dev
 
     # Terminal 2 — seed assistants for your user:
@@ -18,7 +18,7 @@ Usage
 
 Options
 -------
-    --user-id   Thinkloop user_id whose agents to expose (env: STUDIO_USER_ID)
+    --user-id   Abyss user_id whose agents to expose (env: STUDIO_USER_ID)
     --url       LangGraph dev server URL (env: LANGGRAPH_URL, default: http://localhost:2024)
     --force     Re-create existing assistants instead of skipping them (if_exists=raise vs do_nothing)
 """
@@ -97,14 +97,14 @@ async def _seed(user_id: str, studio_url: str, force: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Seed LangGraph Studio assistants from Thinkloop DB",
+        description="Seed LangGraph Studio assistants from Abyss DB",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     parser.add_argument(
         "--user-id",
         default=os.environ.get("STUDIO_USER_ID"),
-        help="Thinkloop user_id whose agents to expose (env: STUDIO_USER_ID)",
+        help="Abyss user_id whose agents to expose (env: STUDIO_USER_ID)",
     )
     parser.add_argument(
         "--url",

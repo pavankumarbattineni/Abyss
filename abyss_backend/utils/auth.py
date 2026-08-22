@@ -58,12 +58,7 @@ async def _resolve_any(token: str, session: AsyncSession) -> str:
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_optional),
 ) -> str:
-    """Authenticate a request via a JWT access token only.
-
-    This is the default dependency for protected endpoints. API keys are NOT
-    accepted here — use ``get_current_user_flexible`` for endpoints that allow
-    ``X-Api-Key`` authentication.
-    """
+    """Authenticate protected APIs with an Abyss access token only."""
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

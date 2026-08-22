@@ -30,36 +30,38 @@ const FEATURES = [
 
 export function AuthSidePanel() {
   return (
-    <div className="relative z-10 hidden lg:flex lg:w-1/2 lg:flex-col lg:justify-center lg:p-20">
-      <div className="flex max-w-xl flex-col gap-10">
+    <div className="relative z-10 hidden lg:flex lg:w-[54%] lg:flex-col lg:justify-center lg:p-20">
+      <div className="flex max-w-2xl flex-col gap-10">
         <div className="flex flex-col gap-4">
-          <span className="inline-flex w-fit items-center rounded-full border border-border-soft bg-surface-raised px-3 py-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            No-code AI agent platform
+          <span className="inline-flex w-fit items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium tracking-[0.18em] text-primary uppercase">
+            Abyss-AI / Intelligence without limits
           </span>
-          <h1 className="text-5xl leading-tight font-semibold text-foreground">
-            Build and ship <span className="italic text-primary">AI agents</span>.
+          <h1 className="text-5xl leading-[1.08] font-semibold tracking-tight text-foreground xl:text-6xl">
+            Go deeper.
             <br />
-            No code required.
+            <span className="bg-linear-to-r from-primary via-primary to-warning bg-clip-text italic text-transparent">
+              Build intelligence.
+            </span>
           </h1>
-          <p className="text-base text-muted-foreground">
-            ThinkLoop lets your team design agents, attach real tools, and
-            orchestrate multi-agent workflows — all from a visual canvas.
+          <p className="max-w-lg text-base leading-7 text-muted-foreground">
+            A visual command center for autonomous agents, real-world tools, and
+            decisions that move at the speed of thought.
           </p>
         </div>
 
-        <div className="flex flex-col gap-6">
+        <div className="grid max-w-xl grid-cols-2 gap-3">
           {FEATURES.map((feature) => {
             const Icon = feature.icon;
             return (
-              <div key={feature.title} className="flex items-start gap-4">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-soft bg-surface-raised">
-                  <Icon className="size-4.5 text-primary" />
+              <div key={feature.title} className="group flex items-start gap-3 rounded-xl border border-border-soft bg-surface/70 p-3 transition-colors hover:border-primary/40 hover:bg-surface-raised">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                  <Icon className="size-4 text-primary" />
                 </div>
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-base font-medium text-foreground">
+                  <span className="text-sm font-medium text-foreground">
                     {feature.title}
                   </span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-xs leading-5 text-muted-foreground">
                     {feature.description}
                   </span>
                 </div>

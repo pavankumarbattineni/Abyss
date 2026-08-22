@@ -1,4 +1,4 @@
-"""LangGraph Studio entrypoint for Thinkloop.
+"""LangGraph Studio entrypoint for Abyss.
 
 Uses the context-manager graph pattern so Studio receives the *actual* compiled
 per-agent graph (agent → sub-agents → synthesizer) for each assistant,
@@ -15,7 +15,7 @@ Studio then visualises and invokes that exact graph.
 
 Usage
 -----
-    # From Thinkloop/ directory with venv activated:
+    # From Abyss/ directory with venv activated:
     source .venv/bin/activate
     langgraph dev --tunnel        # --tunnel required for Chrome / HTTPS Studio
 

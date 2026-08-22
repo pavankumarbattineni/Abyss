@@ -27,13 +27,14 @@ export function getAuthToken(): string | undefined {
 }
 
 function setAuthTokens(tokens: LoginResponse): void {
-  Cookies.set("a_token", tokens.access_token);
-  Cookies.set("r_token", tokens.refresh_token);
+  // Authentication must remain available when navigating away from /auth/*.
+  Cookies.set("a_token", tokens.access_token, { path: "/" });
+  Cookies.set("r_token", tokens.refresh_token, { path: "/" });
 }
 
 function clearAuthTokens(): void {
-  Cookies.remove("a_token");
-  Cookies.remove("r_token");
+  Cookies.remove("a_token", { path: "/" });
+  Cookies.remove("r_token", { path: "/" });
 }
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -70,7 +71,17 @@ api.interceptors.response.use(
       | (InternalAxiosRequestConfig & { _retried?: boolean })
       | undefined;
 
-    if (error.response?.status === 401 && originalRequest && !originalRequest._retried) {
+    const requestUrl = originalRequest?.url ?? "";
+    const isAuthExchange = requestUrl.includes("/auth/firebase");
+    const isRefreshRequest = requestUrl.includes("/auth/refresh");
+
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retried &&
+      !isAuthExchange &&
+      !isRefreshRequest
+    ) {
       originalRequest._retried = true;
 
       refreshPromise ??= refreshAccessToken().finally(() => {

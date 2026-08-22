@@ -2,62 +2,46 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_async_session
-from schemas.oauth import (
-    ForgotPasswordRequest,
-    MessageResponse,
-    RefreshRequest,
-    ResetPasswordRequest,
-    SigninRequest,
-    SignupRequest,
-    TokenPairResponse,
-    UpdateSettingsRequest,
-    UserResponse,
-)
+from schemas.auth import FirebaseTokenRequest, RefreshRequest, TokenPairResponse, UpdateSettingsRequest, UserResponse
+from services.firebase_auth_service import authenticate_firebase_user
 from services.oauth_service import OAuthService
 from utils.auth import get_current_user
+from utils.firebase import verify_firebase_token
+from utils.jwt import create_access_token, create_refresh_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth_service = OAuthService()
 
 
-@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def signup(
-    request: SignupRequest,
+@router.post("/firebase", response_model=TokenPairResponse)
+async def exchange_firebase_token(
+    request: FirebaseTokenRequest,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Register a new user account.
+    """Exchange a verified Firebase ID token for Abyss application tokens.
 
     Args:
-        request: Signup request containing an optional username, email, and password.
-        session: Async database session for database operations.
+        request: Request containing the Firebase-issued ID token.
+        session: Database session used to find or create the application user.
 
     Returns:
-        UserResponse: The newly created user's details.
+        A signed Abyss access-token and refresh-token pair.
 
     Raises:
-        HTTPException: 400 if the email already exists or validation fails.
+        HTTPException: If Firebase verification or user mapping fails.
     """
-    return await oauth_service.signup(session, request)
-
-
-@router.post("/signin", response_model=TokenPairResponse)
-async def signin(
-    request: SigninRequest,
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Authenticate a user and return an access + refresh token pair.
-
-    Args:
-        request: Signin request containing email and password.
-        session: Async database session for database operations.
-
-    Returns:
-        TokenPairResponse: The JWT access token and refresh token.
-
-    Raises:
-        HTTPException: 401 if credentials are invalid.
-    """
-    return await oauth_service.signin(session, request)
+    try:
+        decoded = await verify_firebase_token(request.id_token)
+        user = await authenticate_firebase_user(session, decoded)
+        return TokenPairResponse(
+            access_token=create_access_token(user.id),
+            refresh_token=create_refresh_token(user.id),
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Firebase authentication failed",
+        ) from exc
 
 
 @router.get("/me", response_model=UserResponse)
@@ -65,43 +49,39 @@ async def me(
     user_id: str = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Return the currently authenticated user's details.
+    """Return the profile belonging to the authenticated Abyss user.
 
     Args:
-        user_id: JWT-authenticated user ID (injected by dependency).
-        session: Async database session for database operations.
+        user_id: User ID extracted from the Abyss access token.
+        session: Database session used to load the user profile.
 
     Returns:
-        UserResponse: The authenticated user's details.
+        The public user profile.
 
     Raises:
-        HTTPException: 401 if the token is missing or invalid.
+        HTTPException: If the access token is missing or invalid.
     """
     return await oauth_service.me(session, user_id)
 
 
-@router.patch("/settings", response_model=UserResponse)
-async def update_settings(
+@router.patch("/setting", response_model=UserResponse)
+async def update_setting(
     request: UpdateSettingsRequest,
     user_id: str = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Update the authenticated user's account-level settings.
-
-    Currently only covers `thinking_enabled` — the global toggle for whether
-    agent responses include a visible reasoning trace. Applies to every
-    agent the user talks to, including scheduler-triggered runs.
+    """Update the authenticated user's application settings.
 
     Args:
-        request: Body containing the settings to update.
-        user_id: JWT-authenticated user ID (injected by dependency).
-        session: Async database session for database operations.
+        request: Settings values to persist.
+        user_id: User ID extracted from the Abyss access token.
+        session: Database session used to update the user.
 
     Returns:
-        UserResponse: The user's details after the update.
+        The updated public user profile.
 
     Raises:
-        HTTPException: 401 if the token is missing or invalid.
+        HTTPException: If the access token is missing or invalid.
     """
     return await oauth_service.update_settings(session, user_id, request)
 
@@ -111,84 +91,23 @@ async def refresh(
     request: RefreshRequest,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Exchange a valid refresh token for a new access + refresh token pair.
+    """Exchange a valid Abyss refresh token for a new token pair.
 
     Args:
-        request: Body containing the refresh token.
-        session: Async database session for database operations.
+        request: Request containing the existing refresh token.
+        session: Database session used to verify that the user is active.
 
     Returns:
-        TokenPairResponse: A freshly issued access and refresh token.
+        A newly issued access-token and refresh-token pair.
 
     Raises:
-        HTTPException: 401 if the refresh token is invalid or expired.
+        HTTPException: If the refresh token is invalid, expired, or belongs to
+            an inactive user.
     """
-    return await oauth_service.refresh(session, request.refresh_token)
-
-
-@router.post("/signout", response_model=MessageResponse)
-async def signout(
-    user_id: str = Depends(get_current_user),
-):
-    """Sign out the current session.
-
-    Authentication is via the Bearer access token alone. Tokens are stateless,
-    so the client is responsible for discarding them after this call.
-
-    Args:
-        user_id: JWT-authenticated user ID (injected by dependency).
-
-    Returns:
-        MessageResponse: Confirmation message.
-
-    Raises:
-        HTTPException: 401 if the access token is missing or invalid.
-    """
-    return MessageResponse(message="Signed out successfully")
-
-
-@router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(
-    request: ForgotPasswordRequest,
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Reset a user's password in a single step, keyed on their email.
-
-    No proof-of-ownership step is required — providing a registered email and a
-    new password sets the password directly.
-
-    Args:
-        request: Body containing the account email and the new password.
-        session: Async database session for database operations.
-
-    Returns:
-        MessageResponse: Confirmation message.
-
-    Raises:
-        HTTPException: 422 if no active user exists for the given email.
-    """
-    await oauth_service.forgot_password(session, request.email, request.new_password)
-    return MessageResponse(message="Password reset successfully")
-
-
-@router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(
-    request: ResetPasswordRequest,
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Change a password after verifying the current (old) password.
-
-    Args:
-        request: Body containing the email, current password, and new password.
-        session: Async database session for database operations.
-
-    Returns:
-        MessageResponse: Confirmation message.
-
-    Raises:
-        HTTPException: 401 if the email/old password combination is invalid.
-    """
-    await oauth_service.reset_password(
-        session, request.email, request.old_password, request.new_password
-    )
-    return MessageResponse(message="Password reset successfully")
+    try:
+        return await oauth_service.refresh(session, request.refresh_token)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        ) from exc
