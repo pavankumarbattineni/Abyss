@@ -93,7 +93,7 @@ export function SubAgentDrawer({
           onSubmit={handleSubmit((values) => {
             onSubmit({ ...values, tools: selectedTools });
           })}
-          className="flex flex-1 flex-col"
+          className="flex min-h-0 flex-1 flex-col"
         >
           <DrawerHeader className="flex-row items-start justify-between gap-3 pr-12">
             <div className="flex flex-col gap-0.5">
@@ -114,7 +114,7 @@ export function SubAgentDrawer({
             </Button>
           </DrawerHeader>
 
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sub-agent-name">
                 Name <span className="text-destructive">*</span>

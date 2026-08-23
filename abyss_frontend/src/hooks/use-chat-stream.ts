@@ -306,7 +306,7 @@ export function useChatStream({
     setStreamIdParam(null);
     setPendingApprovals([]);
 
-    if (content && resolvedThreadId) {
+    if (resolvedThreadId) {
       setPendingMessages((prev) => [
         ...prev,
         {

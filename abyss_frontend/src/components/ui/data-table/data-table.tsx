@@ -85,9 +85,9 @@ export const DataTable = <TData, TValue>({
   const skeletonRows = resolvedPaginationState.pageSize;
 
   return (
-    <div className={cn("flex flex-col", className)}>
-      <div className="overflow-x-auto">
-        <table className="w-full">
+    <div className={cn("flex flex-col", className)} suppressHydrationWarning>
+      <div className="overflow-x-auto" suppressHydrationWarning>
+        <table className="w-full" suppressHydrationWarning>
           <colgroup>
             {table.getVisibleLeafColumns().map((column) => (
               <col
@@ -133,12 +133,12 @@ export const DataTable = <TData, TValue>({
               </tr>
             ))}
           </thead>
-          <tbody>
+          <tbody suppressHydrationWarning>
             {isLoading ? (
               Array.from({ length: skeletonRows }).map((_, rowIdx) => (
-                <tr key={rowIdx} className="border-b border-border last:border-0">
+                <tr key={rowIdx} className="border-b border-border last:border-0" suppressHydrationWarning>
                   {columns.map((_, colIdx) => (
-                    <td key={colIdx} className="px-6 py-4">
+                    <td key={colIdx} className="px-6 py-4" suppressHydrationWarning>
                       <Skeleton className="h-4" />
                     </td>
                   ))}

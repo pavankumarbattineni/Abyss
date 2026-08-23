@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowUp,
   CalendarClock,
+  CircleSlash,
   MessageCircle,
   MessageSquarePlus,
   Paperclip,
@@ -272,8 +273,8 @@ export function ChatPanel({
                       className={cn(
                         "min-w-0 wrap-break-word",
                         message.role === "user"
-                          ? "max-w-[75%] overflow-x-auto rounded-2xl rounded-tr-none bg-muted px-4 py-2.5 text-sm text-foreground"
-                          : "w-full py-1 text-foreground",
+                          ? "max-w-[75%] overflow-x-auto rounded-2xl rounded-tr-none bg-accent px-4 py-2.5 text-sm text-accent-foreground"
+                          : "w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground",
                       )}
                     >
                       {message.role === "assistant" ? (
@@ -292,7 +293,18 @@ export function ChatPanel({
                               <ReasoningPanel trace={reasoningTrace} isStreaming={false} />
                             )
                           )}
-                          <MarkdownContent content={message.content} />
+                          {message.content && <MarkdownContent content={message.content} />}
+                          {message.is_partial && (
+                            <div
+                              className={cn(
+                                "flex items-center gap-1.5 border-t border-dashed border-border-soft pt-2 text-xs text-muted-foreground",
+                                message.content && "mt-3",
+                              )}
+                            >
+                              <CircleSlash className="size-3.5 shrink-0" />
+                              <span className="italic">Abyss was interrupted</span>
+                            </div>
+                          )}
                         </>
                       ) : (
                         <p className="whitespace-pre-wrap wrap-break-word">{message.content}</p>
@@ -307,7 +319,7 @@ export function ChatPanel({
                       name={agent?.name ?? "Agent"}
                       className="size-8 shrink-0 text-xs"
                     />
-                    <div className="min-w-0 w-full py-1 text-foreground wrap-break-word">
+                    <div className="min-w-0 w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground wrap-break-word">
                       <ReasoningPanel trace={reasoningTrace} isStreaming={true} />
                       {streamingContent && <MarkdownContent content={streamingContent} />}
                       {pendingApprovals.length > 0 ? (

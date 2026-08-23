@@ -4,7 +4,7 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAuthenticated = !!request.cookies.get("a_token")?.value;
   const isAuthRoute = pathname.startsWith("/auth");
-  const isLandingRoute = pathname === "/";
+  const isLandingRoute = pathname === "/" || pathname === "/home";
 
   if (!isAuthenticated && !isAuthRoute && !isLandingRoute) {
     return NextResponse.redirect(new URL("/auth/login", request.url));

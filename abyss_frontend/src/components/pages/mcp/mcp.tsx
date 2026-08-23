@@ -85,7 +85,7 @@ export const McpPage = () => {
         actions={<AddServerDialog />}
       />
 
-      <Card className="overflow-hidden p-0">
+      <Card className="overflow-hidden p-0" suppressHydrationWarning>
         {!isLoading && (
           <div className="border-b border-border px-6 py-4 text-sm text-muted-foreground">
             {connections.length} server{connections.length === 1 ? "" : "s"}

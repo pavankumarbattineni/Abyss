@@ -102,7 +102,7 @@ class StreamService {
   }
 
   async cancelStream(streamId: string): Promise<StreamCancelResponse> {
-    const { data } = await api.get<StreamCancelResponse>(`/streams/${streamId}`);
+    const { data } = await api.delete<StreamCancelResponse>(`/streams/${streamId}`);
     return data;
   }
 

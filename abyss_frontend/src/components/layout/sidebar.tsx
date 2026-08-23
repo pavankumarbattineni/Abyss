@@ -88,6 +88,7 @@ export function Sidebar() {
           width={collapsed ? 28 : 34}
           height={collapsed ? 28 : 34}
           style={{ height: "auto" }}
+          suppressHydrationWarning
         />
         {!collapsed && (
           <Heading

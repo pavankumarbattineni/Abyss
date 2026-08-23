@@ -12,7 +12,7 @@ export function AuthTopBar() {
 
   return (
     <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-5">
-      <Link href="/" className="flex items-center gap-2" aria-label="Abyss-AI home">
+      <Link href="/home" className="flex items-center gap-2" aria-label="Abyss-AI home">
         <Image
           src="/images/abyss-mark.png"
           alt="Abyss-AI"

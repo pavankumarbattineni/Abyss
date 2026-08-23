@@ -164,7 +164,7 @@
   --bg4: #d9d9d4;
   --border: #d6d6d0;
   --border2: #bdbdb5;
-  --muted: #696967;
+  --muted-text: #696967;
   --body: #454542;
   --head: #171716;
   --accent: #397f88;
@@ -179,7 +179,7 @@
   --error: #a33f3f;
   --info-bg: rgba(57, 127, 136, 0.1);
   --info: #397f88;
-  --font: "Söhne", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --r: 8px;
   --rl: 12px;
   --rxl: 16px;
@@ -200,7 +200,7 @@
   --primary-foreground: #ffffff;
   --secondary: var(--bg2);
   --secondary-foreground: var(--head);
-  --muted-foreground: var(--muted);
+  --muted-foreground: var(--muted-text);
   --accent-foreground: var(--head);
   --destructive: var(--error);
   --destructive-foreground: #ffffff;
@@ -211,7 +211,7 @@
   --border-soft: var(--border);
   --input: var(--border2);
   --ring: var(--accent);
-  --text-subtle: var(--muted);
+  --text-subtle: var(--muted-text);
   --shadow-elevated: 0 16px 36px rgba(25, 25, 20, 0.12);
   --radius: var(--r);
 }
@@ -225,7 +225,7 @@
   --bg4: #363634;
   --border: #343432;
   --border2: #444442;
-  --muted: #787878;
+  --muted-text: #787878;
   --body: #c3c2b7;
   --head: #e1e0d7;
   --accent: #529aa3;
@@ -240,7 +240,7 @@
   --error: #b45a5a;
   --info-bg: rgba(82, 154, 163, 0.12);
   --info: #529aa3;
-  --font: "Söhne", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --r: 8px;
   --rl: 12px;
   --rxl: 16px;
@@ -261,7 +261,7 @@
   --primary-foreground: #101514;
   --secondary: var(--bg2);
   --secondary-foreground: var(--head);
-  --muted-foreground: var(--muted);
+  --muted-foreground: var(--muted-text);
   --accent-foreground: var(--head);
   --destructive: var(--error);
   --destructive-foreground: var(--head);
@@ -272,7 +272,7 @@
   --border-soft: var(--border);
   --input: var(--border2);
   --ring: var(--accent);
-  --text-subtle: var(--muted);
+  --text-subtle: var(--muted-text);
   --shadow-elevated: 0 16px 36px rgba(0, 0, 0, 0.28);
   --radius: var(--r);
 }
