@@ -10,3 +10,8 @@ Ocean-AI/
 **/.next/
 **/__pycache__/
 **/.pytest_cache/
+
+# NNSight interpretability run logs (generated, accumulated across runs, not source)
+nnsight/logger/logs/**/*.log
+nnsight/logger/logs/**/*.json
+!nnsight/logger/logs/.gitkeep
