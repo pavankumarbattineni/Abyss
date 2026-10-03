@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Button } from "@/components/ui";
+import { AbyssLogo } from "./abyss-logo";
 
 export function AuthTopBar() {
   const pathname = usePathname();
@@ -13,15 +13,10 @@ export function AuthTopBar() {
   return (
     <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-5">
       <Link href="/home" className="flex items-center gap-2" aria-label="Abyss-AI home">
-        <Image
-          src="/images/abyss-mark.png"
-          alt="Abyss-AI"
-          width={40}
-          height={40}
-          style={{ height: "auto" }}
-        />
-        <span className="bg-linear-to-r from-primary to-warning bg-clip-text font-mono text-2xl font-semibold text-transparent">
-          Abyss-AI
+        <AbyssLogo size={40} />
+        <span className="font-mono text-2xl font-semibold">
+          <span style={{ color: "#E8ECEF" }}>Abyss</span>
+          <span style={{ color: "#7A9AA3" }}>-AI</span>
         </span>
       </Link>
 

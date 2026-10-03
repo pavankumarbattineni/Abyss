@@ -110,7 +110,7 @@ async def lifespan(app: FastAPI):
     await _mark_orphaned_schedule_runs()
     async with async_session_maker() as db:
         await build_agent_tool_registry(db)
-    start_scheduler()
+    await start_scheduler()
     yield
     await stop_scheduler()
     await close_checkpointer()

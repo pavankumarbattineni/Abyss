@@ -5,6 +5,7 @@ from database.session import get_async_session
 from schemas.schedule import ScheduleCreate, ScheduleResponse, ScheduleRunResponse, ScheduleUpdate
 from services.schedule_service import ScheduleService
 from utils.auth import get_current_user_flexible
+from utils.scheduler import register_schedule, unregister_schedule
 
 router = APIRouter(prefix="/agents/{agent_id}/schedules", tags=["schedules"])
 schedule_service = ScheduleService()
@@ -33,7 +34,12 @@ async def create_schedule(
             MAX_SCHEDULES_PER_AGENT active schedules, or an identical active
             schedule already exists for this agent.
     """
-    return await schedule_service.create(session, agent_id, user_id, request)
+    response = await schedule_service.create(session, agent_id, user_id, request)
+    register_schedule(
+        response.id, response.schedule_type, response.interval_minutes,
+        response.time_of_day, response.weekdays, response.day_of_month,
+    )
+    return response
 
 
 @router.get("", response_model=list[ScheduleResponse])
@@ -83,7 +89,12 @@ async def update_schedule(
             recurrence combination is invalid, or it collides with another
             active schedule for this agent.
     """
-    return await schedule_service.update(session, agent_id, schedule_id, user_id, request)
+    response = await schedule_service.update(session, agent_id, schedule_id, user_id, request)
+    register_schedule(
+        response.id, response.schedule_type, response.interval_minutes,
+        response.time_of_day, response.weekdays, response.day_of_month,
+    )
+    return response
 
 
 @router.delete("/{schedule_id}")
@@ -105,6 +116,7 @@ async def delete_schedule(
         HTTPException 422: If not found or not owned by the user.
     """
     await schedule_service.delete(session, agent_id, schedule_id, user_id)
+    unregister_schedule(schedule_id)
     return {"message": "Schedule deleted successfully"}
 
 

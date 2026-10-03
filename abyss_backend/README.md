@@ -89,7 +89,7 @@ In-Memory (single process — see "Why a single worker" in Key Design Decisions)
 ```
 thinkloop-backend/
 ├── main.py                      # FastAPI app, lifespan, orphan stream/schedule-run recovery, scheduler start/stop
-├── config.py                    # Pydantic Settings — reads THINKLOOP_CONFIG (a JSON blob) from .env
+├── config.py                    # Pydantic Settings — reads ABYSS_CONFIG (a JSON blob) from .env
 ├── constants.py                 # Single source of truth for all tuneable constants
 ├── gunicorn_starter.sh          # Production launcher: gunicorn + UvicornWorker, -w 1
 │
@@ -564,10 +564,10 @@ Failures are logged to `schedule_runs.error_message` only — there is currently
 
 ## Configuration
 
-Configuration is a single JSON blob read from the `THINKLOOP_CONFIG` environment variable (via `pydantic-settings`, `env_prefix="THINKLOOP_"`), loaded from a `.env` file in the project directory:
+Configuration is a single JSON blob read from the `ABYSS_CONFIG` environment variable (via `pydantic-settings`, `env_prefix="ABYSS_"`), loaded from a `.env` file in the project directory:
 
 ```env
-THINKLOOP_CONFIG='{
+ABYSS_CONFIG='{
   "ENVIRONMENT": "DEV",
   "DB": {
     "username": "postgres",
@@ -610,7 +610,7 @@ THINKLOOP_CONFIG='{
 | `LANGSMITH.api_key` / `project` | No | Required only if tracing is enabled |
 | `MCP.encryption_key` | Yes | Fernet key encrypting MCP connection API keys at rest |
 
-> **Important:** the app reads config exclusively through `THINKLOOP_CONFIG` — do not rely on individual flat environment variables (`DATABASE_URL`, `OPENAI_API_KEY`, etc.) being read directly; they are not. If a shell-level `config` or `THINKLOOP_CONFIG` variable is already set in your environment (e.g. via `~/.bashrc`), it takes precedence over the `.env` file's value — real process environment variables always outrank `.env` in `pydantic-settings`.
+> **Important:** the app reads config exclusively through `ABYSS_CONFIG` — do not rely on individual flat environment variables (`DATABASE_URL`, `OPENAI_API_KEY`, etc.) being read directly; they are not. If a shell-level `config` or `ABYSS_CONFIG` variable is already set in your environment (e.g. via `~/.bashrc`), it takes precedence over the `.env` file's value — real process environment variables always outrank `.env` in `pydantic-settings`.
 
 ---
 
@@ -992,7 +992,7 @@ See [Token Usage & Cost Tracking](#token-usage--cost-tracking) for how capture a
 | Schedule execution isolation | New `Thread` per scheduled run | No shared conversation memory across runs — avoids unbounded thread growth and matches how manual chat threads already work |
 | Scheduler reconciliation | Poll `StreamRecord` status from the tick loop rather than awaiting the generation task directly | Scheduled generation reuses the same fire-and-forget `send_message()` path as manual chat; the tick loop's next pass simply checks whether the linked stream finished |
 | Single gunicorn worker | `-w 1` in `gunicorn_starter.sh` | In-memory stream buffers/queues and the scheduler tick loop are per-process state; one worker avoids cross-process consistency issues without needing Redis yet — planned to move to Redis-backed coordination when scaling beyond one worker/instance |
-| Config loading | Single `THINKLOOP_CONFIG` JSON blob via `pydantic-settings` (`env_prefix="THINKLOOP_"`) | One structured source of truth instead of many flat env vars; real process env vars still take precedence over `.env`, so a stray shell-level `THINKLOOP_CONFIG`/`config` export can silently shadow the `.env` file's value |
+| Config loading | Single `ABYSS_CONFIG` JSON blob via `pydantic-settings` (`env_prefix="ABYSS_"`) | One structured source of truth instead of many flat env vars; real process env vars still take precedence over `.env`, so a stray shell-level `ABYSS_CONFIG`/`config` export can silently shadow the `.env` file's value |
 | Streams as separate router | `routers/streams.py` at `/api/v1/streams/` | Stream operations (SSE, cancel, status) are independent of thread context; stream `id` is self-contained — thread ownership is derived from the stream record itself |
 | Tool approval mechanism | LangGraph `interrupt()`, checkpointer as source of truth | Pausing is a first-class graph state, not an ad-hoc flag; resuming re-validates against the durable checkpoint so a stale/forged approval request can't succeed |
 | Tool approval scope | Global per tool (`MCPTool.permission_state`), not per-agent or per-thread | One switch protects a tool everywhere it's assigned; simpler mental model than per-agent or per-conversation overrides, at the cost of no thread-scoped "allow just this chat" option (considered, not built) |
