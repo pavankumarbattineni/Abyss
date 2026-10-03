@@ -29,7 +29,7 @@ from constants import (
 )
 from database.models import Agent
 from utils.mcp_client import get_tool_permissions_for_agent, get_tools_for_agent
-from utils.reasoning_splitter import sanitize_for_reasoning_tags
+from utils.reasoning_splitter import sanitize_for_reasoning_tags, strip_reasoning_block
 from utils.tool_output import extract_tool_output
 
 # Transient network errors talking to the LLM provider (dropped connection,
@@ -401,9 +401,9 @@ def _agent_behavior_instruction() -> str:
         "Do not refuse or ask clarifying questions for minor ambiguity.\n"
         "- **Scope:** Stay within the role and domain defined in your instructions above. "
         "If a request is outside your defined scope, acknowledge it politely and redirect.\n"
-        "- **Completeness:** Always deliver the full response. Never truncate, summarise, or "
-        "abbreviate mid-answer with `...`, `[continues]`, `[truncated]`, or similar. "
-        "If the complete answer is long, that length is the correct answer.\n\n"
+        "- **Completeness:** Always deliver the full response — if the complete answer is long, "
+        "that length is the correct answer. See Response Formatting below for the exact "
+        "truncation rule.\n\n"
     ) + _tool_result_handling_instruction()
 
 
@@ -436,6 +436,10 @@ def _sub_agent_format_instruction() -> str:
         "This applies in all output formats including JSON string values, prose, and tables\n"
         "- If a tool returned no data or an error, state that explicitly under the relevant "
         "section heading — do not omit the section or silently skip it\n"
+        "- **Never substitute an assumption, estimate, or placeholder value for data a tool "
+        "couldn't provide.** State the gap under its section heading instead — the synthesizer "
+        "cannot tell a real finding from a guess, so an invented number here reaches the user "
+        "as if it were fact\n"
         "- Be thorough — omit nothing relevant to the task; never truncate with `...` or `[continues]`\n"
         "- Be concise — avoid preamble, padding, or meta-commentary about the task itself\n"
     )
@@ -730,7 +734,13 @@ def make_agent_node(llm, system_prompt: str, tools: list, sub_agent_options: lis
             # is intercepted and never produces a ToolMessage; persisting the raw
             # response (which has tool_calls) would corrupt the checkpointed history
             # and cause OpenAI 400 errors on every subsequent turn in the thread.
-            clean_dispatch_msg = AIMessage(content=response.content or "")
+            # response.content is the dispatching turn's <reasoning> block and nothing
+            # else (rule 8 forbids any other text before a tool call) — a dispatching
+            # turn has no legitimate user-facing content, so drop it entirely rather
+            # than persisting internal deliberation into history and the synthesizer's
+            # context. strip_reasoning_block would reduce it to "" anyway; skip the
+            # regex pass and just store empty content directly.
+            clean_dispatch_msg = AIMessage(content="")
             return {
                 "messages": [clean_dispatch_msg],
                 "pending_tasks": pending_tasks,
@@ -829,7 +839,7 @@ def make_sub_agent_node(
                 timeout=SUB_AGENT_TIMEOUT_SECONDS,
             )
             messages = result.get("messages", [])
-            final_content = messages[-1].content if messages else ""
+            final_content = strip_reasoning_block(messages[-1].content) if messages else ""
         except _TRANSIENT_LLM_EXCEPTIONS as exc:
             # Deliberately NOT retried: the sub-agent's internal ReAct loop may have
             # already executed one or more tools before this failure, and some MCP

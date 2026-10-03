@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from constants import REASONING_TAG_CLOSE, REASONING_TAG_OPEN, REASONING_FORCE_CLOSE_AFTER_TOKENS
+
+_REASONING_BLOCK_RE = re.compile(
+    re.escape(REASONING_TAG_OPEN) + r".*?" + re.escape(REASONING_TAG_CLOSE) + r"\s*",
+    re.DOTALL,
+)
 
 
 def sanitize_for_reasoning_tags(text: str) -> str:
@@ -17,6 +23,25 @@ def sanitize_for_reasoning_tags(text: str) -> str:
         .replace(REASONING_TAG_OPEN, "&lt;reasoning&gt;")
         .replace(REASONING_TAG_CLOSE, "&lt;/reasoning&gt;")
     )
+
+
+def strip_reasoning_block(text: str) -> str:
+    """Remove a leading `<reasoning>...</reasoning>` block an agent wrote itself.
+
+    Per REASONING_INSTRUCTION, every agent/sub-agent turn embeds its own
+    thinking trace directly in the message content, immediately before the
+    actual answer. The live SSE stream separates the two via
+    ReasoningSplitter for the user-facing presentation, but that split never
+    touches the raw LangGraph state — a sub-agent's final AIMessage or a
+    dispatching agent's message still carries the full "<reasoning>...
+    </reasoning>answer" string. Call this before that content is persisted
+    into conversation history or handed to another node (e.g. the
+    synthesizer), so internal deliberation never leaks into a downstream
+    consumer's input context. Unlike sanitize_for_reasoning_tags (which
+    escapes tags found in untrusted external text), this removes the
+    agent's own legitimate reasoning block outright.
+    """
+    return _REASONING_BLOCK_RE.sub("", text, count=1)
 
 
 @dataclass

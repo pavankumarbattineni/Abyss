@@ -1,4 +1,4 @@
-"""Centralized configuration for the Thinkloop backend.
+"""Centralized configuration for the Abyss backend.
 
 All application credentials, secrets, API keys, and environment-specific
 settings are loaded here. No other module should access environment variables
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     config: str = ""
 
     class Config:
-        env_prefix = "THINKLOOP_"
+        env_prefix = "ABYSS_"
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "allow"
@@ -33,8 +33,8 @@ class Settings(BaseSettings):
 settings = Settings()
 
 assert settings.config, (
-    "THINKLOOP_CONFIG environment variable is missing. "
-    "Set THINKLOOP_CONFIG='{...}' in your .env file. "
+    "ABYSS_CONFIG environment variable is missing. "
+    "Set ABYSS_CONFIG='{...}' in your .env file. "
     "See .env.example for the required structure."
 )
 

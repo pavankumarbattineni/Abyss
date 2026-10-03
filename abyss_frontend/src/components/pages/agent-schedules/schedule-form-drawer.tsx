@@ -175,7 +175,7 @@ export function ScheduleFormDrawer({
         </DrawerHeader>
 
         <form
-          className="flex flex-col gap-4 overflow-y-auto px-4 pb-4"
+          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4"
           onSubmit={handleSubmit(submit)}
         >
           <div className="flex flex-col gap-1.5">

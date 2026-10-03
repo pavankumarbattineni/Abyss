@@ -1,0 +1,10 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path d="M51,4 L94,96 L8,96 Z M51,21 L66,66 L36,70 Z" fill-rule="evenodd" fill="url(#abyss-logo-gradient)"/>
+  <defs>
+    <linearGradient id="abyss-logo-gradient" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6FC3CF"/>
+      <stop offset="50%" stop-color="#3A7CA5"/>
+      <stop offset="100%" stop-color="#2B3A67"/>
+    </linearGradient>
+  </defs>
+</svg>
