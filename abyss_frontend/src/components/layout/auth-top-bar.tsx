@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Button } from "@/components/ui";
-import { AbyssLogo } from "./abyss-logo";
+import { AbyssLogo, AbyssWordmark } from "./abyss-logo";
 
 export function AuthTopBar() {
   const pathname = usePathname();
@@ -14,10 +14,7 @@ export function AuthTopBar() {
     <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-6 py-5">
       <Link href="/home" className="flex items-center gap-2" aria-label="Abyss-AI home">
         <AbyssLogo size={40} />
-        <span className="font-mono text-2xl font-semibold">
-          <span style={{ color: "#E8ECEF" }}>Abyss</span>
-          <span style={{ color: "#7A9AA3" }}>-AI</span>
-        </span>
+        <AbyssWordmark className="text-2xl" />
       </Link>
 
       <div className="flex items-center gap-2">
