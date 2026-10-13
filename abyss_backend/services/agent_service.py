@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from constants import MCP_CONNECTION_STATUS_CONNECTED
+from constants import MAX_SUB_AGENTS_PER_AGENT, MCP_CONNECTION_STATUS_CONNECTED
 from database.models import (
     Agent, AgentSchedule, AgentTool, LlmCredential, MCPConnection, MCPTool, Provider, ProviderModel,
 )
@@ -315,7 +315,7 @@ class AgentService:
             ValueError: On duplicate agent name or sub-agent name collision.
         """
         from utils.mcp_client import register_tools_for_id
-        from utils.graph_builder import to_tool_name
+        from abyss_agents.naming import to_tool_name
 
         # Duplicate name check (active agents only — soft-delete allows reuse)
         existing = await session.execute(
@@ -329,7 +329,7 @@ class AgentService:
         if existing.scalar_one_or_none():
             raise ValueError(f"An agent named '{data.name}' already exists")
 
-        # Sub-agent node name collision check (graph_builder uses the same sanitizer)
+        # Sub-agent node name collision check (the agent factory uses the same sanitizer)
         if data.sub_agents:
             sanitized = [to_tool_name(s.name) for s in data.sub_agents]
             if len(sanitized) != len(set(sanitized)):
@@ -540,7 +540,6 @@ class AgentService:
             ValueError: If the agent/sub-agent is not found, or name conflicts.
         """
         from utils.mcp_client import register_tools_for_id, remove_agent_from_registry
-        from utils.graph_builder import invalidate_graph_cache
 
         llm_fields_set = "llm_model_id" in data.model_fields_set
 
@@ -652,8 +651,6 @@ class AgentService:
             else:
                 remove_agent_from_registry(sub_id)
 
-        invalidate_graph_cache(agent_id)
-
         return await _build_agent_response(session, agent)
 
     async def add_sub_agent(
@@ -680,7 +677,7 @@ class AgentService:
             ValueError: If the parent is not found, or a name collision exists.
         """
         from utils.mcp_client import register_tools_for_id
-        from utils.graph_builder import to_tool_name, invalidate_graph_cache
+        from abyss_agents.naming import to_tool_name
 
         agent = await self._get_agent_orm(session, agent_id, user_id)
 
@@ -691,7 +688,10 @@ class AgentService:
                 Agent.is_active == True,
             )
         )
-        existing_names = {to_tool_name(sub.name) for sub in existing_result.scalars().all()}
+        existing_subs = existing_result.scalars().all()
+        if len(existing_subs) >= MAX_SUB_AGENTS_PER_AGENT:
+            raise ValueError(f"An agent can have at most {MAX_SUB_AGENTS_PER_AGENT} sub-agents")
+        existing_names = {to_tool_name(sub.name) for sub in existing_subs}
         if to_tool_name(data.name) in existing_names:
             raise ValueError(
                 f"A sub-agent whose name maps to '{to_tool_name(data.name)}' already exists "
@@ -725,8 +725,6 @@ class AgentService:
             if tool_names:
                 await register_tools_for_id(sub.id, user_id, tool_names, session)
 
-        invalidate_graph_cache(agent_id)
-
         return await _build_agent_response(session, agent)
 
     async def remove_sub_agent(
@@ -751,7 +749,6 @@ class AgentService:
             ValueError: If the sub-agent is not found or does not belong to the user.
         """
         from utils.mcp_client import remove_agent_from_registry
-        from utils.graph_builder import invalidate_graph_cache
 
         sub_result = await session.execute(
             select(Agent).where(
@@ -776,8 +773,6 @@ class AgentService:
         await session.commit()
 
         remove_agent_from_registry(sub_agent_id)
-        invalidate_graph_cache(agent.id)
-
         return await _build_agent_response(session, agent)
 
     async def delete(self, session: AsyncSession, agent_id: str, user_id: str) -> str:
@@ -796,7 +791,6 @@ class AgentService:
             ValueError: If the agent does not exist or does not belong to the user.
         """
         from utils.mcp_client import remove_agent_from_registry
-        from utils.graph_builder import invalidate_graph_cache
 
         agent = await self._get_agent_orm(session, agent_id, user_id)
         agent_name = agent.name
@@ -838,6 +832,4 @@ class AgentService:
         for sub_id in sub_ids:
             remove_agent_from_registry(sub_id)
         remove_agent_from_registry(agent_id)
-        invalidate_graph_cache(agent_id)
-
         return agent_name

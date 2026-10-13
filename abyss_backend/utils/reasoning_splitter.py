@@ -35,8 +35,8 @@ def strip_reasoning_block(text: str) -> str:
     touches the raw LangGraph state — a sub-agent's final AIMessage or a
     dispatching agent's message still carries the full "<reasoning>...
     </reasoning>answer" string. Call this before that content is persisted
-    into conversation history or handed to another node (e.g. the
-    synthesizer), so internal deliberation never leaks into a downstream
+    into conversation history or handed to another consumer (e.g. a
+    sub-agent's result returned to the parent), so internal deliberation never leaks into a downstream
     consumer's input context. Unlike sanitize_for_reasoning_tags (which
     escapes tags found in untrusted external text), this removes the
     agent's own legitimate reasoning block outright.

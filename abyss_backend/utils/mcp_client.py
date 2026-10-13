@@ -36,7 +36,7 @@ def _build_server_config(conns: list[MCPConnection]) -> dict:
 async def _tag_tools_with_ids(tools: list, connection_id: str, db: AsyncSession) -> None:
     """Stamp mcp_connection_id and tool_id onto each fetched LangChain tool's metadata.
 
-    tool_id lets the tools-execution node (graph_builder.make_tools_node) put
+    tool_id lets the approval middleware (abyss_agents/middleware.py's ToolApprovalMiddleware) put
     an exact MCPTool.id on each gated call's interrupt payload, so the
     tool-approvals endpoint can resolve "Always Allow" by primary key instead
     of by name — MCPTool.name is only unique per-connection, not globally, so

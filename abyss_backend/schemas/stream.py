@@ -24,11 +24,19 @@ class StreamCancelResponse(BaseModel):
 
 
 class ToolApprovalDecision(BaseModel):
-    tool_call_id: str
-    decision: Literal["allow_once", "always_allow", "deny"]
+    """One decision for one gated tool call, in HumanInTheLoopMiddleware's shape."""
+
+    type: Literal["approve", "reject"]
+    # Feedback returned to the agent on reject. Defaults to a standard
+    # "the user declined" message when omitted.
+    message: Optional[str] = None
+    # Only meaningful with type="approve": also stop asking for this tool.
+    always_allow: bool = False
 
 
 class ToolApprovalGroup(BaseModel):
+    """Decisions for one pending interrupt, positional: decisions[i] answers action_requests[i]."""
+
     interrupt_id: str
     decisions: list[ToolApprovalDecision]
 

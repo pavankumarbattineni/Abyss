@@ -22,7 +22,9 @@ from langchain_openai import ChatOpenAI
 @dataclass(frozen=True)
 class ProviderSpec:
     display_name: str
-    build: Callable[[str, str], BaseChatModel]
+    # build(model, api_key, native_reasoning): native_reasoning=True configures the
+    # provider's own reasoning/thinking output so it arrives as `reasoning` content blocks.
+    build: Callable[[str, str, bool], BaseChatModel]
     validate: Callable[[str], None]
 
 
@@ -63,20 +65,50 @@ def _validate_google_key(api_key: str) -> None:
         raise ValueError(f"Could not validate Google Gemini API key: {exc}")
 
 
+# Anthropic requires max_tokens > the thinking budget.
+_ANTHROPIC_THINKING_BUDGET = 4000
+_ANTHROPIC_MAX_TOKENS = 16000
+
+
+def _build_openai(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
+    if not native_reasoning:
+        return ChatOpenAI(model=model, api_key=api_key)
+    # Reasoning summaries are only exposed through the Responses API.
+    return ChatOpenAI(
+        model=model, api_key=api_key, use_responses_api=True,
+        reasoning={"effort": "medium", "summary": "auto"},
+    )
+
+
+def _build_anthropic(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
+    if not native_reasoning:
+        return ChatAnthropic(model=model, api_key=api_key)
+    return ChatAnthropic(
+        model=model, api_key=api_key, max_tokens=_ANTHROPIC_MAX_TOKENS,
+        thinking={"type": "enabled", "budget_tokens": _ANTHROPIC_THINKING_BUDGET},
+    )
+
+
+def _build_google(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
+    if not native_reasoning:
+        return ChatGoogleGenerativeAI(model=model, google_api_key=api_key)
+    return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, include_thoughts=True)
+
+
 PROVIDERS: dict[str, ProviderSpec] = {
     "openai": ProviderSpec(
         display_name="OpenAI",
-        build=lambda model, api_key: ChatOpenAI(model=model, api_key=api_key),
+        build=_build_openai,
         validate=_validate_openai_key,
     ),
     "anthropic": ProviderSpec(
         display_name="Anthropic",
-        build=lambda model, api_key: ChatAnthropic(model=model, api_key=api_key),
+        build=_build_anthropic,
         validate=_validate_anthropic_key,
     ),
     "google": ProviderSpec(
         display_name="Google Gemini",
-        build=lambda model, api_key: ChatGoogleGenerativeAI(model=model, google_api_key=api_key),
+        build=_build_google,
         validate=_validate_google_key,
     ),
 }

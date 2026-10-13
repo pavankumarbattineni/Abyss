@@ -3,7 +3,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Agent, LlmCredential, Provider, ProviderModel
+from database.models import LlmCredential, Provider, ProviderModel
 from schemas.llm_credential import (
     CatalogModelEntry,
     LlmCredentialResponse,
@@ -103,31 +103,6 @@ class LlmCredentialService:
             for cred, provider in result.all()
         ]
 
-    async def _invalidate_agents_for_provider(
-        self, session: AsyncSession, user_id: str, provider_id: str
-    ) -> None:
-        """Bust the compiled-graph cache for every agent this user has pointed
-        at `provider_id`, so an already-cached graph picks up a rotated/removed
-        key on the very next message instead of continuing to use the old one.
-
-        Default agents (llm_model_id NULL) are never affected — they're
-        isolated from user credentials entirely, so they're excluded by the
-        join itself (a NULL llm_model_id has no matching ProviderModel row).
-        """
-        from utils.graph_builder import invalidate_graph_cache
-
-        result = await session.execute(
-            select(Agent.id)
-            .join(ProviderModel, ProviderModel.id == Agent.llm_model_id)
-            .where(
-                Agent.user_id == user_id,
-                Agent.is_active == True,
-                ProviderModel.provider_id == provider_id,
-            )
-        )
-        for agent_id in result.scalars().all():
-            invalidate_graph_cache(agent_id)
-
     async def upsert_credential(
         self, session: AsyncSession, user_id: str, provider_id: str, request: LlmCredentialUpsertRequest
     ) -> LlmCredentialResponse:
@@ -156,7 +131,6 @@ class LlmCredentialService:
         await session.commit()
         await session.refresh(credential)
 
-        await self._invalidate_agents_for_provider(session, user_id, provider_id)
 
         return LlmCredentialResponse(
             provider_id=provider.id,
@@ -184,4 +158,3 @@ class LlmCredentialService:
         credential.is_active = False
         await session.commit()
 
-        await self._invalidate_agents_for_provider(session, user_id, provider_id)

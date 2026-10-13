@@ -292,7 +292,6 @@ class MCPService:
             ValueError: If not found or not owned by the user.
         """
         from utils.mcp_client import evict_connection_from_registry, remove_connection_client
-        from utils.graph_builder import invalidate_graph_cache
 
         conn = await self._get_connection(db, user_id, connection_id)
         conn_name = conn.name
@@ -305,7 +304,7 @@ class MCPService:
 
         # Collect affected agent IDs BEFORE any mutations so we can update
         # the in-memory state AFTER the commit succeeds.
-        affected_agent_ids, parent_ids = await self._collect_affected_agents_and_parents(db, tool_ids)
+        affected_agent_ids, _ = await self._collect_affected_agents_and_parents(db, tool_ids)
 
         if tool_ids:
             # Bulk-deactivate AgentTool junction records
@@ -331,13 +330,6 @@ class MCPService:
         # affected agent — tools from other connections are preserved.
         evict_connection_from_registry(connection_id, affected_agent_ids)
         remove_connection_client(connection_id)
-
-        # Invalidate compiled graphs so the next request rebuilds with the
-        # updated registry. Also invalidate parent graphs of any sub-agents
-        # since parent graphs bake in sub-agent tool objects at compile time.
-        all_to_invalidate = set(affected_agent_ids) | set(parent_ids)
-        for agent_id in all_to_invalidate:
-            invalidate_graph_cache(agent_id)
 
         return conn_name
 
@@ -394,7 +386,6 @@ class MCPService:
             ValueError: If not found, not owned by the user, or already disconnected.
         """
         from utils.mcp_client import evict_connection_from_registry, remove_connection_client
-        from utils.graph_builder import invalidate_graph_cache
 
         conn = await self._get_connection(db, user_id, connection_id)
         if conn.status == MCP_CONNECTION_STATUS_DISCONNECTED:
@@ -404,16 +395,13 @@ class MCPService:
             select(MCPTool.id).where(MCPTool.connection_id == conn.id, MCPTool.is_active == True)
         )
         tool_ids = list(tool_ids_result.scalars().all())
-        affected_agent_ids, parent_ids = await self._collect_affected_agents_and_parents(db, tool_ids)
+        affected_agent_ids, _ = await self._collect_affected_agents_and_parents(db, tool_ids)
 
         conn.status = MCP_CONNECTION_STATUS_DISCONNECTED
         await db.commit()
 
         evict_connection_from_registry(connection_id, affected_agent_ids)
         remove_connection_client(connection_id)
-
-        for agent_id in set(affected_agent_ids) | set(parent_ids):
-            invalidate_graph_cache(agent_id)
 
         return conn, len(tool_ids)
 
@@ -442,7 +430,6 @@ class MCPService:
                 connected, or the MCP server is unreachable.
         """
         from utils.mcp_client import sync_connection_tools_in_registry
-        from utils.graph_builder import invalidate_graph_cache
 
         conn = await self._get_connection(db, user_id, connection_id)
         if conn.status == MCP_CONNECTION_STATUS_CONNECTED:
@@ -463,7 +450,6 @@ class MCPService:
 
         all_affected_agent_ids: list[str] = []
         active_tools_by_agent: dict[str, list[str]] = defaultdict(list)
-        parent_ids: list[str] = []
         if active_tool_ids:
             affected_result = await db.execute(
                 select(AgentTool.agent_id).distinct().where(
@@ -487,23 +473,12 @@ class MCPService:
                 for agent_id, tool_name in active_result:
                     active_tools_by_agent[agent_id].append(tool_name)
 
-                parent_result = await db.execute(
-                    select(Agent.parent_id).where(
-                        Agent.id.in_(all_affected_agent_ids),
-                        Agent.parent_id.is_not(None),
-                    )
-                )
-                parent_ids = list(parent_result.scalars().all())
-
         conn.status = MCP_CONNECTION_STATUS_CONNECTED
         await db.commit()
 
         await sync_connection_tools_in_registry(
             conn, dict(active_tools_by_agent), all_affected_agent_ids, db,
         )
-
-        for agent_id in set(all_affected_agent_ids) | set(parent_ids):
-            invalidate_graph_cache(agent_id)
 
         return conn, len(remote_tools)
 
@@ -582,12 +557,9 @@ class MCPService:
         whichever one it's given as the sole scoping key.
 
         This is a global change — every agent that uses an affected tool
-        shares the same gate, so every affected agent's compiled graph cache
-        (and its parent's, for sub-agents) must be invalidated, not just one.
-        When scoped to a connection, that fan-out happens per tool, so a
-        connection with many tools still ends up with every affected agent's
-        cache invalidated exactly once (deduplicated via a set), not once per
-        tool.
+        shares the same gate. Agent graphs are built per request from the
+        in-memory registry, so updating the registry is enough for the change
+        to apply from the next turn.
 
         Args:
             db: Active async database session.
@@ -607,7 +579,6 @@ class MCPService:
                 the user.
         """
         from constants import TOOL_PERMISSION_BLOCKED
-        from utils.graph_builder import invalidate_graph_cache
         from utils.mcp_client import register_tools_for_id, set_tool_permission_in_registry
 
         if tool_id is not None:
@@ -691,13 +662,6 @@ class MCPService:
                     await register_tools_for_id(agent_id, agent_user_id, tool_names, db)
                 affected_agent_ids.add(agent_id)
 
-        if affected_agent_ids:
-            parent_result = await db.execute(
-                select(Agent.id, Agent.parent_id).where(Agent.id.in_(affected_agent_ids))
-            )
-            for aid, parent_id in parent_result.all():
-                invalidate_graph_cache(parent_id or aid)
-
         return [
             MCPToolResponse(
                 id=tool.id,
@@ -734,7 +698,6 @@ class MCPService:
                 or the MCP server is unreachable.
         """
         from utils.mcp_client import sync_connection_tools_in_registry
-        from utils.graph_builder import invalidate_graph_cache
 
         conn = await self._get_connection(db, user_id, connection_id)
         conn_name = conn.name
@@ -799,18 +762,6 @@ class MCPService:
                 for agent_id, tool_name in active_result:
                     active_tools_by_agent[agent_id].append(tool_name)
 
-        # Resolve parent agents for any affected sub-agents so their compiled
-        # graphs can also be invalidated after the refresh.
-        parent_ids: list[str] = []
-        if all_affected_agent_ids:
-            parent_result = await db.execute(
-                select(Agent.parent_id).where(
-                    Agent.id.in_(all_affected_agent_ids),
-                    Agent.parent_id.is_not(None),
-                )
-            )
-            parent_ids = list(parent_result.scalars().all())
-
         await db.commit()
 
         # Update the in-memory registry — only the refreshed connection is
@@ -824,12 +775,5 @@ class MCPService:
             all_affected_agent_ids,
             db,
         )
-
-        # Invalidate compiled graphs so the next chat request rebuilds them
-        # with the updated registry. Parent graphs must also be invalidated
-        # since they embed sub-agent tool objects at compile time.
-        all_to_invalidate = set(all_affected_agent_ids) | set(parent_ids)
-        for agent_id in all_to_invalidate:
-            invalidate_graph_cache(agent_id)
 
         return conn_name, len(remote_tools)
