@@ -90,3 +90,6 @@ CLAUDE.md
 dist/
 build/
 target/
+
+# Agent build dumps (ABYSS_AGENT_DEBUG_DUMP)
+logs/
