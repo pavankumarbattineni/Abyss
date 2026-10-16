@@ -27,7 +27,7 @@ import { agentService, authService } from "@/services";
 import { useSidebarStore } from "@/store";
 import type { Agent } from "@/types";
 import { AgentAvatar } from "./agent-avatar";
-import { AbyssLogo } from "./abyss-logo";
+import { AbyssLogo, AbyssWordmark } from "./abyss-logo";
 
 function getEmailInitials(email?: string): string {
   const localPart = email?.split("@")[0] ?? "";
@@ -84,9 +84,8 @@ export function Sidebar() {
       >
         <AbyssLogo size={collapsed ? 24 : 34} />
         {!collapsed && (
-          <Heading as="span" size="lg" className="font-mono font-semibold">
-            <span style={{ color: "#E8ECEF" }}>Abyss</span>
-            <span style={{ color: "#7A9AA3" }}>-AI</span>
+          <Heading as="span" size="lg">
+            <AbyssWordmark />
           </Heading>
         )}
         <Button

@@ -38,3 +38,14 @@ export function AbyssLogo({ size = 40, className }: AbyssLogoProps) {
     </svg>
   );
 }
+
+// "Abyss" follows the theme's heading color so it is readable on both light and dark
+// backgrounds; "-AI" uses the brand teal.
+export function AbyssWordmark({ className }: { className?: string }) {
+  return (
+    <span className={cn("font-mono font-semibold", className)}>
+      <span className="text-foreground">Abyss</span>
+      <span className="text-primary">-AI</span>
+    </span>
+  );
+}

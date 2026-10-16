@@ -7,12 +7,12 @@ import { useMutation } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 import { Button, Card, Checkbox, FormError, Input, Label } from "@/components/ui";
 import { useAuth } from "@/providers";
-import { firebaseAuth, googleProvider } from "@/lib/firebase";
-import { authService } from "@/services";
+import { firebaseAuth } from "@/lib/firebase";
+import { exchangeFirebaseUser, getAuthFeedback, signInWithGoogle } from "@/lib/auth-flow";
 import { GoogleIcon } from "./google-icon";
 import { PasswordInput } from "./password-input";
 
@@ -40,7 +40,7 @@ export const LoginPage = () => {
   const { mutate: login, isPending } = useMutation({
     mutationFn: async (values: LoginValues) => {
       const result = await signInWithEmailAndPassword(firebaseAuth, values.email, values.password);
-      return authService.loginWithFirebase(await result.user.getIdToken());
+      return exchangeFirebaseUser(result.user);
     },
     onSuccess: () => {
       refreshAuthState();
@@ -53,32 +53,26 @@ export const LoginPage = () => {
         toast.error("The email or password is incorrect.");
       } else if (code === "auth/user-disabled") {
         toast.error("This account has been disabled. Contact an administrator.");
-      } else if (code === "auth/network-request-failed") {
-        toast.error("Unable to reach Firebase. Check your connection and try again.");
       } else {
-        toast.error("Sign in could not be completed. Please try again.");
+        const { message } = getAuthFeedback(error, "Sign in could not be completed. Please try again.");
+        toast.error(message);
       }
     },
   });
 
   const { mutate: loginWithGoogle, isPending: isGooglePending } = useMutation({
-    mutationFn: async () => {
-      const result = await signInWithPopup(firebaseAuth, googleProvider);
-      const idToken = await result.user.getIdToken();
-      return authService.loginWithFirebase(idToken);
-    },
+    mutationFn: signInWithGoogle,
     onSuccess: () => {
       refreshAuthState();
       toast.success("Welcome to Abyss!");
       router.push("/agents");
     },
     onError: (error) => {
-      const code = (error as { code?: string })?.code;
-      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
-        toast.info("Google sign-in was cancelled.");
-      } else {
-        toast.error("Google sign-in could not be completed. Please try again.");
-      }
+      const { message, level } = getAuthFeedback(
+        error,
+        "Google sign-in could not be completed. Please try again.",
+      );
+      toast[level](message);
     },
   });
 

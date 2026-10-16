@@ -2,6 +2,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from constants import MAX_SUB_AGENTS_PER_AGENT
+
 
 class SubAgentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -53,7 +55,7 @@ class AgentCreate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=2000)
     system_prompt: str = Field(min_length=1, max_length=32_000)
     tools: list[str] = Field(default=[], max_length=50, description="MCPTool IDs to assign")
-    sub_agents: list[SubAgentCreate] = Field(default=[], max_length=20)
+    sub_agents: list[SubAgentCreate] = Field(default=[], max_length=MAX_SUB_AGENTS_PER_AGENT)
     llm_model_id: Optional[str] = Field(
         default="default", description="provider_models.id, or 'default'/null = platform Default"
     )

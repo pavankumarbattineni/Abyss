@@ -39,7 +39,20 @@ API_KEY_EXPIRY_PRESETS = {
 
 GRAPH_CACHE_MAX_SIZE = 100
 MAX_PARALLEL_TASKS = 5
+MAX_SUB_AGENTS_PER_AGENT = 5
 MAX_AGENT_ITERATIONS = 15
+
+# Context management — SummarizationMiddleware on the parent agent. Summarizes
+# older messages once the thread reaches either threshold (the fraction trigger
+# is skipped when the model profile doesn't report a context window).
+SUMMARIZATION_TRIGGER_FRACTION = 0.7
+SUMMARIZATION_TRIGGER_TOKENS = 100_000
+SUMMARIZATION_KEEP_MESSAGES = 20
+
+# Reasoning source for a model (ProviderModel.reasoning_mode)
+
+REASONING_MODE_PROMPT = "prompt"
+REASONING_MODE_NATIVE = "native"
 
 # Tool Permission States (MCPTool.permission_state)
 
@@ -55,7 +68,7 @@ LLM_SOURCE_BYOK = "byok"
 SUB_AGENT_TIMEOUT_SECONDS = 900
 # Retries for transient network errors (dropped connection, reset) talking to the
 # LLM provider. Only applied where nothing with side effects (tool execution)
-# happens before the call returns — see _ainvoke_with_retry in graph_builder.py.
+# happens before the call returns — see ModelRetryMiddleware in abyss_agents/factory.py.
 LLM_CALL_MAX_RETRIES = 2
 LLM_CALL_RETRY_BACKOFF_SECONDS = 1.0
 

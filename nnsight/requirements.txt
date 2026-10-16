@@ -1,3 +1,0 @@
-nnsight
-torch
-transformers

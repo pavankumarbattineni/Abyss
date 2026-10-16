@@ -49,6 +49,13 @@ class ProviderModel(BasicModel):
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     display_name: Mapped[str] = mapped_column(String(150), nullable=False)
     is_platform_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 'prompt' = reasoning comes from the <reasoning> prompt protocol (works on any model);
+    # 'native' = the provider's own reasoning/thinking output (see utils/llm_providers.py).
+    # Existing databases need: ALTER TABLE provider_models ADD COLUMN reasoning_mode
+    # VARCHAR(10) NOT NULL DEFAULT 'prompt' (create_all never alters existing tables).
+    reasoning_mode: Mapped[str] = mapped_column(
+        String(10), default="prompt", server_default="prompt", nullable=False
+    )
 
     provider: Mapped["Provider"] = relationship("Provider")
 
@@ -205,7 +212,7 @@ class StreamRecord(BasicModel):
     reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Token usage / cost — accumulated across every LLM call in this run
-    # (parent agent + any sub-agents + synthesizer), excluding the separate
+    # (parent agent + any sub-agents + summarization), excluding the separate
     # thread-title-generation call. Null until at least one LLM call
     # completes; cost_usd stays null (not 0) if the model has no known
     # pricing — see chat_service.py's usage-capture and cost helpers.

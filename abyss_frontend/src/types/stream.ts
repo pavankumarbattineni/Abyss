@@ -58,18 +58,25 @@ export interface StreamErrorEvent {
   data: { message: string };
 }
 
-export interface StreamToolInterruptCall {
-  tool_call_id: string;
-  tool_name: string;
-  tool_id: string;
+// One gated tool call awaiting a decision (the backend's HumanInTheLoopMiddleware action request).
+export interface StreamToolActionRequest {
+  name: string;
   args: Record<string, unknown>;
+  description: string;
+  // MCPTool id, added by the backend so "Always allow" can resolve the tool exactly.
+  tool_id?: string;
 }
 
+export interface StreamToolReviewConfig {
+  action_name: string;
+  allowed_decisions: ("approve" | "reject")[];
+}
+
+// One pending interrupt: a decision for action_requests[i] goes at decisions[i] when resolving.
 export interface StreamToolInterrupt {
   interrupt_id: string;
-  reason: string;
-  agent_id: string;
-  tool_calls: StreamToolInterruptCall[];
+  action_requests: StreamToolActionRequest[];
+  review_configs: StreamToolReviewConfig[];
 }
 
 export interface StreamToolApprovalRequiredEvent {
@@ -93,13 +100,18 @@ export type StreamEvent = { id: string } & (
   | StreamToolApprovalRequiredEvent
 );
 
+// What the user picks in the UI; mapped to a ToolApprovalDecision when submitting.
 export type ToolApprovalDecisionType = "allow_once" | "always_allow" | "deny";
 
 export interface ToolApprovalDecision {
-  tool_call_id: string;
-  decision: ToolApprovalDecisionType;
+  type: "approve" | "reject";
+  // Only with type "approve": also stop asking for this tool.
+  always_allow?: boolean;
+  // Only with type "reject": optional reason passed to the agent.
+  message?: string;
 }
 
+// Decisions are positional: decisions[i] answers the interrupt's action_requests[i].
 export interface ToolApprovalPayload {
   interrupt_id: string;
   decisions: ToolApprovalDecision[];

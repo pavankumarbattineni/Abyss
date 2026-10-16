@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import os
-import time
 from dataclasses import dataclass
 
 import httpx
@@ -17,6 +16,8 @@ from constants import (
     LLM_SOURCE_BYOK,
     LLM_SOURCE_DEFAULT,
     MAX_AGENT_ITERATIONS,
+    REASONING_MODE_NATIVE,
+    REASONING_MODE_PROMPT,
     STREAM_CLEANUP_DELAY_SECONDS,
     STREAM_STATUS_AWAITING_APPROVAL,
     STREAM_STATUS_CANCELLED,
@@ -34,13 +35,12 @@ from database.models import (
     Agent, LlmCredential, Message, MCPTool, Provider, ProviderModel,
     ScheduleRun, StreamRecord, Thread, User, utcnow,
 )
-from schemas.stream import StreamStartResponse, ToolApprovalGroup, ToolApprovalRequest
+from schemas.stream import StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
 from utils.encryption import decrypt_value
-from utils.graph_builder import build_agent_graph, invalidate_graph_cache
+from abyss_agents.factory import build_agent
+from services.stream_projector import StreamProjector
 from utils.llm_providers import PROVIDERS, classify_llm_error
 import utils.stream_manager as stream_manager
-from utils.reasoning_splitter import ReasoningSplitter
-from utils.tool_output import extract_tool_output as _extract_tool_output
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +65,6 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import litellm  # noqa: E402
 
 _llm: ChatOpenAI | None = None
-
-# Nodes whose LLM tokens constitute the final user-visible response
-_FINAL_RESPONSE_NODES = {"synthesizer", "agent"}
-
-# Nodes whose tokens are internal structured-output JSON — skip entirely
-_SKIP_TOKEN_NODES: set[str] = set()
-
-
 
 def _get_llm() -> ChatOpenAI:
     """Return the shared ChatOpenAI instance, creating it on first call.
@@ -106,9 +98,14 @@ class LlmResolution:
     provider: str
     model: str
     llm_source: str  # LLM_SOURCE_DEFAULT | LLM_SOURCE_BYOK — see constants.py
+    # True when the provider's own reasoning output is enabled (the prompt-based
+    # <reasoning> protocol is then not used for this run).
+    native_reasoning: bool = False
 
 
-async def resolve_llm_for_agent(session: AsyncSession, agent_record: Agent) -> LlmResolution:
+async def resolve_llm_for_agent(
+    session: AsyncSession, agent_record: Agent, enable_thinking: bool = True
+) -> LlmResolution:
     """Build the LLM this agent should use for the current turn.
 
     agent_record.llm_model_id NULL means "Default" — always the platform's
@@ -122,27 +119,35 @@ async def resolve_llm_for_agent(session: AsyncSession, agent_record: Agent) -> L
     Returns provider/model/llm_source alongside the built LLM — callers that
     need to attribute token usage/cost (see _run_generation) would otherwise
     have to re-run this exact resolution a second time.
+
+    A model flagged reasoning_mode='native' gets the provider's own reasoning
+    output enabled when the user's thinking toggle is on; otherwise (and for
+    every 'prompt' model) it is built plain.
     """
     if agent_record.llm_model_id is None:
         result = await session.execute(
-            select(Provider.name, ProviderModel.model_name)
+            select(Provider.name, ProviderModel.model_name, ProviderModel.reasoning_mode)
             .join(ProviderModel, ProviderModel.provider_id == Provider.id)
             .where(ProviderModel.is_platform_default == True, ProviderModel.is_active == True)
         )
         row = result.first()
-        provider, model = row if row else ("openai", _llm_cfg["openai_model"])
-        llm = PROVIDERS[provider].build(model, _llm_cfg["openai_api_key"])
-        return LlmResolution(llm=llm, provider=provider, model=model, llm_source=LLM_SOURCE_DEFAULT)
+        provider, model, mode = row if row else ("openai", _llm_cfg["openai_model"], REASONING_MODE_PROMPT)
+        native = enable_thinking and mode == REASONING_MODE_NATIVE
+        llm = PROVIDERS[provider].build(model, _llm_cfg["openai_api_key"], native)
+        return LlmResolution(
+            llm=llm, provider=provider, model=model, llm_source=LLM_SOURCE_DEFAULT, native_reasoning=native,
+        )
 
     result = await session.execute(
-        select(Provider.id, Provider.name, ProviderModel.model_name)
+        select(Provider.id, Provider.name, ProviderModel.model_name, ProviderModel.reasoning_mode)
         .join(ProviderModel, ProviderModel.provider_id == Provider.id)
         .where(ProviderModel.id == agent_record.llm_model_id, ProviderModel.is_active == True)
     )
     row = result.first()
     if not row:
         raise ValueError("This agent's selected model is no longer available — please choose another.")
-    provider_id, provider, model = row
+    provider_id, provider, model, mode = row
+    native = enable_thinking and mode == REASONING_MODE_NATIVE
 
     cred_result = await session.execute(
         select(LlmCredential).where(
@@ -156,8 +161,10 @@ async def resolve_llm_for_agent(session: AsyncSession, agent_record: Agent) -> L
         raise ValueError(f"No {provider} API key configured — add one in Settings.")
 
     api_key = decrypt_value(credential.encrypted_api_key, purpose="llm")
-    llm = PROVIDERS[provider].build(model, api_key)
-    return LlmResolution(llm=llm, provider=provider, model=model, llm_source=LLM_SOURCE_BYOK)
+    llm = PROVIDERS[provider].build(model, api_key, native)
+    return LlmResolution(
+        llm=llm, provider=provider, model=model, llm_source=LLM_SOURCE_BYOK, native_reasoning=native,
+    )
 
 
 async def _load_pending_interrupts(
@@ -207,9 +214,9 @@ async def _load_pending_interrupts(
 
     llm_resolution = await resolve_llm_for_agent(session, agent_record)
     checkpointer = get_checkpointer()
-    graph = await build_agent_graph(session, agent_record, llm_resolution.llm, checkpointer)
+    built = await build_agent(session, agent_record, llm_resolution.llm, checkpointer)
     thread_config = {"configurable": {"thread_id": thread.id}}
-    state_snapshot = await graph.aget_state(thread_config)
+    state_snapshot = await built.graph.aget_state(thread_config)
     return stream_record, thread, list(state_snapshot.interrupts)
 
 
@@ -276,64 +283,15 @@ async def _generate_thread_title(user_message: str) -> str | None:
         return None
 
 
-def _tool_agent_label(node: str, checkpoint_ns: str) -> str:
-    """Resolve the display label for a tool_start/tool_end/tool_call event.
+def _approval_payload(interrupts) -> dict:
+    """SSE / status payload for pending approvals, in HumanInTheLoopMiddleware's native shape.
 
-    checkpoint_ns's leading segment (before the first ':') identifies which
-    node's execution produced this tool invocation. For a sub-agent it's the
-    sub-agent's own node name (e.g. "child_agent:...|tools:..." → "child_agent"
-    — nesting is pipe-separated, so split(":")[0] on the first segment is
-    unaffected by inner segments). At the top level it's literally "tools" —
-    the parent agent's own internal tool-execution node, not a real agent name
-    — since tool execution moved out of the "agent" node into a dedicated
-    "tools" node. Map that back to the stable "agent" label used everywhere
-    else for the top-level agent, so persisted reasoning and live SSE events
-    don't leak this internal node name.
+    Each interrupt value is {"action_requests": [{name, args, description}, ...],
+    "review_configs": [{action_name, allowed_decisions}, ...]}. A decision for
+    action_requests[i] goes at decisions[i] when resuming.
     """
-    raw = checkpoint_ns.split(":")[0] if checkpoint_ns else node
-    return "agent" if raw == "tools" else raw
+    return {"interrupts": [{"interrupt_id": i.id, **i.value} for i in interrupts]}
 
-
-def _process_event(event: dict, chunk_index: int) -> list[dict]:
-    """Convert one astream_events event into zero or more SSE chunk dicts.
-
-    synthesis_start is NOT emitted here — it is emitted inline in
-    _run_generation so it can reference the accumulated reasoning_tokens keys.
-    """
-    kind: str = event["event"]
-    metadata: dict = event.get("metadata", {})
-    node: str = metadata.get("langgraph_node", "")
-    # Non-empty checkpoint_ns means the event comes from a nested subgraph
-    # (e.g. the internal "agent" node inside a sub-agent's create_react_agent).
-    checkpoint_ns: str = metadata.get("langgraph_checkpoint_ns", "")
-    chunks: list[dict] = []
-
-    if kind == "on_chain_start":
-        _internal = _SKIP_TOKEN_NODES | _FINAL_RESPONSE_NODES | {"__start__", "LangGraph", ""}
-        # Only emit for top-level nodes (checkpoint_ns == ""). Each sub-agent fires
-        # two on_chain_start events: one from the parent graph (checkpoint_ns="") and
-        # one from its own internal create_react_agent graph (checkpoint_ns non-empty).
-        # Filtering to checkpoint_ns=="" ensures exactly one agent_start per sub-agent.
-        if node and node not in _internal and checkpoint_ns == "":
-            chunks.append({"index": chunk_index, "event_type": "agent_start", "data": {"agent_name": node}})
-
-    elif kind == "on_chain_end":
-        _internal = _SKIP_TOKEN_NODES | _FINAL_RESPONSE_NODES | {"__start__", "LangGraph", ""}
-        if node and node not in _internal and checkpoint_ns == "":
-            chunks.append({"index": chunk_index, "event_type": "agent_end", "data": {"agent_name": node}})
-
-    elif kind == "on_tool_start":
-        if node:
-            agent_label = _tool_agent_label(node, checkpoint_ns)
-            chunks.append({"index": chunk_index, "event_type": "tool_start", "data": {"tool_name": event.get("name", ""), "agent_name": agent_label}})
-
-    elif kind == "on_tool_end":
-        if node:
-            agent_label = _tool_agent_label(node, checkpoint_ns)
-            output_str = _extract_tool_output(event.get("data", {}).get("output"))
-            chunks.append({"index": chunk_index, "event_type": "tool_end", "data": {"tool_name": event.get("name", ""), "agent_name": agent_label, "output": output_str}})
-
-    return chunks
 
 
 async def _run_generation(
@@ -343,7 +301,7 @@ async def _run_generation(
     user_message: str,
     enable_thinking: bool = True,
     is_interactive: bool = True,
-    resume_map: dict[str, dict[str, str]] | None = None,
+    resume_map: dict[str, dict] | None = None,
     starting_chunk_index: int = 0,
 ) -> None:
     """Background coroutine that drives LangGraph execution and streams chunks.
@@ -355,40 +313,40 @@ async def _run_generation(
 
     resume_map: when set, this call continues a previously-paused generation
     (see the tool_approval_required handling below) instead of starting a new
-    turn — user_message is ignored in that case. Keyed by Interrupt.id so
-    multiple simultaneous interrupts (e.g. parallel sub-agent branches each
-    gated on a different tool) can be resumed in one call.
+    turn — user_message is ignored in that case. Keyed by Interrupt.id, each
+    value is a HumanInTheLoopMiddleware response ({"decisions": [...]}), so
+    multiple simultaneous interrupts (e.g. parallel sub-agents each gated on a
+    different tool) can be resumed in one call.
     """
     from database.session import async_session_maker
 
     async with async_session_maker() as session:
-        chunk_index = starting_chunk_index
         # Set just before the tool-approval pause return below. Checked in the
         # `finally` block so pausing (not terminal) skips scheduling the
         # completion-oriented in-memory cleanup timer — see stream_manager
         # .schedule_cleanup_task's docstring for why that timer is unsafe here.
         paused_for_approval = False
-        content_tokens: list[str] = []
-        # Keyed by agent name; used for synthesis_start agents_completed list.
-        reasoning_tokens: dict[str, list[str]] = {}
-        # Splitter state — one instance per LLM run_id, keyed by run_id.
-        splitters: dict[str, ReasoningSplitter] = {}
-        splitter_agent_labels: dict[str, str] = {}    # run_id → display label
-        splitter_is_final: dict[str, bool] = {}        # run_id → emits to final content channel
-        reasoning_buffers: dict[str, list[str]] = {}   # run_id → current open reasoning block
-        reasoning_start_times: dict[str, float] = {}   # run_id → monotonic start time of block
-        reasoning_agents: dict[str, str] = {}           # run_id → agent label for in-progress block
-        reasoning_steps: list[dict] = []               # v2 structured reasoning for DB storage
-        reasoning_token_count: int = 0                  # monotonic count of reasoning tokens emitted
-        tool_start_times: dict[str, float] = {}         # run_id → monotonic start time of tool call
-        tool_inputs: dict[str, str | None] = {}         # run_id → serialized tool input args
-        last_flush_count = 0  # combined content + reasoning token count at last flush
-        run_input_tokens = 0     # accumulated across every LLM call this run (see on_chat_model_end)
-        run_cache_read_tokens = 0
-        run_output_tokens = 0
+        # Projects LangGraph events into SSE chunks and accumulates what is
+        # persisted (answer text, reasoning steps, token usage). Seeded from the
+        # StreamRecord below when resuming a paused run.
+        projector = StreamProjector(
+            lambda chunk: stream_manager.append_chunk(stream_id, chunk),
+            starting_chunk_index=starting_chunk_index,
+        )
+        last_flush_count = 0  # projector.total_tokens at the last periodic flush
         llm_provider_value: str | None = None  # set once resolved below; visible in except blocks too
         llm_model_value: str | None = None
         llm_source_value: str | None = None
+
+        def usage_values() -> dict:
+            return dict(
+                input_tokens=projector.input_tokens,
+                cache_read_tokens=projector.cache_read_tokens,
+                output_tokens=projector.output_tokens,
+                llm_source=llm_source_value,
+                llm_provider=llm_provider_value,
+                llm_model=llm_model_value,
+            )
 
         try:
             await session.execute(
@@ -403,10 +361,7 @@ async def _run_generation(
                 # they must continue the SAME message's history across the pause
                 # boundary — the final persist below overwrites the whole
                 # Message.content / StreamRecord.reasoning, so anything from
-                # before the pause has to be seeded back in here or it's lost
-                # (confirmed: a message with a tool call before AND after a
-                # gate previously ended up with only the post-approval tool
-                # call in `reasoning`).
+                # before the pause has to be seeded back in here or it's lost.
                 prior_result = await session.execute(
                     select(
                         StreamRecord.partial_content, StreamRecord.reasoning,
@@ -416,18 +371,16 @@ async def _run_generation(
                 )
                 prior_partial, prior_reasoning_json, prior_input, prior_cache_read, prior_output = prior_result.first()
                 if prior_partial:
-                    content_tokens.append(prior_partial)
+                    projector.content_tokens.append(prior_partial)
                 if prior_reasoning_json:
                     try:
-                        reasoning_steps = json.loads(prior_reasoning_json).get("steps", [])
+                        projector.reasoning_steps = json.loads(prior_reasoning_json).get("steps", [])
                     except Exception:
                         logger.warning("Stream %s: failed to parse prior reasoning JSON on resume", stream_id)
-                # Same reasoning as content_tokens/reasoning_steps above — token
-                # usage is a true accumulator across the pause boundary too, not
-                # something a resumed invocation can freshly re-derive.
-                run_input_tokens = prior_input or 0
-                run_cache_read_tokens = prior_cache_read or 0
-                run_output_tokens = prior_output or 0
+                # Token usage is a true accumulator across the pause boundary too.
+                projector.input_tokens = prior_input or 0
+                projector.cache_read_tokens = prior_cache_read or 0
+                projector.output_tokens = prior_output or 0
 
             agent_result = await session.execute(
                 select(Agent).where(Agent.id == agent_id, Agent.is_active == True)
@@ -436,8 +389,7 @@ async def _run_generation(
             if not agent_record:
                 raise ValueError("Agent not found or was deleted")
 
-            llm_resolution = await resolve_llm_for_agent(session, agent_record)
-            llm = llm_resolution.llm
+            llm_resolution = await resolve_llm_for_agent(session, agent_record, enable_thinking)
             # Unlike tokens/reasoning, provider/model/source don't need
             # resume-seeding — agent_record.llm_model_id can't change mid-run,
             # so every invocation (initial or resumed) re-derives the identical
@@ -446,7 +398,13 @@ async def _run_generation(
             llm_model_value = llm_resolution.model
             llm_source_value = llm_resolution.llm_source
             checkpointer = get_checkpointer()
-            graph = await build_agent_graph(session, agent_record, llm, checkpointer)
+            built = await build_agent(
+                session, agent_record, llm_resolution.llm, checkpointer,
+                enable_thinking=enable_thinking, native_reasoning=llm_resolution.native_reasoning,
+                is_interactive=is_interactive,
+            )
+            graph = built.graph
+            projector.sub_agent_names = built.sub_agent_names
 
             # Capture the latest checkpoint before this turn starts so that on
             # cancellation we can delete only the new (partial) checkpoints and
@@ -460,271 +418,32 @@ async def _run_generation(
 
             graph_input = (
                 Command(resume=resume_map) if resume_map is not None
-                else {
-                    "messages": [{"role": "user", "content": user_message}],
-                    "enable_thinking": enable_thinking,
-                    "is_interactive": is_interactive,
-                }
+                else {"messages": [{"role": "user", "content": user_message}]}
             )
-            # Each ReAct iteration is now two graph steps (agent + tools), so the
-            # recursion limit needs headroom for that vs. the old single-node loop.
+            # Each ReAct iteration is two graph steps (model + tools); the
+            # ModelCallLimitMiddleware is the real cap, this is a backstop.
             run_config = {
                 "configurable": {"thread_id": thread_id},
                 "recursion_limit": MAX_AGENT_ITERATIONS * 2 + 10,
             }
 
-            async for event in graph.astream_events(
-                graph_input,
-                run_config,
-                version="v2",
-            ):
-                e_kind = event["event"]
-                e_metadata = event.get("metadata", {})
-                e_node = e_metadata.get("langgraph_node", "")
-
-                # ── synthesis_start ───────────────────────────────────────────
-                if e_kind == "on_chain_start" and e_node == "synthesizer":
-                    stream_manager.append_chunk(stream_id, {
-                        "index": chunk_index,
-                        "event_type": "synthesis_start",
-                        "data": {"agents_completed": list(reasoning_tokens.keys())},
-                    })
-                    chunk_index += 1
-
-                # ── on_chat_model_stream: reasoning splitter ──────────────────
-                if e_kind == "on_chat_model_stream":
-                    run_id: str = event.get("run_id", "")
-                    token_content: str = event["data"]["chunk"].content
-                    if token_content and run_id:
-                        if run_id not in splitters:
-                            splitters[run_id] = ReasoningSplitter()
-                            reasoning_buffers[run_id] = []
-                            ns = e_metadata.get("langgraph_checkpoint_ns", "")
-                            ns_root = ns.split(":")[0] if ns else ""
-                            is_top = e_node == "agent" and (ns == "" or ns_root == "agent")
-                            splitter_is_final[run_id] = (
-                                (e_node in _FINAL_RESPONSE_NODES and e_node != "agent") or is_top
-                            )
-                            splitter_agent_labels[run_id] = ns_root or e_node
-
-                        agent_lbl = splitter_agent_labels[run_id]
-                        for sc in splitters[run_id].feed(token_content):
-                            if sc.channel == "reasoning":
-                                if sc.event == "start":
-                                    reasoning_start_times[run_id] = time.monotonic()
-                                    reasoning_agents[run_id] = agent_lbl
-                                    stream_manager.append_chunk(stream_id, {
-                                        "index": chunk_index,
-                                        "event_type": "reasoning_start",
-                                        "data": {"agent": agent_lbl},
-                                    })
-                                    chunk_index += 1
-                                elif sc.event == "end":
-                                    start_ts = reasoning_start_times.pop(run_id, None)
-                                    reasoning_agents.pop(run_id, None)
-                                    duration_ms = int((time.monotonic() - start_ts) * 1000) if start_ts else 0
-                                    step_content = "".join(reasoning_buffers[run_id])
-                                    reasoning_buffers[run_id] = []
-                                    reasoning_steps.append({
-                                        "agent": agent_lbl,
-                                        "step": "thought",
-                                        "content": step_content,
-                                        "duration_ms": duration_ms,
-                                        "truncated": sc.truncated,
-                                    })
-                                    stream_manager.append_chunk(stream_id, {
-                                        "index": chunk_index,
-                                        "event_type": "reasoning_end",
-                                        "data": {"agent": agent_lbl, "truncated": sc.truncated},
-                                    })
-                                    chunk_index += 1
-                                elif sc.text:
-                                    reasoning_buffers[run_id].append(sc.text)
-                                    reasoning_token_count += 1
-                                    stream_manager.append_chunk(stream_id, {
-                                        "index": chunk_index,
-                                        "event_type": "reasoning_token",
-                                        "data": {"content": sc.text, "agent": agent_lbl},
-                                    })
-                                    chunk_index += 1
-                            else:
-                                if sc.text:
-                                    if splitter_is_final[run_id]:
-                                        content_tokens.append(sc.text)
-                                        stream_manager.append_chunk(stream_id, {
-                                            "index": chunk_index,
-                                            "event_type": "token",
-                                            "data": {"content": sc.text},
-                                        })
-                                        chunk_index += 1
-                                    elif e_node not in _SKIP_TOKEN_NODES:
-                                        # Accumulate for agents_completed tracking only;
-                                        # reasoning trace replaces raw sub-agent token streaming.
-                                        reasoning_tokens.setdefault(agent_lbl, []).append(sc.text)
-
-                else:
-                    # ── dispatch_decision from top-level agent on_chain_end ───
-                    if (
-                        e_kind == "on_chain_end"
-                        and e_node == "agent"
-                        and e_metadata.get("langgraph_checkpoint_ns", "") == ""
-                    ):
-                        output = event.get("data", {}).get("output", {})
-                        if output.get("pending_tasks"):
-                            if content_tokens:
-                                logger.info(
-                                    "Stream %s: discarding %d leaked agent-node token(s) "
-                                    "ahead of a dispatch_to_subagents synthesis",
-                                    stream_id, len(content_tokens),
-                                )
-                            content_tokens.clear()
-
-                        for decision in (output.get("dispatch_decisions") or []):
-                            reasoning_steps.append({
-                                "agent": "agent",
-                                "step": "dispatch_decision",
-                                "target": decision.get("tool_name", ""),
-                                "reason": decision.get("reason", ""),
-                                "duration_ms": 0,
-                                "truncated": False,
-                            })
-                            stream_manager.append_chunk(stream_id, {
-                                "index": chunk_index,
-                                "event_type": "dispatch_decision",
-                                "data": {
-                                    "target": decision.get("tool_name", ""),
-                                    "reason": decision.get("reason", ""),
-                                },
-                            })
-                            chunk_index += 1
-
-                    # ── denied/skipped tool calls from tools_node on_chain_end ─
-                    # on_tool_start/on_tool_end never fire for these (the tool
-                    # itself never runs), so they're surfaced explicitly via the
-                    # node's own output instead — see graph_builder.make_tools_node.
-                    # Checked for every "tools" node regardless of nesting depth,
-                    # so a sub-agent's own denials are captured identically to the
-                    # parent agent's.
-                    if e_kind == "on_chain_end" and e_node == "tools":
-                        output = event.get("data", {}).get("output", {})
-                        _tools_ns = e_metadata.get("langgraph_checkpoint_ns", "")
-                        _tools_agent_lbl = _tool_agent_label(e_node, _tools_ns)
-                        for denied in (output.get("denied_tool_calls") or []):
-                            stream_manager.append_chunk(stream_id, {
-                                "index": chunk_index,
-                                "event_type": "tool_start",
-                                "data": {"tool_name": denied.get("tool_name", ""), "agent_name": _tools_agent_lbl},
-                            })
-                            chunk_index += 1
-                            stream_manager.append_chunk(stream_id, {
-                                "index": chunk_index,
-                                "event_type": "tool_end",
-                                "data": {
-                                    "tool_name": denied.get("tool_name", ""),
-                                    "agent_name": _tools_agent_lbl,
-                                    "output": denied.get("reason", ""),
-                                },
-                            })
-                            chunk_index += 1
-                            reasoning_steps.append({
-                                "agent": _tools_agent_lbl,
-                                "step": "tool_call",
-                                "tool_name": denied.get("tool_name", ""),
-                                "input": denied.get("input"),
-                                "output": denied.get("reason", ""),
-                                "duration_ms": 0,
-                                "truncated": False,
-                            })
-
-                    # ── tool_call steps for DB storage ────────────────────────
-                    if e_kind == "on_tool_start":
-                        _run_id = event.get("run_id", "")
-                        tool_start_times[_run_id] = time.monotonic()
-                        raw_in = event.get("data", {}).get("input")
-                        if raw_in is None:
-                            tool_inputs[_run_id] = None
-                        elif isinstance(raw_in, str):
-                            tool_inputs[_run_id] = raw_in
-                        else:
-                            try:
-                                tool_inputs[_run_id] = json.dumps(raw_in)
-                            except Exception:
-                                tool_inputs[_run_id] = str(raw_in)
-
-                    elif e_kind == "on_tool_end":
-                        _run_id = event.get("run_id", "")
-                        _start_ts = tool_start_times.pop(_run_id, None)
-                        _duration_ms = int((time.monotonic() - _start_ts) * 1000) if _start_ts else 0
-                        _output_str = _extract_tool_output(event.get("data", {}).get("output"))
-                        _ns = e_metadata.get("langgraph_checkpoint_ns", "")
-                        _agent_lbl = _tool_agent_label(e_node, _ns)
-                        reasoning_steps.append({
-                            "agent": _agent_lbl,
-                            "step": "tool_call",
-                            "tool_name": event.get("name", ""),
-                            "input": tool_inputs.pop(_run_id, None),
-                            "output": _output_str,
-                            "duration_ms": _duration_ms,
-                            "truncated": False,
-                        })
-
-                    # ── token usage for this LLM call ─────────────────────────
-                    # Fires once per actual model invocation regardless of which
-                    # graph node made it (parent agent, any sub-agent, or the
-                    # synthesizer) — usage_metadata is LangChain's own
-                    # standardized field, populated identically across OpenAI/
-                    # Anthropic/Gemini integrations, so no per-provider handling
-                    # is needed here. The separate thread-title-generation call
-                    # never appears in this stream at all (it's a plain
-                    # .ainvoke() outside the graph), so it's excluded for free.
-                    elif e_kind == "on_chat_model_end":
-                        ai_message = event.get("data", {}).get("output")
-                        usage = getattr(ai_message, "usage_metadata", None) if ai_message else None
-                        if usage:
-                            run_input_tokens += usage.get("input_tokens") or 0
-                            run_output_tokens += usage.get("output_tokens") or 0
-                            run_cache_read_tokens += (usage.get("input_token_details") or {}).get("cache_read") or 0
-
-                    # ── standard events (agent_start/end, tool_start/end) ─────
-                    for chunk in _process_event(event, chunk_index):
-                        stream_manager.append_chunk(stream_id, chunk)
-                        chunk_index += 1
+            async for event in graph.astream_events(graph_input, run_config, version="v2"):
+                projector.handle(event)
 
                 # Periodic crash-recovery flush every TOKEN_FLUSH_INTERVAL tokens.
-                # All four components are monotonically increasing so the diff
-                # never goes negative and the flush fires reliably every ~50 tokens.
-                total_tokens = (
-                    len(content_tokens)
-                    + sum(len(v) for v in reasoning_tokens.values())
-                    + len(reasoning_steps)
-                    + reasoning_token_count
-                )
-                if total_tokens - last_flush_count >= TOKEN_FLUSH_INTERVAL:
-                    # Include any in-progress (open) reasoning block as a partial step
-                    # so reconnecting clients can see live reasoning before </reasoning> arrives.
-                    steps_to_persist = reasoning_steps.copy()
-                    for rid, buf in reasoning_buffers.items():
-                        if buf:
-                            steps_to_persist.append({
-                                "agent": reasoning_agents.get(rid, ""),
-                                "step": "thought",
-                                "content": "".join(buf),
-                                "partial": True,
-                            })
+                # total_tokens is monotonically increasing so the diff never goes
+                # negative and the flush fires reliably every ~50 tokens.
+                if projector.total_tokens - last_flush_count >= TOKEN_FLUSH_INTERVAL:
+                    steps_to_persist = projector.steps_for_flush()
                     await session.execute(
                         update(StreamRecord)
                         .where(StreamRecord.id == stream_id)
                         .values(
-                            partial_content="".join(content_tokens) if content_tokens else None,
+                            partial_content="".join(projector.content_tokens) if projector.content_tokens else None,
                             reasoning=json.dumps({"steps": steps_to_persist}) if steps_to_persist else None,
-                            total_chunks=chunk_index,
-                            input_tokens=run_input_tokens,
-                            cache_read_tokens=run_cache_read_tokens,
-                            output_tokens=run_output_tokens,
-                            llm_source=llm_source_value,
-                            llm_provider=llm_provider_value,
-                            llm_model=llm_model_value,
+                            total_chunks=projector.chunk_index,
                             updated_at=utcnow(),
+                            **usage_values(),
                         )
                     )
                     # Best-effort heartbeat for the scheduler's stale-run sweep
@@ -737,95 +456,41 @@ async def _run_generation(
                         .values(heartbeat_at=utcnow())
                     )
                     await session.commit()
-                    last_flush_count = total_tokens
+                    last_flush_count = projector.total_tokens
 
-            # Flush any splitters still open after the event stream ends. The
-            # splitter always holds back up to _max_lookahead trailing chars in
-            # case they're the start of a reasoning tag, so this final flush's
-            # output must be emitted as SSE chunks too — not just accumulated
-            # into content_tokens/reasoning_steps — or the last few characters
-            # of the response never reach a live client before "done" fires.
-            for run_id, splitter in splitters.items():
-                agent_lbl = splitter_agent_labels.get(run_id, "unknown")
-                for sc in splitter.flush(generation_ended_cleanly=True):
-                    if sc.channel == "reasoning":
-                        if sc.text:
-                            reasoning_buffers.setdefault(run_id, []).append(sc.text)
-                            reasoning_token_count += 1
-                            stream_manager.append_chunk(stream_id, {
-                                "index": chunk_index,
-                                "event_type": "reasoning_token",
-                                "data": {"content": sc.text, "agent": agent_lbl},
-                            })
-                            chunk_index += 1
-                        if sc.event == "end":
-                            start_ts = reasoning_start_times.pop(run_id, None)
-                            duration_ms = int((time.monotonic() - start_ts) * 1000) if start_ts else 0
-                            step_content = "".join(reasoning_buffers.get(run_id, []))
-                            reasoning_steps.append({
-                                "agent": agent_lbl,
-                                "step": "thought",
-                                "content": step_content,
-                                "duration_ms": duration_ms,
-                                "truncated": sc.truncated,
-                            })
-                            stream_manager.append_chunk(stream_id, {
-                                "index": chunk_index,
-                                "event_type": "reasoning_end",
-                                "data": {"agent": agent_lbl, "truncated": sc.truncated},
-                            })
-                            chunk_index += 1
-                    elif sc.text and splitter_is_final.get(run_id, False):
-                        content_tokens.append(sc.text)
-                        stream_manager.append_chunk(stream_id, {
-                            "index": chunk_index,
-                            "event_type": "token",
-                            "data": {"content": sc.text},
-                        })
-                        chunk_index += 1
+            # The splitter always holds back up to _max_lookahead trailing chars
+            # in case they're the start of a reasoning tag, so this final flush's
+            # output must be emitted as SSE chunks too, or the last few
+            # characters never reach a live client before "done" fires.
+            projector.finish()
 
             # ── Paused for tool approval? ──────────────────────────────────
-            # A gated tool call raised interrupt() inside the graph — astream_events
+            # A gated tool call raised an interrupt inside the graph — astream_events
             # simply stops yielding at that point rather than raising, so this is
             # detected after the loop by checking the checkpoint for pending
             # interrupts, not via an exception.
             state_snapshot = await graph.aget_state(thread_config)
             if state_snapshot.interrupts:
-                approval_payload = {
-                    "interrupts": [
-                        {"interrupt_id": i.id, **i.value} for i in state_snapshot.interrupts
-                    ]
-                }
-                stream_manager.append_chunk(stream_id, {
-                    "index": chunk_index,
-                    "event_type": "tool_approval_required",
-                    "data": approval_payload,
-                })
-                chunk_index += 1
+                projector._emit("tool_approval_required", _approval_payload(state_snapshot.interrupts))
                 await session.execute(
                     update(StreamRecord)
                     .where(StreamRecord.id == stream_id)
                     .values(
                         status=STREAM_STATUS_AWAITING_APPROVAL,
-                        partial_content="".join(content_tokens) if content_tokens else None,
-                        reasoning=json.dumps({"steps": reasoning_steps}) if reasoning_steps else None,
-                        total_chunks=chunk_index,
-                        input_tokens=run_input_tokens,
-                        cache_read_tokens=run_cache_read_tokens,
-                        output_tokens=run_output_tokens,
-                        llm_source=llm_source_value,
-                        llm_provider=llm_provider_value,
-                        llm_model=llm_model_value,
+                        partial_content="".join(projector.content_tokens) if projector.content_tokens else None,
+                        reasoning=json.dumps({"steps": projector.reasoning_steps}) if projector.reasoning_steps else None,
+                        total_chunks=projector.chunk_index,
                         updated_at=utcnow(),
+                        **usage_values(),
                     )
                 )
                 await session.commit()
                 stream_manager.signal_done(stream_id)
                 paused_for_approval = True
-                logger.info("Stream %s paused for tool approval (%d chunks)", stream_id, chunk_index)
+                logger.info("Stream %s paused for tool approval (%d chunks)", stream_id, projector.chunk_index)
                 return
 
-            full_content = "".join(content_tokens)
+            full_content = "".join(projector.content_tokens)
             if not full_content:
                 raise ValueError("Agent returned no response")
 
@@ -858,22 +523,13 @@ async def _run_generation(
 
             # thread_title must be emitted BEFORE done — SSE consumers stop on done
             if generated_title:
-                stream_manager.append_chunk(stream_id, {
-                    "index": chunk_index,
-                    "event_type": "thread_title",
-                    "data": {"title": generated_title},
-                })
-                chunk_index += 1
+                projector._emit("thread_title", {"title": generated_title})
 
-            done_chunk = {
-                "index": chunk_index,
-                "event_type": "done",
-                "data": {"message_id": assistant_msg.id, "total_chunks": chunk_index},
-            }
-            stream_manager.append_chunk(stream_id, done_chunk)
+            projector._emit("done", {"message_id": assistant_msg.id, "total_chunks": projector.chunk_index})
 
             cost_usd = _compute_cost_usd(
-                llm_provider_value, llm_model_value, run_input_tokens, run_cache_read_tokens, run_output_tokens,
+                llm_provider_value, llm_model_value,
+                projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
             )
             await session.execute(
                 update(StreamRecord)
@@ -882,51 +538,30 @@ async def _run_generation(
                     status=STREAM_STATUS_COMPLETED,
                     assistant_message_id=assistant_msg.id,
                     partial_content=None,
-                    reasoning=json.dumps({"steps": reasoning_steps}) if reasoning_steps else None,
-                    total_chunks=chunk_index,
-                    input_tokens=run_input_tokens,
-                    cache_read_tokens=run_cache_read_tokens,
-                    output_tokens=run_output_tokens,
+                    reasoning=json.dumps({"steps": projector.reasoning_steps}) if projector.reasoning_steps else None,
+                    total_chunks=projector.chunk_index,
                     cost_usd=cost_usd,
-                    llm_source=llm_source_value,
-                    llm_provider=llm_provider_value,
-                    llm_model=llm_model_value,
                     completed_at=utcnow(),
                     updated_at=utcnow(),
+                    **usage_values(),
                 )
             )
             await session.commit()  # title update + StreamRecord COMPLETED in one transaction
             stream_manager.signal_done(stream_id)
-            logger.info("Stream %s completed (%d chunks)", stream_id, chunk_index)
+            logger.info("Stream %s completed (%d chunks)", stream_id, projector.chunk_index)
 
         except asyncio.CancelledError:
             logger.info("Stream %s cancelled", stream_id)
             try:
                 await session.rollback()
-                # Flush open splitters to close any pending reasoning blocks
-                for run_id, splitter in splitters.items():
-                    agent_lbl = splitter_agent_labels.get(run_id, "unknown")
-                    for sc in splitter.flush(generation_ended_cleanly=False):
-                        if sc.channel == "reasoning":
-                            if sc.text:
-                                reasoning_buffers.setdefault(run_id, []).append(sc.text)
-                            if sc.event == "end":
-                                start_ts = reasoning_start_times.pop(run_id, None)
-                                duration_ms = int((time.monotonic() - start_ts) * 1000) if start_ts else 0
-                                step_content = "".join(reasoning_buffers.get(run_id, []))
-                                reasoning_steps.append({
-                                    "agent": agent_lbl,
-                                    "step": "thought",
-                                    "content": step_content,
-                                    "duration_ms": duration_ms,
-                                    "truncated": True,
-                                })
-                partial_text = "".join(content_tokens)
+                # Close any pending reasoning blocks
+                projector.abort()
+                partial_text = "".join(projector.content_tokens)
                 stream_values: dict = {"status": STREAM_STATUS_CANCELLED, "updated_at": utcnow()}
 
-                if partial_text or reasoning_steps:
+                if partial_text or projector.reasoning_steps:
                     # Create an assistant message so get_messages can attach reasoning.
-                    # content may be empty string when cancelled before synthesizer started.
+                    # content may be empty string when cancelled before the final answer started.
                     partial_msg = Message(
                         thread_id=thread_id,
                         role="assistant",
@@ -938,19 +573,15 @@ async def _run_generation(
                     stream_values["assistant_message_id"] = partial_msg.id
                     stream_values["partial_content"] = None
 
-                if reasoning_steps:
-                    stream_values["reasoning"] = json.dumps({"steps": reasoning_steps})
+                if projector.reasoning_steps:
+                    stream_values["reasoning"] = json.dumps({"steps": projector.reasoning_steps})
 
                 # A cancelled run still consumed real tokens up to the point of
                 # cancellation — record and cost them, don't discard.
-                stream_values["input_tokens"] = run_input_tokens
-                stream_values["cache_read_tokens"] = run_cache_read_tokens
-                stream_values["output_tokens"] = run_output_tokens
-                stream_values["llm_source"] = llm_source_value
-                stream_values["llm_provider"] = llm_provider_value
-                stream_values["llm_model"] = llm_model_value
+                stream_values.update(usage_values())
                 stream_values["cost_usd"] = _compute_cost_usd(
-                    llm_provider_value, llm_model_value, run_input_tokens, run_cache_read_tokens, run_output_tokens,
+                    llm_provider_value, llm_model_value,
+                    projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
                 )
 
                 await session.execute(
@@ -967,10 +598,7 @@ async def _run_generation(
                 await delete_checkpoints_after(thread_id, last_good_checkpoint_id)
             except Exception:
                 pass
-            stream_manager.append_chunk(stream_id, {
-                "index": chunk_index, "event_type": "error",
-                "data": {"message": "Stream cancelled", "code": "cancelled"},
-            })
+            projector._emit("error", {"message": "Stream cancelled", "code": "cancelled"})
             stream_manager.signal_done(stream_id)
             raise
 
@@ -1004,26 +632,18 @@ async def _run_generation(
                     .values(
                         status=STREAM_STATUS_FAILED,
                         error_message=error_msg,
-                        input_tokens=run_input_tokens,
-                        cache_read_tokens=run_cache_read_tokens,
-                        output_tokens=run_output_tokens,
-                        llm_source=llm_source_value,
-                        llm_provider=llm_provider_value,
-                        llm_model=llm_model_value,
                         cost_usd=_compute_cost_usd(
                             llm_provider_value, llm_model_value,
-                            run_input_tokens, run_cache_read_tokens, run_output_tokens,
+                            projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
                         ),
                         updated_at=utcnow(),
+                        **usage_values(),
                     )
                 )
                 await session.commit()
             except Exception:
                 pass
-            stream_manager.append_chunk(stream_id, {
-                "index": chunk_index, "event_type": "error",
-                "data": {"message": error_msg, "code": error_code},
-            })
+            projector._emit("error", {"message": error_msg, "code": error_code})
             stream_manager.signal_done(stream_id)
 
         finally:
@@ -1151,9 +771,8 @@ class ChatService:
         rather than trusting the client's tool_call_id/tool_name pairing, so a
         forged or stale request can't approve a call that isn't really pending.
         "Always Allow" flips MCPTool.permission_state to 'allowed' — a global
-        change, since permission is per-tool, not per-agent — and invalidates
-        the compiled-graph cache for every agent (and sub-agent's parent) that
-        uses this tool, not just the one that triggered the prompt.
+        change, since permission is per-tool, not per-agent — taking effect from
+        the next turn for every agent that uses the tool.
 
         Args:
             session: Active async database session.
@@ -1188,7 +807,7 @@ class ChatService:
             if not pending_by_id:
                 raise ValueError("No pending tool approval — it may have already been resolved")
 
-            resume_map: dict[str, dict[str, str]] = {}
+            resume_map: dict[str, dict] = {}
             always_allow_tool_ids: set[str] = set()
 
             for group in request.approvals:
@@ -1196,16 +815,25 @@ class ChatService:
                 if interrupt_value is None:
                     raise ValueError(f"Interrupt '{group.interrupt_id}' is not pending")
 
-                gated_calls = {tc["tool_call_id"]: tc["tool_id"] for tc in interrupt_value["tool_calls"]}
-                decision_by_call_id = {d.tool_call_id: d.decision for d in group.decisions}
+                actions = interrupt_value["action_requests"]
+                if len(group.decisions) != len(actions):
+                    raise ValueError(
+                        f"Interrupt '{group.interrupt_id}' needs {len(actions)} decision(s), "
+                        f"got {len(group.decisions)}"
+                    )
 
-                resolved: dict[str, str] = {}
-                for tool_call_id, tool_id in gated_calls.items():
-                    decision = decision_by_call_id.get(tool_call_id, "deny")
-                    resolved[tool_call_id] = "deny" if decision == "deny" else "allow"
-                    if decision == "always_allow" and tool_id:
-                        always_allow_tool_ids.add(tool_id)
-                resume_map[group.interrupt_id] = resolved
+                resolved: list[dict] = []
+                for action, decision in zip(actions, group.decisions):
+                    if decision.type == "approve":
+                        resolved.append({"type": "approve"})
+                        if decision.always_allow and action.get("tool_id"):
+                            always_allow_tool_ids.add(action["tool_id"])
+                    else:
+                        reject: dict = {"type": "reject"}
+                        if decision.message:
+                            reject["message"] = decision.message
+                        resolved.append(reject)
+                resume_map[group.interrupt_id] = {"decisions": resolved}
 
             if always_allow_tool_ids:
                 from utils.mcp_client import set_tool_permission_in_registry
@@ -1216,19 +844,20 @@ class ChatService:
                     .values(permission_state="allowed", updated_at=utcnow())
                 )
                 await session.commit()
-
-                affected_agent_ids: set[str] = set()
+                # Permission is per-tool, not per-agent, so it applies from the
+                # next turn to every agent that uses the tool; graphs are built
+                # per request, so there is nothing to invalidate.
                 for tool_id in always_allow_tool_ids:
-                    affected_agent_ids.update(set_tool_permission_in_registry(tool_id, "allowed"))
-
-                if affected_agent_ids:
-                    parent_result = await session.execute(
-                        select(Agent.id, Agent.parent_id).where(Agent.id.in_(affected_agent_ids))
-                    )
-                    for aid, parent_id in parent_result.all():
-                        invalidate_graph_cache(parent_id or aid)
+                    set_tool_permission_in_registry(tool_id, "allowed")
             else:
                 await session.commit()
+
+            thinking_result = await session.execute(
+                select(User.thinking_enabled).where(User.id == user_id, User.is_active == True)
+            )
+            enable_thinking = thinking_result.scalar_one_or_none()
+            if enable_thinking is None:
+                enable_thinking = True
         except Exception:
             # Nothing has resumed the graph yet at this point (that only
             # happens inside the _run_generation task created below) — safe
@@ -1250,6 +879,7 @@ class ChatService:
                 thread_id=thread.id,
                 agent_id=thread.agent_id,
                 user_message="",
+                enable_thinking=enable_thinking,
                 resume_map=resume_map,
                 starting_chunk_index=stream_record.total_chunks,
             )
@@ -1294,7 +924,7 @@ class ChatService:
             return None
         if not interrupts:
             return None
-        return {"interrupts": [{"interrupt_id": i.id, **i.value} for i in interrupts]}
+        return _approval_payload(interrupts)
 
     async def deny_all_pending_approvals(
         self, session: AsyncSession, stream_id: str, user_id: str
@@ -1335,7 +965,13 @@ class ChatService:
         if not interrupts:
             raise ValueError("This stream has no pending tool approval")
         deny_all = ToolApprovalRequest(
-            approvals=[ToolApprovalGroup(interrupt_id=i.id, decisions=[]) for i in interrupts]
+            approvals=[
+                ToolApprovalGroup(
+                    interrupt_id=i.id,
+                    decisions=[ToolApprovalDecision(type="reject") for _ in i.value["action_requests"]],
+                )
+                for i in interrupts
+            ]
         )
         return await self.resolve_tool_approvals(session, stream_id, user_id, deny_all)
 

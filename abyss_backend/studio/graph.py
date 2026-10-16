@@ -1,9 +1,9 @@
 """LangGraph Studio entrypoint for Abyss.
 
 Uses the context-manager graph pattern so Studio receives the *actual* compiled
-per-agent graph (agent → sub-agents → synthesizer) for each assistant,
-making the real node structure visible in the Studio UI instead of a generic
-wrapper node.
+per-agent `create_agent` graph (model ⇄ tools, with sub-agents as tools) for
+each assistant, so the real structure is visible in the Studio UI instead of a
+generic wrapper node.
 
 How it works
 ------------
@@ -30,10 +30,11 @@ from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, StateGraph
+from langchain.agents import create_agent
 from sqlalchemy import select
 
 from config import config
+from abyss_agents.factory import PARENT_AGENT_NAME, build_agent
 from database.models import Agent, AgentTool, MCPTool
 from database.session import async_session_maker
 
@@ -57,9 +58,9 @@ def _get_llm() -> ChatOpenAI:
 
 
 # ── Studio-specific graph cache ───────────────────────────────────────────
-# Separate from graph_builder._graph_cache:
-#   - langgraph dev runs in its own process; no cache pollution of the API server
-#   - Inner graphs compiled WITHOUT checkpointer — Platform manages persistence
+# Studio-only graph cache (the API server builds graphs per request):
+#   - langgraph dev runs in its own process
+#   - Graphs compiled WITHOUT checkpointer — Platform manages persistence
 
 _studio_cache: dict[str, Any] = {}
 
@@ -67,20 +68,12 @@ _studio_cache: dict[str, Any] = {}
 def _build_skeleton_graph() -> Any:
     """Static skeleton graph for schema-introspection calls (no agent_id in config).
 
-    Matches the unified topology: agent → [sub-agents] → synthesizer → END,
-    or agent → END directly. Uses lambda stubs so it compiles without a real LLM.
+    A real `create_agent` graph with a stub model and no tools, so Studio can
+    render the model ⇄ tools topology without a DB agent.
     """
-    from utils.graph_builder import AgentState, route_from_agent
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
-    workflow = StateGraph(AgentState)
-    workflow.add_node("agent", lambda state: {"messages": [], "pending_tasks": []})
-    workflow.add_node("tools", lambda state: {"messages": []})
-    workflow.add_node("synthesizer", lambda state: {"messages": []})
-    workflow.add_edge(START, "agent")
-    workflow.add_conditional_edges("agent", route_from_agent, ["tools", END])
-    workflow.add_edge("tools", "agent")
-    workflow.add_edge("synthesizer", END)
-    return workflow.compile()
+    return create_agent(FakeListChatModel(responses=[""]), [], name=PARENT_AGENT_NAME)
 
 
 # Built at module import — zero cost at request time for schema-introspection calls
@@ -116,25 +109,13 @@ async def _ensure_tools(agent_id: str, user_id: str, session: Any) -> None:
 
 
 async def _build_studio_graph(agent_id: str) -> Any:
-    """Build and cache the inner compiled graph for *agent_id*.
+    """Build and cache the compiled graph for *agent_id*.
 
-    Mirrors graph_builder.build_agent_graph but:
-      - Uses _studio_cache so the API server's _graph_cache is untouched
+    Same construction as the API server (abyss_agents.factory.build_agent) but:
+      - Uses _studio_cache — `langgraph dev` runs in its own process
       - Compiles WITHOUT a checkpointer (Platform injects its own)
-      - Always builds as StateGraph with the unified agent node topology
       - Loads MCP tools directly from the DB before building
     """
-    from utils.graph_builder import (
-        AgentState,
-        make_agent_node,
-        make_sub_agent_node,
-        make_synthesizer_node,
-        make_tools_node,
-        route_from_agent,
-        to_tool_name,
-    )
-    from utils.mcp_client import get_tool_permissions_for_agent, get_tools_for_agent
-
     async with async_session_maker() as session:
         result = await session.execute(
             select(Agent).where(Agent.id == agent_id, Agent.is_active == True)
@@ -143,70 +124,20 @@ async def _build_studio_graph(agent_id: str) -> Any:
         if not agent_record:
             raise ValueError(f"Agent {agent_id!r} not found or inactive")
 
-        llm = _get_llm()
         user_id = agent_record.user_id
 
-        # Load tools for parent agent
+        # Load tools for the parent agent and each sub-agent
         await _ensure_tools(agent_id, user_id, session)
-
-        # Load sub-agents
         subs_result = await session.execute(
             select(Agent).where(Agent.parent_id == agent_id, Agent.is_active == True)
         )
-        sub_agents = subs_result.scalars().all()
-
-        # Load tools for each sub-agent
-        for sub in sub_agents:
+        for sub in subs_result.scalars().all():
             await _ensure_tools(str(sub.id), user_id, session)
 
-    sub_agent_options = [
-        {
-            "sub_id": str(sub.id),
-            "tool_name": to_tool_name(sub.name),
-            "tool_description": sub.description or sub.name,
-            "system_prompt": sub.system_prompt,
-        }
-        for sub in sub_agents
-    ]
-    sub_agent_names = [opt["tool_name"] for opt in sub_agent_options]
-    parent_tools = get_tools_for_agent(agent_id)
-    parent_permissions = get_tool_permissions_for_agent(agent_id)
+        built = await build_agent(session, agent_record, _get_llm(), None)
 
-    workflow = StateGraph(AgentState)
-    workflow.add_node(
-        "agent",
-        make_agent_node(llm, agent_record.system_prompt, parent_tools, sub_agent_options),
-    )
-    workflow.add_node("tools", make_tools_node(parent_tools, parent_permissions, agent_id))
-    workflow.add_node(
-        "synthesizer",
-        make_synthesizer_node(llm, agent_record.system_prompt),
-    )
-    for opt in sub_agent_options:
-        child_tools = get_tools_for_agent(opt["sub_id"])
-        child_permissions = get_tool_permissions_for_agent(opt["sub_id"])
-        workflow.add_node(
-            opt["tool_name"],
-            make_sub_agent_node(
-                llm, opt["system_prompt"], child_tools, opt["tool_name"], opt["sub_id"],
-                child_permissions, None,
-            ),
-        )
-
-    workflow.add_edge(START, "agent")
-    workflow.add_conditional_edges("agent", route_from_agent, sub_agent_names + ["tools", END])
-    workflow.add_edge("tools", "agent")
-    for name in sub_agent_names:
-        workflow.add_edge(name, "synthesizer")
-    workflow.add_edge("synthesizer", END)
-
-    # No checkpointer — LangGraph Platform injects its own. Passing None as
-    # make_sub_agent_node's checkpointer means a gated tool inside a
-    # dispatched sub-agent will still pause via interrupt(), but Platform (not
-    # our AsyncPostgresSaver) owns whatever persistence resuming it needs.
-    compiled = workflow.compile()
-    _studio_cache[agent_id] = compiled
-    return compiled
+    _studio_cache[agent_id] = built.graph
+    return built.graph
 
 
 # ── Startup lifespan ──────────────────────────────────────────────────────
@@ -248,7 +179,7 @@ async def lifespan(app: Any):
 # ── Context-manager graph factory ─────────────────────────────────────────
 # LangGraph Platform calls get_graph(config) for each assistant.
 # Yielding the actual compiled per-agent graph means Studio sees and visualises
-# the real supervisor / sub-agent / synthesizer topology — not a generic wrapper.
+# the real agent / sub-agent-tool topology — not a generic wrapper.
 
 @asynccontextmanager
 async def get_graph(config: RunnableConfig):

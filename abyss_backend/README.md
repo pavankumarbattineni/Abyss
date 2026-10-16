@@ -50,11 +50,12 @@ FastAPI (async) — single gunicorn worker (uvicorn.workers.UvicornWorker, -w 1)
 
 Background Task (_run_generation)
   │
-  └── LangGraph StateGraph
-        ├── agent node        (custom ReAct loop; decides to respond directly, delegate,
-        │                      or pause on a gated tool via LangGraph interrupt())
-        ├── sub-agent nodes   (create_react_agent, dispatched in parallel via Send API)
-        └── synthesizer node  (aggregates sub-agent results → final response)
+  └── LangChain create_agent graph (built per request — abyss_agents/factory.py)
+        ├── model ⇄ tools loop (the agent's MCP tools + one tool per sub-agent; pauses on
+        │                       a gated tool via HumanInTheLoopMiddleware)
+        └── sub-agent tools    (each a create_agent of its own, called in parallel when the
+                                parent emits several tool calls; results go back to the
+                                parent, which writes the final response)
       Every on_chat_model_end event's usage_metadata is accumulated into
       input/output/cache-read token counts; cost is computed via LiteLLM's
       local pricing table once the run reaches a terminal state.
@@ -77,7 +78,7 @@ Persistence
 In-Memory (single process — see "Why a single worker" in Key Design Decisions)
   ├── stream_manager  (_chunk_buffers, _sse_queues, _running_tasks)
   ├── mcp_client      (_agent_tool_registry, _active_mcp_clients)
-  └── graph_builder   (_graph_cache — LRU, capped at GRAPH_CACHE_MAX_SIZE)
+  (agent graphs are built per request — no graph cache to invalidate)
 ```
 
 **Single worker note:** the app currently runs with exactly one gunicorn worker (`gunicorn_starter.sh: -w 1`). This is a deliberate simplification while the app is still in active development — the in-memory stream buffers, SSE queues, and scheduler tick loop are all per-process state, so a single worker guarantees every request and every scheduled trigger is seen consistently without cross-process coordination. Scaling to multiple workers/instances later needs either a shared broker (Redis) for stream chunk fan-out and scheduler leader election, or a Postgres advisory lock around the scheduler tick — see [Key Design Decisions](#key-design-decisions).
@@ -101,6 +102,13 @@ thinkloop-backend/
 │
 ├── USER_GUIDE.txt               # End-user, step-by-step guide (keep in sync with the starter agent's prompt)
 │
+├── abyss_agents/
+│   ├── factory.py               # build_agent(): parent + sub-agents as create_agent graphs, middleware stack
+│   ├── middleware.py            # Tool-result handling, approval (HITL) + unattended skip, sub-agent call limit
+│   ├── subagent.py              # Sub-agent wrapped as a tool (timeout, final-message-only result)
+│   ├── prompts.py               # System-prompt text builders (formatting, behavior, reasoning, delegation)
+│   └── naming.py                # to_tool_name(): agent name → tool / lc_agent_name identifier
+│
 ├── routers/
 │   ├── auth.py                  # POST /auth/signup (also provisions the starter agent), /signin,
 │   │                               /refresh, /signout, /me, /settings, /forgot-password, /reset-password
@@ -121,6 +129,7 @@ thinkloop-backend/
 │   ├── schedule_service.py      # Schedule CRUD, dedup-signature + next_run_at calendar math
 │   ├── thread_service.py        # Thread lifecycle + checkpointer cleanup
 │   ├── chat_service.py          # Non-blocking send + background generation + LLM resolution (default/BYOK)
+│   ├── stream_projector.py      # LangGraph astream_events → SSE chunks + persisted answer/reasoning/usage
 │   │                               + tool-approval interrupt handling + token/cost capture
 │   ├── mcp_service.py           # MCP connection management + tool sync + permission_state updates
 │   └── usage_service.py         # Filtered/paginated usage queries, CSV export, account-wide summary
@@ -141,11 +150,11 @@ thinkloop-backend/
 │   ├── middleware.py            # setup_middleware: CORS, error handler wiring
 │   └── error_handler.py         # Global exception → JSON error response (ValueError → 422)
 │
+├── tests/                       # Scripted-model tests (middleware unit tests + end-to-end flow on local Postgres)
+│
 └── utils/
     ├── auth.py                  # get_current_user, get_current_user_sse, get_current_user_flexible
     ├── encryption.py             # Fernet encrypt/decrypt for MCP API keys and BYOK credentials
-    ├── graph_builder.py          # LangGraph StateGraph builder, LRU graph cache, LLM retry wrapper,
-    │                               shared tool-result/permission-denial prompt instructions
     ├── reasoning_splitter.py      # Stateful <reasoning> tag splitter for token streams
     ├── scheduler.py               # Background tick loop: reconcile + fire due schedules
     ├── jwt.py                    # JWT encode/decode, expiry constants
@@ -263,64 +272,57 @@ schedule_runs
 ### Graph topology
 
 ```
-START
+parent agent  (create_agent, name="agent")
   │
-  ▼
-agent ──(no pending_tasks)──────────────────────────────► END
-  │                                                        ▲
-  │ (pending_tasks set by dispatch_to_subagents)           │
-  ▼                                                        │
-Send(sub_agent_1, task_1) ──────────────┐                 │
-Send(sub_agent_2, task_2) ──────────────┤  parallel       │
-Send(sub_agent_N, task_N) ──────────────┘                 │
-  │                                                        │
-  ▼ (all sub-agents converge)                              │
-synthesizer ────────────────────────────────────────────► END
+  model ◄──────────────┐
+  │                    │
+  ├─ no tool calls ──► END   (final answer)
+  │
+  └─ tool calls ──► tools ──┘
+                      ├─ MCP tool            (gated ones pause for approval first)
+                      └─ <sub_agent_name>    (a create_agent of its own; several may run in parallel)
+                             model ⇄ tools → its final message is the tool result
 ```
 
 ### Step-by-step
 
-1. **Agent node** receives the conversation and runs a custom ReAct loop (max `MAX_AGENT_ITERATIONS` turns).
-   - The node has access to all assigned MCP tools plus, when sub-agents are configured, a synthetic `dispatch_to_subagents` tool.
-   - Every response — direct answer, tool call, or dispatch — must begin with a `<reasoning>...</reasoning>` block as plain text content before any tool call (enforced via the `REASONING_INSTRUCTION` system-prompt rules; see [Reasoning & Streaming Architecture](#reasoning--streaming-architecture)).
-   - **No dispatch** (responds directly or uses own tools) → returns an `AIMessage`, graph routes to `END`.
-   - **Dispatches** → intercepts the `dispatch_to_subagents` call before execution, extracts the `targets` list into `pending_tasks`, stores a clean `AIMessage` (no `tool_calls`) in state, then graph fans out via `Send`.
+1. **Parent agent** (`abyss_agents/factory.py`) runs the standard `create_agent` model ⇄ tools loop. Its tools are its assigned MCP tools plus one tool per active sub-agent (named with `abyss_agents.naming.to_tool_name`, described by the sub-agent's description). Up to `MAX_SUB_AGENTS_PER_AGENT` (5) sub-agents per agent.
+   - Every response must begin with a `<reasoning>...</reasoning>` block as plain text before any tool call (see [Reasoning & Streaming Architecture](#reasoning--streaming-architecture)).
+   - **No tool calls** → the response is the final answer.
+   - **Tool calls** → MCP tools and sub-agent tools run (in parallel when emitted together); the results come back to the parent, which then writes the single final response. There is no separate synthesizer node: the parent's prompt tells it to integrate the results and never mention delegation.
 
-2. **Sub-agent nodes** each run an independent `create_react_agent` ReAct loop with their own system prompt, MCP tools, and the same reasoning-block requirement. Each is wrapped in `asyncio.wait_for(..., timeout=SUB_AGENT_TIMEOUT_SECONDS)` (default 900s / 15 minutes). Sub-agents are dispatched in parallel (max `MAX_PARALLEL_TASKS`, default 5).
+2. **Sub-agents** are `create_agent` graphs with their own system prompt, MCP tools and the same reasoning-block requirement, wrapped as tools by `abyss_agents/subagent.py`. They are stateless per call (they see only the `task`/`context` the parent wrote) and return only their final message — with any `<reasoning>` block stripped. Each call is wrapped in `asyncio.wait_for(..., timeout=SUB_AGENT_TIMEOUT_SECONDS)` (default 900s). They inherit the parent's checkpointer and run config, so an approval pause inside a sub-agent surfaces on the parent thread and resumes in place.
 
-3. **Synthesizer node** collects all sub-agent `AIMessage` results and the full conversation history, then calls the LLM once more to produce a single coherent final response within the parent agent's configured persona. It never reasons or dispatches — its output is always the final answer.
+3. **Middleware** (`abyss_agents/factory.py`, `abyss_agents/middleware.py`) supplies everything around the loop: tool-result normalization and error handling, tool approval (interactive runs) or auto-skip (unattended runs), the per-turn sub-agent call limit, model retries, the model-call limit, and — on the parent — summarization of long threads.
 
 ### Transient-network retry
 
-`utils/graph_builder.py`'s `_ainvoke_with_retry()` wraps the two side-effect-free LLM calls — the main agent's per-turn call and the synthesizer's call — with up to `LLM_CALL_MAX_RETRIES` (default 2) retries on transient connection errors (`anyio.BrokenResourceError`, `httpx` connection/read/write errors, etc.), with a linear backoff of `LLM_CALL_RETRY_BACKOFF_SECONDS` per attempt. The sub-agent's internal ReAct loop is deliberately **not** retried the same way — its `create_react_agent` loop may have already executed a non-idempotent MCP tool (e.g. `push_prompt`, `create_dataset`) before a transient failure; blindly retrying the whole loop risks duplicating that side effect. Instead, a transient failure there is caught and surfaced as a graceful per-task failure message, leaving the top-level agent free to decide whether to re-dispatch.
+`ModelRetryMiddleware` retries a failed **model call** up to `LLM_CALL_MAX_RETRIES` (default 2) times on transient connection errors (`anyio.BrokenResourceError`, `httpx` connection/read/write errors, etc.), with `LLM_CALL_RETRY_BACKOFF_SECONDS` between attempts. **Tools are never retried**, and a whole sub-agent is never re-run: it may already have executed a non-idempotent MCP tool (e.g. `push_prompt`, `create_dataset`) before the failure. A transient failure inside a sub-agent is returned to the parent as a short failure message, and the parent decides whether to call it again.
 
-### dispatch_to_subagents tool schema
+### Long threads
+
+`SummarizationMiddleware` on the parent condenses older messages once the thread reaches `SUMMARIZATION_TRIGGER_FRACTION` of the model's context window or `SUMMARIZATION_TRIGGER_TOKENS`, keeping the last `SUMMARIZATION_KEEP_MESSAGES` messages. Only the checkpoint state is condensed; the chat UI reads history from the `messages` table.
+
+### Sub-agent tool schema
 
 ```python
-class _DispatchTarget(BaseModel):
-    tool_name: str        # exact snake_case node name from the available sub-agent list
+class SubAgentInput(BaseModel):
     task: str             # complete, self-contained task description with all context
     context: str = ""     # additional conversation context this sub-agent needs (optional)
-    reason: str            # why this sub-agent was chosen and what result is expected
-
-class _DispatchInput(BaseModel):
-    targets: list[_DispatchTarget]   # max MAX_PARALLEL_TASKS (default 5)
 ```
 
 ### Safety guarantees
 
 | Guarantee | Mechanism |
 |---|---|
-| No hallucinated sub-agents | `valid_sub_agent_names` filter strips any target not in the configured set |
-| Parallel task cap | `[:MAX_PARALLEL_TASKS]` slice (default 5) |
+| Sub-agent count cap | `MAX_SUB_AGENTS_PER_AGENT` (5), enforced by the request schema and `add_sub_agent` |
+| Parallel sub-agent cap | `SubAgentCallLimitMiddleware`: calls beyond `MAX_PARALLEL_TASKS` (5) in one turn are rejected with an explanatory tool message the model can re-plan from |
 | Sub-agent timeout | `asyncio.wait_for(..., timeout=SUB_AGENT_TIMEOUT_SECONDS)` (default 900s) |
-| Transient LLM failure recovery | `_ainvoke_with_retry()` on the two safe call sites; graceful failure message for the sub-agent loop instead of a blind retry |
-| Clean checkpointer state | Dispatch branch stores `AIMessage(content=...)` without `tool_calls` — prevents OpenAI 400 errors on subsequent turns |
-| Corrupted history recovery | Agent node sanitizes persisted history: any `AIMessage` with unpaired `tool_calls` has them stripped before LLM invocation |
-| Graph cache consistency | `invalidate_graph_cache(agent_id)` on every agent/sub-agent/MCP-tool change that affects a compiled graph |
-| One active stream per thread | Active PENDING/RUNNING check before accepting a new message |
-| Concurrent graph builds | Per-agent `asyncio.Lock` with double-check pattern |
-| Bounded graph cache | `_LRUGraphCache` evicts least-recently-used entry (+ its build lock) when `GRAPH_CACHE_MAX_SIZE` (default 100) is reached |
+| Runaway loops | `ModelCallLimitMiddleware` on the parent (`MAX_AGENT_ITERATIONS`) and on each sub-agent; `recursion_limit` as a backstop |
+| Transient LLM failure recovery | `ModelRetryMiddleware` on model calls only; graceful failure message for a sub-agent instead of a blind re-run |
+| Tool failures | `ToolResultMiddleware` turns a raised tool exception into an error tool message so the agent can adapt |
+| Stale graph config | Graphs are built per request from the current registry/DB state — nothing to invalidate |
+| One active stream per thread | Active PENDING/RUNNING/AWAITING_APPROVAL check before accepting a new message |
 
 ---
 
@@ -335,9 +337,15 @@ Token-by-token streaming over a standard HTTP `text/event-stream` response. Chos
 
 ### The `<reasoning>` tag protocol
 
-Every agent and sub-agent node is instructed (`REASONING_INSTRUCTION` in `utils/graph_builder.py`) to wrap its thinking in `<reasoning>...</reasoning>` tags before any tool call or final answer. `utils/reasoning_splitter.py`'s `ReasoningSplitter` is a stateful, per-LLM-run token splitter that watches the raw token stream for these tags and routes each token to either the `reasoning` channel or the `content` channel in real time — it holds back a small trailing buffer (`max(len("<reasoning>"), len("</reasoning>")) - 1` characters) so a tag split across two token chunks is never missed. `sanitize_for_reasoning_tags()` escapes any literal `<reasoning>`/`</reasoning>` text arriving from external sources (tool output, scraped content) before it re-enters the LLM context, so untrusted content can never hijack the split. A safety valve (`REASONING_FORCE_CLOSE_AFTER_TOKENS`, default 1200) force-closes a reasoning block if the closing tag never arrives.
+Every agent and sub-agent is instructed (`REASONING_INSTRUCTION` in `abyss_agents/prompts.py`) to wrap its thinking in `<reasoning>...</reasoning>` tags before any tool call or final answer. `utils/reasoning_splitter.py`'s `ReasoningSplitter` is a stateful, per-LLM-run token splitter that watches the raw token stream for these tags and routes each token to either the `reasoning` channel or the `content` channel in real time — it holds back a small trailing buffer (`max(len("<reasoning>"), len("</reasoning>")) - 1` characters) so a tag split across two token chunks is never missed. `sanitize_for_reasoning_tags()` escapes any literal `<reasoning>`/`</reasoning>` text arriving from external sources (tool output, scraped content) before it re-enters the LLM context, so untrusted content can never hijack the split. A safety valve (`REASONING_FORCE_CLOSE_AFTER_TOKENS`, default 1200) force-closes a reasoning block if the closing tag never arrives.
 
-Only the **synthesizer's** output, and the **top-level agent's** output when it answers directly without dispatching, are treated as final user-visible content (`token` events). A dispatching agent's post-reasoning content and every sub-agent's post-reasoning content are tracked internally (for the `synthesis_start` event's `agents_completed` list) but never streamed as `token` events — the synthesizer always produces the one final answer the user sees.
+Only the **parent agent's** model output is treated as final user-visible content (`token` events). A parent turn that only calls sub-agents has its leaked text dropped from the persisted answer, and every sub-agent's post-reasoning text is never streamed as `token` events — the parent always writes the one final answer the user sees. Which agent produced a token is read from `lc_agent_name`, which `create_agent` stamps from its `name=`.
+
+### Native provider reasoning (`provider_models.reasoning_mode`)
+
+Each catalog model has a `reasoning_mode`: `prompt` (default — the `<reasoning>` protocol above, works on any model) or `native` (the provider's own reasoning output). For a `native` model, when the user's thinking toggle is on, `utils/llm_providers.py` builds the model with the provider's reasoning enabled (OpenAI Responses API with reasoning summaries, Anthropic extended thinking, Gemini `include_thoughts`) and the prompt-based reasoning instruction is left out. The provider's `reasoning` content blocks are projected to the same `reasoning_start` / `reasoning_token` / `reasoning_end` SSE events and persisted steps, so clients cannot tell the two apart. Switch a model with a plain `UPDATE provider_models SET reasoning_mode = 'native' WHERE ...`; no model is flagged `native` by default. Existing databases need `ALTER TABLE provider_models ADD COLUMN reasoning_mode VARCHAR(10) NOT NULL DEFAULT 'prompt'` once (there is no Alembic).
+
+`services/stream_projector.py`'s `StreamProjector` is what turns LangGraph `astream_events` into these SSE events and accumulates the answer text, structured reasoning steps and token usage that `_run_generation` persists.
 
 ### Flow
 
@@ -358,13 +366,14 @@ GET /api/v1/streams/{stream_id}
 _run_generation  (background asyncio.Task, independent of HTTP lifecycle)
   → UPDATE StreamRecord status=RUNNING
   → capture pre-turn checkpoint ID (for cancellation rollback)
-  → graph.astream_events(version="v2")
-  → per on_chat_model_stream event: ReasoningSplitter routes tokens to reasoning_* or token events
-  → per on_tool_start/on_tool_end, on_chain_start/on_chain_end: agent_start/agent_end/tool_start/tool_end
+  → graph.astream_events(version="v2") → StreamProjector.handle(event) for every event:
+      on_chat_model_stream: ReasoningSplitter routes tokens to reasoning_* or token events
+      sub-agent tool on_tool_start/on_tool_end: agent_start + dispatch_decision / agent_end
+      other tools: tool_start/tool_end (also synthesized for calls that never ran — rejected or skipped)
+      first parent model turn after sub-agents returned: synthesis_start with agents_completed list
   → every TOKEN_FLUSH_INTERVAL (50) tokens: flush partial_content + structured reasoning trace to DB
-  → on synthesizer on_chain_start: emit synthesis_start with agents_completed list
   → on completion:
-      INSERT assistant Message (synthesizer or direct-response output only)
+      INSERT assistant Message (the parent agent's final answer)
       UPDATE StreamRecord status=COMPLETED, partial_content=NULL, reasoning=JSON {"steps": [...]}
   → signal_done → schedule in-memory cleanup after STREAM_CLEANUP_DELAY_SECONDS (300s)
 ```
@@ -376,7 +385,7 @@ _run_generation  (background asyncio.Task, independent of HTTP lifecycle)
 | `reasoning_start` | `agent` | A `<reasoning>` block opened for this agent/sub-agent |
 | `reasoning_token` | `content`, `agent` | Token inside an open reasoning block |
 | `reasoning_end` | `agent`, `truncated` | Reasoning block closed (`truncated=true` if force-closed by the safety valve) |
-| `token` | `content` | Final user-visible response token (synthesizer, or top-level agent answering directly) |
+| `token` | `content` | Final user-visible response token (the parent agent's answer) |
 | `agent_start` | `agent_name` | A sub-agent node started |
 | `agent_end` | `agent_name` | A sub-agent node finished |
 | `tool_start` | `tool_name`, `agent_name` | MCP tool call started |
@@ -456,13 +465,13 @@ Every MCP tool has a `permission_state`, set per tool or for every tool under a 
 
 ### Pause/resume flow
 
-1. The agent (or a sub-agent) decides to call a gated tool. Instead of executing it, the graph's tools node raises a single combined `interrupt()` carrying every gated call requested in that turn at once — this matters because more than one gated tool can be requested in parallel within the same turn, and they must all resolve together before any of them executes (no side effect happens before the interrupt is answered).
-2. `_run_generation` sees the interrupt surface through `astream_events`, marks the `StreamRecord` `AWAITING_APPROVAL`, and emits a `tool_approval_required` SSE event containing each pending `interrupt_id`/`tool_call_id`, the tool name/input, and the agent's stated reason.
-3. The client calls `POST /streams/{stream_id}/tool-approvals` with one decision per pending call:
-   - **`allow_once`** — runs it this one time only; still gated next time.
-   - **`always_allow`** — runs it now **and** flips that tool's `permission_state` to `allowed` globally (every agent, not just this one) — no more asking, anywhere.
-   - **`deny`** — the tool is skipped; the agent is told the user declined and continues without that result. The shared, tool-agnostic prompt instruction (`_tool_result_handling_instruction()` in `utils/graph_builder.py`) tells the agent to treat this as a deliberate decision, not a malfunction, and not to immediately re-request the same tool in the same response.
-4. The server re-validates every `interrupt_id`/`tool_call_id` against the graph's own Postgres checkpoint before resuming — a stale or forged request can't approve something that isn't actually pending.
+1. The agent (or a sub-agent) decides to call a gated tool. Instead of executing it, `HumanInTheLoopMiddleware` (`abyss_agents/middleware.py`'s `ToolApprovalMiddleware`) raises one combined interrupt carrying every gated call requested in that turn — more than one gated tool can be requested in parallel, and they must all resolve together before any of them executes. Parallel sub-agents each raise their own interrupt, all visible on the parent thread.
+2. `_run_generation` sees the interrupt in the checkpoint after the event stream stops, marks the `StreamRecord` `AWAITING_APPROVAL`, and emits a `tool_approval_required` SSE event with each pending interrupt in the middleware's native shape: `interrupt_id`, `action_requests` (`name`, `args`, `description`, plus our `tool_id`) and `review_configs` (`allowed_decisions`).
+3. The client calls `POST /streams/{stream_id}/tool-approvals` with one group per interrupt. A group's `decisions` are **positional** — `decisions[i]` answers `action_requests[i]`:
+   - **`{"type": "approve"}`** — runs the tool this one time; it is still gated next time.
+   - **`{"type": "approve", "always_allow": true}`** — runs it now **and** flips that tool's `permission_state` to `allowed` globally (every agent, not just this one) — no more asking, anywhere.
+   - **`{"type": "reject", "message": "..."}`** — the tool is skipped; the agent is told the user rejected it (the optional message is passed along as the reason) and continues without that result.
+4. The server re-validates every `interrupt_id` and the number of decisions against the graph's own Postgres checkpoint before resuming — a stale or forged request can't approve something that isn't actually pending.
 5. If a pending approval sits unanswered, it simply waits — there's no expiry. Cancelling the stream (`DELETE /streams/{stream_id}`) while `AWAITING_APPROVAL` denies every pending call so the interrupt resolves cleanly, then lets the agent's resulting follow-up run in the background (reconnect to see it).
 
 ### Scheduled runs are never blocked on approval
@@ -480,7 +489,7 @@ Sub-agents share the exact same interrupt-based gating as the top-level agent �
 By default every agent runs on ThinkLoop's own built-in OpenAI key and model — no setup, no cost to the user. A user can instead add their own API key for **OpenAI**, **Anthropic**, or **Google Gemini** once in Settings, then pick a model from that provider for a specific agent.
 
 - `GET /llm-credentials/catalog` (public, no auth) returns the full provider/model list from the `providers`/`provider_models` tables, used to populate the model picker before a user has even added a key.
-- `PUT /llm-credentials/{provider_id}` validates the raw key with a real call to the provider before encrypting (Fernet) and storing it, and invalidates the compiled-graph cache for every agent already configured on that provider so the very next message uses the new key.
+- `PUT /llm-credentials/{provider_id}` validates the raw key with a real call to the provider before encrypting (Fernet) and storing it; the model is resolved on every request, so the very next message uses the new key.
 - `DELETE /llm-credentials/{provider_id}` removes the credential; agents pointed at that provider either fall back to the platform default (OpenAI only) or fail with a clear error at chat time (Anthropic/Google have no platform-default fallback).
 - `resolve_llm_for_agent()` in `services/chat_service.py` is the single place that decides, per run, whether an agent uses the platform default or the user's own credential — it returns an `LlmResolution(llm, provider, model, llm_source)`, and `llm_source` (`"default"` / `"byok"`) is what ultimately gets persisted per run for [usage/cost tracking](#token-usage--cost-tracking).
 - Switching an agent's model later never affects existing conversation history.
@@ -826,7 +835,7 @@ POST /api/v1/agents
 
 - Only top-level (parent) agents can have threads. Sub-agent IDs are rejected by `POST /threads`.
 - Sub-agent structure (which sub-agents exist) is managed via `POST /sub-agents` and `DELETE /sub-agents/{id}`. `PUT /agents/{id}` updates name, description, system prompt, and tools of existing sub-agents only.
-- Deleting an agent cascades to all sub-agents and all its schedules, evicts them from the tool registry and graph cache, but retains all historical threads and messages.
+- Deleting an agent cascades to all sub-agents and all its schedules, evicts them from the tool registry, but retains all historical threads and messages.
 
 ### Schedules
 
@@ -920,18 +929,21 @@ GET /api/v1/streams/{stream_id}/status
 GET /api/v1/streams/{stream_id}/status   (when paused on a gated tool)
 → {
   "stream_id": "...", "status": "AWAITING_APPROVAL", "total_chunks": 12,
-  "pending_approval": {"pending": [
-    {"interrupt_id": "...", "tool_call_id": "...", "tool_name": "send_email",
-     "tool_input": {"to": "...", "subject": "..."}, "reason": "User asked to notify the team", "agent": "agent"}
+  "pending_approval": {"interrupts": [
+    {"interrupt_id": "...",
+     "action_requests": [{"name": "send_email", "args": {"to": "...", "subject": "..."},
+                          "description": "agent wants to use a tool that requires your approval ...",
+                          "tool_id": "..."}],
+     "review_configs": [{"action_name": "send_email", "allowed_decisions": ["approve", "reject"]}]}
   ]}
 }
 
 POST /api/v1/streams/{stream_id}/tool-approvals
-{"decisions": [{"interrupt_id": "...", "tool_call_id": "...", "decision": "allow_once"}]}
+{"approvals": [{"interrupt_id": "...", "decisions": [{"type": "approve", "always_allow": false}]}]}
 → 202 {"message_id": "...", "stream_id": "...", "status": "RUNNING"}
 ```
 
-`decision` is one of `allow_once`, `always_allow`, or `deny`. See [Tool Permissions & Human-in-the-Loop Approval](#tool-permissions--human-in-the-loop-approval) for what each one does.
+Each decision's `type` is `approve` (optionally with `always_allow`) or `reject` (optionally with a `message`); decisions are positional per interrupt. See [Tool Permissions & Human-in-the-Loop Approval](#tool-permissions--human-in-the-loop-approval) for what each one does.
 
 ### Usage & Cost
 
@@ -971,15 +983,13 @@ See [Token Usage & Cost Tracking](#token-usage--cost-tracking) for how capture a
 | Sub-agent storage | `parent_id` FK on `agents` table | Sub-agents are config rows within the same table; clean hierarchy with one self-referential FK |
 | Tool assignment | MCPTool primary-key IDs | Unambiguous; decoupled from tool name changes on the MCP server; ownership verified at write time |
 | Tool registry | In-memory `_agent_tool_registry` keyed by `agent_id` | O(1) lookup at inference time; populated at startup and on every create/update |
-| Agent dispatch mechanism | `dispatch_to_subagents` synthetic tool | The LLM calls a tool to signal delegation; the call is intercepted before execution and converted into `pending_tasks` for the routing edge — no structured output type needed |
+| Delegation mechanism | Sub-agents as ordinary tools (`create_agent` wrapped by `abyss_agents/subagent.py`) | The documented LangChain pattern: the parent calls specialists like any tool, so parallelism, tool results and approvals use the framework as-is; the parent writes the final answer from the results |
 | Reasoning enforcement | System-prompt `REASONING_INSTRUCTION` (not a code-level gate) | Every response must start with a `<reasoning>` block; kept prompt-only rather than parsing/rejecting model output, per an earlier deliberate choice to avoid brittle server-side enforcement of LLM output shape |
-| Transient LLM retry scope | Only side-effect-free call sites (`_ainvoke_with_retry`) | Retrying the sub-agent's whole ReAct loop is unsafe — it may have already run a non-idempotent tool before failing; graceful per-task failure is used there instead |
-| Dispatch message sanitization | Store `AIMessage(content=...)` without `tool_calls` | `dispatch_to_subagents` never produces a `ToolMessage`; persisting the raw response with `tool_calls` would corrupt the checkpointer and cause OpenAI 400 errors on every subsequent turn |
-| Corrupted history recovery | Agent node sanitizes `responded_ids` on every turn | Any persisted `AIMessage` with unpaired `tool_calls` has them stripped before the LLM call — backward-compatible with threads written before the sanitization was added |
-| Graph cache | `_LRUGraphCache` (OrderedDict) with explicit invalidation | Compiled graphs are expensive; LRU eviction caps memory; build lock co-evicted to prevent unbounded lock growth |
+| Transient LLM retry scope | `ModelRetryMiddleware` on model calls only | Retrying tools or a whole sub-agent is unsafe — it may have already run a non-idempotent tool before failing; a graceful failure message is used there instead |
+| Graph lifecycle | Built per request (`abyss_agents/factory.build_agent`) | Compiling is cheap and building fresh means the resolved (BYOK) model, tools, permissions and sub-agents can never be stale — there is no cache to invalidate |
+| Approval node on interactive runs | Always present, even with no gated tool | A paused run's checkpoint waits on that node; the graph rebuilt to resume it must contain it even if a permission changed meanwhile |
 | MCP API key security | Fernet encryption at rest | API keys never stored in plaintext; never returned in any API response |
 | Duplicate MCP URL prevention | Application-level check scoped to `is_active=True` | Allows re-creation after soft-delete without a DB `UniqueConstraint` |
-| Concurrent graph builds | Per-agent `asyncio.Lock` + double-check pattern | Prevents duplicate builds when multiple requests hit a cold cache simultaneously |
 | LLM instance | Module-level singleton `_get_llm()` with tuned `httpx` connection pool | Single connection pool shared across all requests; short `keepalive_expiry` reduces the odds of handing out a silently-stale pooled connection (the main practical cause of a mid-stream `BrokenResourceError`) |
 | Soft deletes | `is_active = False` throughout | Full audit trail; no data loss; consistent cascade behaviour across all models |
 | Checkpointer | `AsyncPostgresSaver` (psycopg pool) | Per-thread LangGraph conversation memory, persisted across server restarts |

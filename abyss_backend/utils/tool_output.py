@@ -9,7 +9,7 @@ def extract_tool_output(raw_out) -> str | None:
     Python repr like "content=[{'type': 'text', 'text': '...'}] name='...'
     tool_call_id='...'". This helper extracts just the meaningful text content.
 
-    Shared by the tools-execution node (graph_builder.py's make_tools_node,
+    Shared by the tools-execution node (abyss_agents/middleware.py's ToolResultMiddleware,
     which builds ToolMessages directly from raw MCP tool results for both the
     parent agent and every sub-agent) and chat_service's SSE event processing
     (which extracts from astream_events on_tool_end output) so both paths

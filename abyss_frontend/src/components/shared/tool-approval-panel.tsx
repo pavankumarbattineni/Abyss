@@ -7,6 +7,7 @@ import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type {
   StreamToolInterrupt,
+  ToolApprovalDecision,
   ToolApprovalDecisionType,
   ToolApprovalPayload,
 } from "@/types";
@@ -27,6 +28,11 @@ const DECISION_OPTIONS: {
   { value: "deny", label: "Deny", icon: Ban },
 ];
 
+function toDecision(choice: ToolApprovalDecisionType): ToolApprovalDecision {
+  if (choice === "deny") return { type: "reject" };
+  return choice === "always_allow" ? { type: "approve", always_allow: true } : { type: "approve" };
+}
+
 export function ToolApprovalPanel({
   interrupts,
   isSubmitting = false,
@@ -34,19 +40,25 @@ export function ToolApprovalPanel({
 }: ToolApprovalPanelProps) {
   const [decisions, setDecisions] = useState<Record<string, ToolApprovalDecisionType>>({});
 
+  // Decisions are positional per interrupt, so each call is keyed by interrupt id + index.
   const allToolCalls = useMemo(
-    () => interrupts.flatMap((interrupt) => interrupt.tool_calls),
+    () =>
+      interrupts.flatMap((interrupt) =>
+        interrupt.action_requests.map((action, index) => ({
+          key: `${interrupt.interrupt_id}:${index}`,
+          action,
+        })),
+      ),
     [interrupts],
   );
-  const isComplete = allToolCalls.every((toolCall) => decisions[toolCall.tool_call_id]);
+  const isComplete = allToolCalls.every(({ key }) => decisions[key]);
 
   const handleSubmit = () => {
     const approvals: ToolApprovalPayload[] = interrupts.map((interrupt) => ({
       interrupt_id: interrupt.interrupt_id,
-      decisions: interrupt.tool_calls.map((toolCall) => ({
-        tool_call_id: toolCall.tool_call_id,
-        decision: decisions[toolCall.tool_call_id],
-      })),
+      decisions: interrupt.action_requests.map((_, index) =>
+        toDecision(decisions[`${interrupt.interrupt_id}:${index}`]),
+      ),
     }));
     onSubmit(approvals);
   };
@@ -56,23 +68,23 @@ export function ToolApprovalPanel({
       <p className="text-sm font-medium text-foreground">Approval needed before continuing</p>
 
       <div className="flex flex-col gap-2.5">
-        {allToolCalls.map((toolCall) => (
+        {allToolCalls.map(({ key, action }) => (
           <div
-            key={toolCall.tool_call_id}
+            key={key}
             className="flex flex-col gap-2 rounded-lg border border-border-soft bg-surface-raised p-3"
           >
             <span className="font-mono text-xs font-medium text-foreground">
-              {toolCall.tool_name}
+              {action.name}
             </span>
-            {Object.keys(toolCall.args).length > 0 && (
+            {Object.keys(action.args).length > 0 && (
               <pre className="overflow-x-auto rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
-                {JSON.stringify(toolCall.args, null, 2)}
+                {JSON.stringify(action.args, null, 2)}
               </pre>
             )}
             <div className="flex flex-wrap gap-1.5">
               {DECISION_OPTIONS.map((option) => {
                 const Icon = option.icon;
-                const isActive = decisions[toolCall.tool_call_id] === option.value;
+                const isActive = decisions[key] === option.value;
                 return (
                   <button
                     key={option.value}
@@ -81,7 +93,7 @@ export function ToolApprovalPanel({
                     onClick={() =>
                       setDecisions((prev) => ({
                         ...prev,
-                        [toolCall.tool_call_id]: option.value,
+                        [key]: option.value,
                       }))
                     }
                     className={cn(

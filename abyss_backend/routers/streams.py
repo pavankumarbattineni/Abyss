@@ -152,14 +152,14 @@ async def resolve_tool_approvals(
 ):
     """Resolve a paused generation's pending tool-approval interrupt(s) and resume it.
 
-    The client echoes back interrupt_id/tool_call_id pairs exactly as received
-    in the tool_approval_required SSE event; the server re-validates them
+    The client echoes back each interrupt_id exactly as received in the
+    tool_approval_required SSE event, with one decision per action request; the server re-validates them
     against the graph's own checkpoint before resuming, so a stale or forged
     request can't approve something that isn't actually pending.
 
     Args:
         stream_id: The stream currently AWAITING_APPROVAL.
-        request: Per-interrupt decision groups (allow_once/always_allow/deny).
+        request: Per-interrupt decision groups (approve/approve+always_allow/reject).
         user_id: The authenticated user's ID.
         session: Async database session.
 
