@@ -17,8 +17,10 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { buildFlowchart, type Flowchart } from "@/lib/flowchart";
 import { cleanMermaidSource } from "@/lib/mermaid-source";
 import { cn } from "@/lib/utils";
+import { FlowchartCanvas } from "./flowchart-canvas";
 
 type Mermaid = typeof import("mermaid").default;
 
@@ -122,7 +124,7 @@ const ZOOM_STEP = 0.25;
 type RenderState =
   | { status: "waiting" } // answer still streaming -- source incomplete
   | { status: "rendering" }
-  | { status: "ready"; svg: string; source: string }
+  | { status: "ready"; svg: string; source: string; flow: Flowchart | null }
   | { status: "error"; message: string };
 
 interface MermaidDiagramProps {
@@ -133,7 +135,10 @@ interface MermaidDiagramProps {
   isStreaming?: boolean;
 }
 
-export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProps) {
+export function MermaidDiagram({
+  code,
+  isStreaming = false,
+}: MermaidDiagramProps) {
   const { resolvedTheme } = useTheme();
   const reactId = useId();
   const [view, setView] = useState<"diagram" | "code">("diagram");
@@ -168,7 +173,9 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
         // cleanup itself is what a valid-but-unusual diagram trips on.
         let source = cleaned;
         let parseError: unknown = null;
-        for (const candidate of cleaned === original ? [original] : [cleaned, original]) {
+        for (const candidate of cleaned === original
+          ? [original]
+          : [cleaned, original]) {
           try {
             await mermaid.parse(candidate);
             source = candidate;
@@ -189,11 +196,21 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
         const { svg } = await mermaid.render(
           renderId,
           source,
-          scratchRef.current ?? undefined
+          scratchRef.current ?? undefined,
         );
-        if (!cancelled) setState({ status: "ready", svg: atNaturalSize(svg), source });
+        // Flowcharts become an interactive canvas (drag, pan, zoom); the SVG
+        // stays for download and for every other diagram type.
+        let flow: Flowchart | null = null;
+        try {
+          flow = await buildFlowchart(mermaid, source);
+        } catch {
+          flow = null;
+        }
+        if (!cancelled)
+          setState({ status: "ready", svg: atNaturalSize(svg), source, flow });
       } catch (err) {
-        if (!cancelled) setState({ status: "error", message: summarizeError(err) });
+        if (!cancelled)
+          setState({ status: "error", message: summarizeError(err) });
       }
     })();
 
@@ -205,8 +222,10 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
   const effective: RenderState = isStreaming ? { status: "waiting" } : state;
   // Copy/download hand out the source that actually rendered, so pasting
   // it into another Mermaid tool works; otherwise the model's original.
-  const shownSource = effective.status === "ready" ? effective.source : code.trim();
+  const shownSource =
+    effective.status === "ready" ? effective.source : code.trim();
   const showCode = view === "code" || effective.status === "waiting";
+  const isFlow = effective.status === "ready" && !!effective.flow;
 
   const handleCopy = async () => {
     try {
@@ -220,7 +239,9 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
 
   const handleDownload = () => {
     if (effective.status !== "ready") return;
-    const url = URL.createObjectURL(new Blob([effective.svg], { type: "image/svg+xml" }));
+    const url = URL.createObjectURL(
+      new Blob([effective.svg], { type: "image/svg+xml" }),
+    );
     const link = document.createElement("a");
     link.href = url;
     link.download = "diagram.svg";
@@ -262,7 +283,7 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
                   "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                   active
                     ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-background hover:text-foreground"
+                    : "text-muted-foreground hover:bg-background hover:text-foreground",
                 )}
               >
                 <Icon className="size-3.5" />
@@ -302,7 +323,11 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
             title={copied ? "Copied" : "Copy Mermaid code"}
             onClick={() => void handleCopy()}
           >
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            {copied ? (
+              <Check className="size-3.5" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
           </Button>
         </div>
       </div>
@@ -331,6 +356,10 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
             Show code
           </Button>
         </div>
+      ) : effective.status === "ready" && effective.flow ? (
+        <div className="h-[28rem] bg-card">
+          <FlowchartCanvas flow={effective.flow} />
+        </div>
       ) : effective.status === "ready" ? (
         // Always shown whole: no height cap (a tall flowchart's lower rows
         // were hidden behind an inner scroll), and a diagram wider than the
@@ -355,33 +384,48 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
       )}
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
-        <DialogContent className="flex h-[85vh] max-w-[calc(100%-2rem)] flex-col gap-3 sm:max-w-5xl">
+        <DialogContent className="flex h-[90vh] max-w-[calc(100%-2rem)] flex-col gap-3 sm:max-w-[min(96vw,100rem)]">
           <div className="flex items-center gap-1 pr-8">
-            <DialogTitle className="mr-auto text-sm font-medium">Diagram</DialogTitle>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Zoom out"
-              disabled={zoom <= ZOOM_MIN}
-              onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}
-            >
-              <Minus className="size-4" />
-            </Button>
-            <span className="w-12 text-center text-xs tabular-nums text-muted-foreground">
-              {Math.round(zoom * 100)}%
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Zoom in"
-              disabled={zoom >= ZOOM_MAX}
-              onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}
-            >
-              <Plus className="size-4" />
-            </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Reset zoom" onClick={() => setZoom(1)}>
-              <RotateCcw className="size-4" />
-            </Button>
+            <DialogTitle className="mr-auto text-sm font-medium">
+              Diagram
+            </DialogTitle>
+            {!isFlow && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Zoom out"
+                  disabled={zoom <= ZOOM_MIN}
+                  onClick={() =>
+                    setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))
+                  }
+                >
+                  <Minus className="size-4" />
+                </Button>
+                <span className="w-12 text-center text-xs tabular-nums text-muted-foreground">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Zoom in"
+                  disabled={zoom >= ZOOM_MAX}
+                  onClick={() =>
+                    setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))
+                  }
+                >
+                  <Plus className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Reset zoom"
+                  onClick={() => setZoom(1)}
+                >
+                  <RotateCcw className="size-4" />
+                </Button>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon-sm"
@@ -391,17 +435,23 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
               <Download className="size-4" />
             </Button>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-card p-4">
-            <div
-              role="img"
-              aria-label="Diagram"
-              className="mx-auto w-fit"
-              style={{ zoom }}
-              dangerouslySetInnerHTML={{
-                __html: effective.status === "ready" ? effective.svg : "",
-              }}
-            />
-          </div>
+          {isFlow && effective.status === "ready" && effective.flow ? (
+            <div className="min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-card">
+              <FlowchartCanvas flow={effective.flow} fullscreen />
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-card p-4">
+              <div
+                role="img"
+                aria-label="Diagram"
+                className="mx-auto w-fit"
+                style={{ zoom }}
+                dangerouslySetInnerHTML={{
+                  __html: effective.status === "ready" ? effective.svg : "",
+                }}
+              />
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

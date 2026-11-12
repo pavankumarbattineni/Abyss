@@ -1,9 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Brain, Check, ChevronDown, Loader2, UsersRound, Wrench } from "lucide-react";
+import {
+  Brain,
+  Check,
+  ChevronDown,
+  Loader2,
+  UsersRound,
+  Wrench,
+} from "lucide-react";
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui";
 import { humanizeIdentifier, mainAgentName } from "@/lib/reasoning";
 import { cn } from "@/lib/utils";
 import type { ReasoningTrace, TimelineItem } from "@/types";
@@ -27,7 +38,11 @@ interface ReasoningPanelProps {
  * once the answer is done; while running, the summary shows what is
  * happening right now.
  */
-export function ReasoningPanel({ trace, isStreaming, agentNames = {} }: ReasoningPanelProps) {
+export function ReasoningPanel({
+  trace,
+  isStreaming,
+  agentNames = {},
+}: ReasoningPanelProps) {
   const [open, setOpen] = useState<boolean>(isStreaming);
   const wasStreamingRef = useRef<boolean>(isStreaming);
 
@@ -44,18 +59,24 @@ export function ReasoningPanel({ trace, isStreaming, agentNames = {} }: Reasonin
   const items = useMemo(
     () =>
       trace.timeline.filter(
-        (item) => !(item.kind === "thought" && !item.content.trim() && !isStreaming),
+        (item) =>
+          !(item.kind === "thought" && !item.content.trim() && !isStreaming),
       ),
     [trace.timeline, isStreaming],
   );
   if (items.length === 0 && !isStreaming) return null;
 
   const specialists = new Set(
-    trace.timeline.flatMap((item) => (item.kind === "delegation" ? [item.target] : [])),
+    trace.timeline.flatMap((item) =>
+      item.kind === "delegation" ? [item.target] : [],
+    ),
   ).size;
-  const toolCalls = trace.timeline.filter((item) => item.kind === "tool_call").length;
+  const toolCalls = trace.timeline.filter(
+    (item) => item.kind === "tool_call",
+  ).length;
   const summaryParts = [
-    specialists > 0 && `consulted ${specialists} specialist${specialists === 1 ? "" : "s"}`,
+    specialists > 0 &&
+      `consulted ${specialists} specialist${specialists === 1 ? "" : "s"}`,
     toolCalls > 0 && `${toolCalls} tool call${toolCalls === 1 ? "" : "s"}`,
   ].filter(Boolean);
   const summary = isStreaming
@@ -63,28 +84,38 @@ export function ReasoningPanel({ trace, isStreaming, agentNames = {} }: Reasonin
     : ["Reasoning", ...summaryParts].join(" · ");
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="mb-3 w-full min-w-0 font-sans">
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="mb-3 w-full min-w-0 font-sans"
+    >
       <CollapsibleTrigger
         className="group/summary flex max-w-full items-center gap-2 rounded-md py-0.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         aria-label={open ? "Hide reasoning" : "Show reasoning"}
       >
         {isStreaming ? (
-          <span className="relative flex size-2 shrink-0" aria-hidden="true">
+          <span className="relative flex size-2.5 shrink-0" aria-hidden="true">
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-highlight opacity-60" />
-            <span className="relative inline-flex size-2 rounded-full bg-highlight" />
+            <span className="relative inline-flex size-2.5 rounded-full bg-highlight" />
           </span>
         ) : (
-          <Check className="size-3.5 shrink-0 text-sage-text" aria-hidden="true" />
+          <Check
+            className="size-4 shrink-0 text-sage-text"
+            aria-hidden="true"
+          />
         )}
         <span className="truncate">{summary}</span>
         <ChevronDown
-          className={cn("size-3.5 shrink-0 transition-transform", !open && "-rotate-90")}
+          className={cn(
+            "size-4 shrink-0 transition-transform",
+            !open && "-rotate-90",
+          )}
           aria-hidden="true"
         />
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <ol className="relative mt-2 ml-2.5 flex min-w-0 flex-col gap-3 border-l border-border pl-4">
+        <ol className="relative mt-3 ml-3.5 flex min-w-0 flex-col gap-4 border-l border-border pl-5">
           {items.map((item, index) => {
             const isSpecialist = !!trace.agents[item.agent]?.isDelegated;
             const isLive =
@@ -92,7 +123,10 @@ export function ReasoningPanel({ trace, isStreaming, agentNames = {} }: Reasonin
               index === items.length - 1 &&
               trace.agents[item.agent]?.status === "running";
             return (
-              <li key={item.id} className={cn("relative min-w-0", isSpecialist && "ml-5")}>
+              <li
+                key={item.id}
+                className={cn("relative min-w-0", isSpecialist && "ml-5")}
+              >
                 <StepIcon item={item} isLive={isLive} />
                 {item.kind === "thought" && (
                   <ThoughtStep
@@ -102,7 +136,10 @@ export function ReasoningPanel({ trace, isStreaming, agentNames = {} }: Reasonin
                   />
                 )}
                 {item.kind === "delegation" && (
-                  <DelegationStep target={displayName(item.target)} task={item.task} />
+                  <DelegationStep
+                    target={displayName(item.target)}
+                    task={item.task}
+                  />
                 )}
                 {item.kind === "tool_call" && <ToolStep item={item} />}
               </li>
@@ -110,10 +147,12 @@ export function ReasoningPanel({ trace, isStreaming, agentNames = {} }: Reasonin
           })}
           {!isStreaming && specialists > 0 && (
             <li className="relative min-w-0">
-              <span className="absolute top-0.5 -left-[25px] flex size-[17px] items-center justify-center rounded-full border border-border bg-background">
-                <Check className="size-2.5 text-sage-text" aria-hidden="true" />
+              <span className="absolute -top-0.5 -left-[33px] flex size-6 items-center justify-center rounded-full border border-border bg-background">
+                <Check className="size-3.5 text-sage-text" aria-hidden="true" />
               </span>
-              <p className="text-xs text-muted-foreground">Combined the findings into the answer</p>
+              <p className="text-xs text-muted-foreground">
+                Combined the findings into the answer
+              </p>
             </li>
           )}
         </ol>
@@ -122,13 +161,18 @@ export function ReasoningPanel({ trace, isStreaming, agentNames = {} }: Reasonin
   );
 }
 
-function currentActivity(item: TimelineItem | undefined, name: (label: string) => string): string {
+function currentActivity(
+  item: TimelineItem | undefined,
+  name: (label: string) => string,
+): string {
   if (!item) return "Thinking…";
   switch (item.kind) {
     case "delegation":
       return `Asking ${name(item.target)}…`;
     case "tool_call":
-      return item.status === "running" ? `Using ${humanizeIdentifier(item.toolName)}…` : "Thinking…";
+      return item.status === "running"
+        ? `Using ${humanizeIdentifier(item.toolName)}…`
+        : "Thinking…";
     default:
       return `${name(item.agent)} is thinking…`;
   }
@@ -136,19 +180,37 @@ function currentActivity(item: TimelineItem | undefined, name: (label: string) =
 
 /** The marker on the timeline rail. */
 function StepIcon({ item, isLive }: { item: TimelineItem; isLive: boolean }) {
-  const Icon = item.kind === "thought" ? Brain : item.kind === "delegation" ? UsersRound : Wrench;
-  const running = isLive || (item.kind === "tool_call" && item.status === "running");
+  const Icon =
+    item.kind === "thought"
+      ? Brain
+      : item.kind === "delegation"
+        ? UsersRound
+        : Wrench;
+  const running =
+    isLive || (item.kind === "tool_call" && item.status === "running");
   return (
     <span
-      className="absolute top-0.5 -left-[25px] flex size-[17px] items-center justify-center rounded-full border border-border bg-background text-muted-foreground"
+      className="absolute -top-0.5 -left-[33px] flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground"
       aria-hidden="true"
     >
-      {running ? <Loader2 className="size-2.5 animate-spin" /> : <Icon className="size-2.5" />}
+      {running ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <Icon className="size-3.5" />
+      )}
     </span>
   );
 }
 
-function ThoughtStep({ who, content, isLive }: { who: string; content: string; isLive: boolean }) {
+function ThoughtStep({
+  who,
+  content,
+  isLive,
+}: {
+  who: string;
+  content: string;
+  isLive: boolean;
+}) {
   const text = content.trim();
   const isLong = text.length > LONG_THOUGHT_CHARS;
   const [expanded, setExpanded] = useState<boolean>(false);
@@ -165,13 +227,10 @@ function ThoughtStep({ who, content, isLive }: { who: string; content: string; i
         {text || "…"}
       </p>
       {isLong && !isLive && (
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          className="mt-0.5 text-xs text-sage-text hover:text-foreground"
-        >
-          {expanded ? "Show less" : "Show more"}
-        </button>
+        <ExpandToggle
+          expanded={expanded}
+          onToggle={() => setExpanded((value) => !value)}
+        />
       )}
     </div>
   );
@@ -196,15 +255,51 @@ function DelegationStep({ target, task }: { target: string; task: string }) {
         </p>
       )}
       {isLong && (
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          className="mt-0.5 text-xs text-sage-text hover:text-foreground"
-        >
-          {expanded ? "Show less" : "Show task"}
-        </button>
+        <ExpandToggle
+          expanded={expanded}
+          onToggle={() => setExpanded((value) => !value)}
+          moreLabel="Show full task"
+        />
       )}
     </div>
+  );
+}
+
+/** The expand/collapse control for clamped text and tool details: a small
+ * bordered pill with a chevron, so it reads as a button rather than as one
+ * more line of the (equally muted) reasoning text above it. */
+function ExpandToggle({
+  expanded,
+  onToggle,
+  moreLabel = "Show more",
+  lessLabel = "Show less",
+  className,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  moreLabel?: string;
+  lessLabel?: string;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className={cn(
+        "mt-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-xs font-medium text-sage-text shadow-xs transition-colors hover:border-primary hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        className,
+      )}
+    >
+      <ChevronDown
+        className={cn(
+          "size-3.5 transition-transform",
+          expanded && "rotate-180",
+        )}
+        aria-hidden="true"
+      />
+      {expanded ? lessLabel : moreLabel}
+    </button>
   );
 }
 
@@ -213,7 +308,11 @@ function formatDuration(ms: number | undefined): string | null {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
-function ToolStep({ item }: { item: Extract<TimelineItem, { kind: "tool_call" }> }) {
+function ToolStep({
+  item,
+}: {
+  item: Extract<TimelineItem, { kind: "tool_call" }>;
+}) {
   const [expanded, setExpanded] = useState<boolean>(false);
   const hasDetails = !!(item.input || item.output);
   const duration = formatDuration(item.durationMs);
@@ -222,18 +321,21 @@ function ToolStep({ item }: { item: Extract<TimelineItem, { kind: "tool_call" }>
       <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
         <span className="text-foreground">
           {item.status === "running" ? "Using " : "Used "}
-          <span className="font-medium">{humanizeIdentifier(item.toolName)}</span>
+          <span className="font-medium">
+            {humanizeIdentifier(item.toolName)}
+          </span>
         </span>
-        {duration && <span className="text-muted-foreground tabular-nums">{duration}</span>}
+        {duration && (
+          <span className="text-muted-foreground tabular-nums">{duration}</span>
+        )}
         {hasDetails && (
-          <button
-            type="button"
-            onClick={() => setExpanded((value) => !value)}
-            aria-expanded={expanded}
-            className="text-sage-text hover:text-foreground"
-          >
-            {expanded ? "Hide details" : "Details"}
-          </button>
+          <ExpandToggle
+            expanded={expanded}
+            onToggle={() => setExpanded((value) => !value)}
+            moreLabel="Details"
+            lessLabel="Hide details"
+            className="mt-0"
+          />
         )}
       </div>
       {expanded && (
