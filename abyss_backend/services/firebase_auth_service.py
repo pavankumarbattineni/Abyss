@@ -1,5 +1,6 @@
 """Map verified Firebase identities to Abyss users."""
 
+import logging
 import re
 import uuid
 
@@ -7,7 +8,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from constants import (
+    STARTER_AGENT_NAME,
+    STARTER_AGENT_SUB_AGENTS,
+    STARTER_AGENT_SYSTEM_PROMPT,
+)
 from database.models import User
+
+logger = logging.getLogger(__name__)
 
 
 def _username(email: str, display_name: str | None) -> str:
@@ -49,4 +57,33 @@ async def authenticate_firebase_user(
             return existing_user
         raise
     await session.refresh(user)
+    await _provision_starter_agent(session, user.id)
     return user
+
+
+async def _provision_starter_agent(session: AsyncSession, user_id: str) -> None:
+    """Give every new user the ready-to-use Abyss Guide (and its specialists)
+    on first sign-in, so they land in a working app rather than an empty
+    agent list. No tools and the platform-default model, so it works before
+    any MCP connection or API key exists.
+
+    Best-effort: a failure is logged and never breaks sign-in -- the user can
+    always create an agent themselves. (This was lost when sign-in moved to
+    Firebase; restored here, on the one path that creates users.)
+    """
+    from schemas.agent import AgentCreate, SubAgentCreate
+    from services.agent_service import AgentService
+
+    try:
+        await AgentService().create(
+            session,
+            user_id,
+            AgentCreate(
+                name=STARTER_AGENT_NAME,
+                system_prompt=STARTER_AGENT_SYSTEM_PROMPT,
+                sub_agents=[SubAgentCreate(**sub) for sub in STARTER_AGENT_SUB_AGENTS],
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 -- must never fail sign-in
+        logger.warning("Failed to provision starter agent for user %s: %s", user_id, exc)
+        await session.rollback()
