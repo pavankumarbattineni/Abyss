@@ -10,6 +10,7 @@ import { apiKeyService } from "@/services";
 import type { ApiKey } from "@/types";
 import { ApiKeyActions } from "./api-key-actions";
 import { GenerateApiKeyDialog } from "./generate-api-key-dialog";
+import { parseServerDate } from "@/lib/server-date";
 
 const columns: ColumnDef<ApiKey>[] = [
   {
@@ -63,7 +64,7 @@ const columns: ColumnDef<ApiKey>[] = [
       const value = getValue<string | null>();
       return (
         <span className="text-xs text-muted-foreground">
-          {value ? format(new Date(value), "MMM d, yyyy h:mm a") : "Never"}
+          {value ? format(parseServerDate(value), "MMM d, yyyy h:mm a") : "Never"}
         </span>
       );
     },
@@ -73,7 +74,7 @@ const columns: ColumnDef<ApiKey>[] = [
     header: "Created",
     cell: ({ getValue }) => (
       <span className="text-xs text-muted-foreground">
-        {format(new Date(getValue<string>()), "MMM d, yyyy")}
+        {format(parseServerDate(getValue<string>()), "MMM d, yyyy")}
       </span>
     ),
   },

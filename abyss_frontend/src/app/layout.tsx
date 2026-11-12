@@ -1,26 +1,27 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import { Geist, Geist_Mono } from "next/font/google";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { AuthProvider, QueryProvider, ThemeProvider } from "@/providers";
 import { Toaster } from "@/components/ui";
-import { cn } from "@/lib/utils";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+// Same typography as Trench, loaded straight from Google Fonts (display=swap)
+// rather than next/font/google, whose Turbopack loader can't resolve some of
+// Google's dynamic font URLs. Applied via the font-* tokens in globals.css.
+//   Inter 400/500/600        -- UI and user messages
+//   Source Serif 4 400/600   -- agent responses
+//   JetBrains Mono 400/500   -- code
+const GOOGLE_FONTS_URL =
+  "https://fonts.googleapis.com/css2" +
+  "?family=Inter:wght@400;500;600" +
+  "&family=JetBrains+Mono:wght@400;500" +
+  "&family=Source+Serif+4:wght@400;600" +
+  "&display=swap";
 
 export const metadata: Metadata = {
   title: {
-          default: "Abyss-AI",
-    template: "%s | Abyss-AI",
+    default: "Abyss",
+    template: "%s | Abyss",
   },
   description: "Intelligence without limits",
   icons: {
@@ -40,12 +41,17 @@ export default async function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn(geistSans.variable, geistMono.variable, "h-full antialiased")}
+      className="h-full antialiased"
     >
-      <body className="min-h-full flex flex-col">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href={GOOGLE_FONTS_URL} />
+      </head>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <NuqsAdapter>
           <QueryProvider>
-            <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+            <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
               <AuthProvider initialIsAuthenticated={isAuthenticated}>
                 {children}
                 <Toaster />

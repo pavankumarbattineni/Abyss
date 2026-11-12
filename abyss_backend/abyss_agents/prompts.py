@@ -87,6 +87,34 @@ _ANSWER_FORMAT = (
     "question -- no menu of offers."
 )
 
+# Rendered by the frontend (MermaidDiagram / InteractiveBlock). Parent only:
+# only the main agent writes what the user sees.
+_VISUALS = (
+    "## Diagrams and interactive views\n"
+    "- For a process, flow or architecture that is clearer as a picture, add "
+    "a Mermaid diagram in a ```mermaid block; keep labels short and quote "
+    'any containing ( ) [ ] { }, e.g. A["Parse (step 1)"].\n'
+    "- When the answer presents 3+ related numbers -- a trend, amounts across "
+    "categories, parts of a whole, progress to a target, or a calculation the "
+    "user may adjust -- add one ```trench-ui block with JSON "
+    '{"version":1,"components":[...]} instead of a Markdown table of the same '
+    'figures. Every component needs a "type": metric_cards '
+    '{"items":[{"label","value","format"?}]}; table {"columns","rows"}; '
+    'bar_chart / line_chart {"x":[...],"series":[{"name","data"}]}; pie_chart '
+    '{"items":[{"label","value"}]}; progress {"items":[{"label","value","max"}]}; '
+    'timeline {"items":[{"date","title","detail"?}]}; comparison '
+    '{"items":[{"title","points"}]}; callout {"tone":"info|warning|success",'
+    '"text"}; calculator {"inputs":[{"id","label","default","min"?,"max"?,'
+    '"options"?:[{"label","value"}]}],"outputs":[{"id"?,"label","formula"}]}. '
+    'Any component may have a "title"; "format" is number, currency (with '
+    '"currency":"USD") or percent. Formulas may use numbers, input and '
+    "earlier output ids, + - * / ^ ( ), comparisons, if(cond, a, b), min, "
+    "max, round, abs, sqrt and pow.\n"
+    "- Every number must come from the user or a tool result. For a value "
+    "computed from a formula, give a calculator rather than doing the "
+    "arithmetic yourself."
+)
+
 _SUB_AGENT_OUTPUT = (
     "## Your output\n"
     "You are doing one delegated task. Your final message goes to the main "
@@ -176,6 +204,7 @@ def build_parent_prompt(
         _PARENT_RULES,
         _TOOL_RULES,
         _ANSWER_FORMAT,
+        _VISUALS,
         REASONING_INSTRUCTION if include_reasoning else "",
         _current_time_instruction(now),
     )

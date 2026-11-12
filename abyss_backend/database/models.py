@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
@@ -6,11 +6,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.session import Base
 from constants import MCP_CONNECTION_STATUS_CONNECTED, MCP_DEFAULT_TRANSPORT, STREAM_STATUS_PENDING
 
-_IST = timezone(timedelta(hours=5, minutes=30))
-
-
 def utcnow() -> datetime:
-    return datetime.now(_IST).replace(tzinfo=None)
+    """The current time in UTC, timezone-naive -- how every timestamp column
+    is stored. The API sends these without an offset; the frontend reads a
+    zone-less timestamp as UTC (lib/server-date.ts)."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class BasicModel(Base):

@@ -18,7 +18,10 @@ import { Button, Heading, Skeleton, Textarea } from "@/components/ui";
 import { buildReasoningTrace, EMPTY_REASONING_TRACE, settleAllLanes } from "@/lib/reasoning";
 import { cn } from "@/lib/utils";
 import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalPayload } from "@/types";
+import { contentForCopy } from "@/lib/interactive";
+import { CopyButton } from "./copy-button";
 import { MarkdownContent } from "./markdown-content";
+import { RelativeTime } from "./relative-time";
 import { ReasoningPanel } from "./reasoning-panel";
 import { ToolApprovalPanel } from "./tool-approval-panel";
 
@@ -264,9 +267,15 @@ export function ChatPanel({
                     )}
                     <div
                       className={cn(
+                        "group/message flex min-w-0 flex-col gap-1",
+                        message.role === "user" ? "max-w-[75%] items-end" : "w-full items-start",
+                      )}
+                    >
+                    <div
+                      className={cn(
                         "min-w-0 wrap-break-word",
                         message.role === "user"
-                          ? "max-w-[75%] overflow-x-auto rounded-2xl rounded-tr-none bg-accent px-4 py-2.5 text-sm text-accent-foreground"
+                          ? "max-w-full overflow-x-auto rounded-2xl rounded-tr-none bg-accent px-4 py-2.5 text-sm text-accent-foreground"
                           : "w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground",
                       )}
                     >
@@ -303,6 +312,8 @@ export function ChatPanel({
                         <p className="whitespace-pre-wrap wrap-break-word">{message.content}</p>
                       )}
                     </div>
+                    <MessageMeta message={message} />
+                    </div>
                   </div>
                 ))}
 
@@ -314,7 +325,7 @@ export function ChatPanel({
                     />
                     <div className="min-w-0 w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground wrap-break-word">
                       <ReasoningPanel trace={reasoningTrace} isStreaming={true} />
-                      {streamingContent && <MarkdownContent content={streamingContent} />}
+                      {streamingContent && <MarkdownContent content={streamingContent} isStreaming />}
                       {pendingApprovals.length > 0 ? (
                         <ToolApprovalPanel
                           interrupts={pendingApprovals}
@@ -348,6 +359,37 @@ export function ChatPanel({
           {emptyHero}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Time and copy under a message, as in Trench: time then copy for the
+ * user's messages (revealed on hover/focus, always shown on touch screens),
+ * copy then time for the agent's. Copying an answer turns interactive views
+ * into readable text instead of raw JSON. */
+function MessageMeta({ message }: { message: Message }) {
+  const isUser = message.role === "user";
+  if (!message.content) {
+    return (
+      <div className="px-1 text-xs text-muted-foreground">
+        <RelativeTime value={message.created_at} />
+      </div>
+    );
+  }
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1 px-1 text-xs text-muted-foreground",
+        isUser &&
+          "opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
+      )}
+    >
+      {isUser && <RelativeTime value={message.created_at} />}
+      <CopyButton
+        label={isUser ? "Copy message" : "Copy response"}
+        text={isUser ? message.content : contentForCopy(message.content)}
+      />
+      {!isUser && <RelativeTime value={message.created_at} />}
     </div>
   );
 }
