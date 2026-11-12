@@ -6,7 +6,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ActionMenu, ConfirmDialog } from "@/components/shared";
+import { ActionMenu } from "@/components/shared/action-menu";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { threadService } from "@/services";
 import type { Thread } from "@/types";
 import { RenameThreadDialog } from "./rename-thread-dialog";

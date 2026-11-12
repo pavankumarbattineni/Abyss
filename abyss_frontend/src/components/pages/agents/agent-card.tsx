@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { AgentAvatar } from "@/components/layout";
-import { ConfirmDialog } from "@/components/shared";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Card, Heading, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { agentService } from "@/services";

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { PaginationState } from "@tanstack/react-table";
 
-import { PageHeader } from "@/components/shared";
+import { PageHeader } from "@/components/shared/page-header";
 import { Card, DataTable } from "@/components/ui";
 import { useDebounce } from "@/hooks";
 import { usageService } from "@/services";

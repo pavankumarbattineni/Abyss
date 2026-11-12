@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/shared";
+import { PageHeader } from "@/components/shared/page-header";
 import { Card, Heading, Switch } from "@/components/ui";
 import { useAuth } from "@/providers";
 import { authService } from "@/services";

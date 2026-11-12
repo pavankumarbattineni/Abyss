@@ -10,7 +10,8 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { AgentAvatar } from "@/components/layout";
-import { ChatPanel, ConfirmDialog } from "@/components/shared";
+import { ChatPanel } from "@/components/shared/chat-panel";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Skeleton } from "@/components/ui";
 import { useChatStream, useResizablePanel } from "@/hooks";
 import { cn } from "@/lib/utils";

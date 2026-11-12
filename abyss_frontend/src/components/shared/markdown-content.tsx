@@ -1,3 +1,6 @@
+"use client";
+
+import dynamic from "next/dynamic";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -8,7 +11,19 @@ import { INTERACTIVE_LANGUAGE, looksLikeInteractiveJson } from "@/lib/interactiv
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
 import { cn } from "@/lib/utils";
 import { CodeBlock, CopyableTable } from "./code-block";
-import { InteractiveBlock } from "./interactive-block";
+// Charts pull in recharts, which is large: load it only when an answer
+// actually contains an interactive block.
+const InteractiveBlock = dynamic(
+  () => import("./interactive-block").then((mod) => mod.InteractiveBlock),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="mb-3 flex h-32 items-center justify-center rounded-lg border border-border bg-card font-sans text-xs text-muted-foreground">
+        Loading view…
+      </div>
+    ),
+  },
+);
 import { MermaidDiagram } from "./mermaid-diagram";
 
 // Same renderer as Trench (minus its document citations). singleTilde off:

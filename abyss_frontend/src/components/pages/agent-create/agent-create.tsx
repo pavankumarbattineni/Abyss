@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { AgentAvatar } from "@/components/layout";
-import { ChatPanel } from "@/components/shared";
+import { ChatPanel } from "@/components/shared/chat-panel";
 import { Button } from "@/components/ui";
 import { useResizablePanel } from "@/hooks";
 import { cn } from "@/lib/utils";

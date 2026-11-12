@@ -3,7 +3,7 @@
 import { useTheme } from "next-themes";
 import { Monitor, Moon, Sun } from "lucide-react";
 
-import { PageHeader } from "@/components/shared";
+import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui";
 import { useHasMounted } from "@/hooks";
 import { cn } from "@/lib/utils";

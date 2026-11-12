@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import type { ColumnDef } from "@tanstack/react-table";
 
-import { PageHeader } from "@/components/shared";
+import { PageHeader } from "@/components/shared/page-header";
 import { Card, DataTable } from "@/components/ui";
 import { apiKeyService } from "@/services";
 import type { ApiKey } from "@/types";

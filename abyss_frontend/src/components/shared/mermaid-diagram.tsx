@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   Check,
@@ -108,16 +108,27 @@ function atNaturalSize(svg: string): string {
   });
 }
 
-/** The SVG drawn at `zoom` times its natural size, by rewriting its own
- * width/height. (CSS `zoom` on a wrapper made Chrome skip repainting parts of
- * a large diagram while scrolling, leaving blank areas and orphaned arrows.) */
-function atZoom(svg: string, zoom: number): string {
-  if (zoom === 1) return svg;
-  return svg.replace(/<svg([^>]*)>/, (_match, attrs: string) =>
-    `<svg${attrs
-      .replace(/\swidth="([\d.]+)"/, (_m, w: string) => ` width="${Math.round(Number(w) * zoom)}"`)
-      .replace(/\sheight="([\d.]+)"/, (_m, h: string) => ` height="${Math.round(Number(h) * zoom)}"`)}>`,
-  );
+/** Grows a rendered diagram's frame (viewBox, width, height) to everything
+ * it actually drew, then sizes it at `zoom`. Mermaid frames the diagram with
+ * text measured while drawing; when the browser then renders text larger
+ * (a minimum font size, a page-altering extension), labels and nodes spilled
+ * past the frame and were clipped -- and clipped content never produces a
+ * scrollbar. Never crops: the frame only grows. */
+function fitToContent(svg: SVGSVGElement, zoom: number): void {
+  const box = svg.getBBox();
+  if (!box.width || !box.height) return;
+  const pad = 8;
+  const [vx = 0, vy = 0, vw = 0, vh = 0] = (svg.getAttribute("viewBox") ?? "")
+    .trim()
+    .split(/\s+/)
+    .map(Number);
+  const x = Math.min(vx, box.x - pad);
+  const y = Math.min(vy, box.y - pad);
+  const width = Math.max(vx + vw, box.x + box.width + pad) - x;
+  const height = Math.max(vy + vh, box.y + box.height + pad) - y;
+  svg.setAttribute("viewBox", `${x} ${y} ${width} ${height}`);
+  svg.setAttribute("width", String(Math.ceil(width * zoom)));
+  svg.setAttribute("height", String(Math.ceil(height * zoom)));
 }
 
 /** First line of a Mermaid parse error, which is the human-readable part
@@ -154,6 +165,8 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
   const [expanded, setExpanded] = useState(false);
   const [zoom, setZoom] = useState(1);
   const scratchRef = useRef<HTMLDivElement>(null);
+  const inlineRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isStreaming) return;
@@ -176,6 +189,12 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
           // Flat style: Mermaid 12's default "neo" look adds a fixed
           // light-grey drop shadow that glows on the dark theme.
           look: "classic",
+          // Labels as SVG <text>, not HTML in <foreignObject>: HTML labels
+          // were measured before layout settled (clipped text), and some
+          // browsers/extensions failed to paint them in large diagrams,
+          // leaving edges pointing at empty space.
+          htmlLabels: false,
+          flowchart: { htmlLabels: false },
           theme: "base",
           themeVariables: appThemeVariables(resolvedTheme === "dark"),
         });
@@ -219,6 +238,27 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
   }, [code, isStreaming, resolvedTheme, reactId]);
 
   const effective: RenderState = isStreaming ? { status: "waiting" } : state;
+  const readySvg = effective.status === "ready" ? effective.svg : null;
+
+  // Fit each displayed copy to what the browser actually drew (see
+  // fitToContent). DOM-only: the SVG markup itself stays as Mermaid made it.
+  useLayoutEffect(() => {
+    const svg = inlineRef.current?.querySelector("svg");
+    if (svg) fitToContent(svg, 1);
+  }, [readySvg, view]);
+  useLayoutEffect(() => {
+    if (!expanded) return;
+    const fit = () => {
+      const svg = dialogRef.current?.querySelector("svg");
+      if (svg) fitToContent(svg, zoom);
+      return !!svg;
+    };
+    // The dialog's content can mount a frame after it opens.
+    if (!fit()) {
+      const frame = requestAnimationFrame(fit);
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [readySvg, expanded, zoom]);
   // Copy/download hand out the source that actually rendered, so pasting
   // it into another Mermaid tool works; otherwise the model's original.
   const shownSource = effective.status === "ready" ? effective.source : code.trim();
@@ -236,7 +276,12 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
 
   const handleDownload = () => {
     if (effective.status !== "ready") return;
-    const url = URL.createObjectURL(new Blob([effective.svg], { type: "image/svg+xml" }));
+    // The on-screen copy, so the download carries the corrected frame.
+    const shown = inlineRef.current?.querySelector("svg");
+    const markup = shown
+      ? new XMLSerializer().serializeToString(shown)
+      : effective.svg;
+    const url = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = "diagram.svg";
@@ -352,6 +397,7 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
         // (mx-auto centers narrow ones without clipping wide ones).
         <div className="max-h-[32rem] overflow-auto bg-card p-4">
           <button
+            ref={inlineRef}
             type="button"
             onClick={openExpanded}
             aria-label="Open diagram full size"
@@ -406,11 +452,12 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
           </div>
           <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-card p-4">
             <div
+              ref={dialogRef}
               role="img"
               aria-label="Diagram"
               className="mx-auto w-fit [&>svg]:block"
               dangerouslySetInnerHTML={{
-                __html: effective.status === "ready" ? atZoom(effective.svg, zoom) : "",
+                __html: effective.status === "ready" ? effective.svg : "",
               }}
             />
           </div>

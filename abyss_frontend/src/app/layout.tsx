@@ -43,7 +43,9 @@ export default async function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link rel="stylesheet" href={GOOGLE_FONTS_URL} />
+        {/* Browser extensions (e.g. rtrvr.ai) tag this link before React
+            hydrates; that attribute difference is harmless. */}
+        <link rel="stylesheet" href={GOOGLE_FONTS_URL} suppressHydrationWarning />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <NuqsAdapter>
