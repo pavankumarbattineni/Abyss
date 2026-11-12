@@ -8,6 +8,12 @@ export interface StreamAgentEndEvent {
   data: { agent_name: string };
 }
 
+/** The main agent handed a task to a specialist (a sub-agent). */
+export interface StreamDispatchDecisionEvent {
+  type: "dispatch_decision";
+  data: { target: string; reason: string };
+}
+
 export interface StreamToolStartEvent {
   type: "tool_start";
   data: { tool_name: string; agent_name: string };
@@ -87,6 +93,7 @@ export interface StreamToolApprovalRequiredEvent {
 export type StreamEvent = { id: string } & (
   | StreamAgentStartEvent
   | StreamAgentEndEvent
+  | StreamDispatchDecisionEvent
   | StreamToolStartEvent
   | StreamToolEndEvent
   | StreamReasoningStartEvent
@@ -154,7 +161,16 @@ export interface ReasoningToolCallStep {
   truncated: boolean;
 }
 
-export type ReasoningStep = ReasoningThoughtStep | ReasoningToolCallStep;
+export interface ReasoningDispatchStep {
+  agent: string;
+  step: "dispatch_decision";
+  target: string;
+  reason: string;
+  duration_ms: number;
+  truncated: boolean;
+}
+
+export type ReasoningStep = ReasoningThoughtStep | ReasoningToolCallStep | ReasoningDispatchStep;
 
 export interface ReasoningLog {
   steps: ReasoningStep[];

@@ -332,14 +332,17 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
           </Button>
         </div>
       ) : effective.status === "ready" ? (
-        // Natural size; a diagram wider than the column scrolls sideways
-        // (mx-auto centers narrow ones without clipping wide ones).
-        <div className="max-h-[32rem] overflow-auto bg-card p-4">
+        // Always shown whole: no height cap (a tall flowchart's lower rows
+        // were hidden behind an inner scroll), and a diagram wider than the
+        // column scales down to fit it, keeping its proportions. Clicking
+        // opens it full size for detail.
+        <div className="bg-card p-4">
           <button
             type="button"
             onClick={openExpanded}
             aria-label="Open diagram full size"
-            className="mx-auto block w-fit cursor-zoom-in rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            title="Open full size"
+            className="mx-auto block max-w-full cursor-zoom-in rounded focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&>svg]:h-auto [&>svg]:max-w-full"
             // Mermaid's own output, rendered with securityLevel "strict"
             // (sanitized, no scripts or click handlers).
             dangerouslySetInnerHTML={{ __html: effective.svg }}

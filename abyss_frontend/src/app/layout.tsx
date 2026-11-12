@@ -24,9 +24,6 @@ export const metadata: Metadata = {
     template: "%s | Abyss",
   },
   description: "Intelligence without limits",
-  icons: {
-    icon: [{ url: "/favicon.ico?v=2", type: "image/png" }],
-  },
 };
 
 export default async function RootLayout({

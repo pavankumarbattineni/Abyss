@@ -15,7 +15,7 @@ import { toast } from "sonner";
 
 import { AgentAvatar } from "@/components/layout";
 import { Button, Heading, Skeleton, Textarea } from "@/components/ui";
-import { buildReasoningTrace, EMPTY_REASONING_TRACE, settleAllLanes } from "@/lib/reasoning";
+import { buildReasoningTrace, EMPTY_REASONING_TRACE, settleAllLanes, toToolName } from "@/lib/reasoning";
 import { cn } from "@/lib/utils";
 import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalPayload } from "@/types";
 import { contentForCopy } from "@/lib/interactive";
@@ -186,6 +186,13 @@ export function ChatPanel({
     </div>
   );
 
+  // Stream labels -> the names the user gave: the main agent streams as
+  // "agent", each specialist as its tool name (see lib/reasoning toToolName).
+  const agentNames: Record<string, string> = Object.fromEntries([
+    ["agent", agent?.name ?? "Agent"],
+    ...(agent?.sub_agents ?? []).map((sub) => [toToolName(sub.name), sub.name]),
+  ]);
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {showHeader && (
@@ -288,11 +295,12 @@ export function ChatPanel({
                                 "succeeded",
                               )}
                               isStreaming={false}
+                              agentNames={agentNames}
                             />
                           ) : (
                             !isStreaming &&
                             index === messages.length - 1 && (
-                              <ReasoningPanel trace={reasoningTrace} isStreaming={false} />
+                              <ReasoningPanel trace={reasoningTrace} isStreaming={false} agentNames={agentNames} />
                             )
                           )}
                           {message.content && <MarkdownContent content={message.content} />}
@@ -324,7 +332,7 @@ export function ChatPanel({
                       className="size-8 shrink-0 text-xs"
                     />
                     <div className="min-w-0 w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground wrap-break-word">
-                      <ReasoningPanel trace={reasoningTrace} isStreaming={true} />
+                      <ReasoningPanel trace={reasoningTrace} isStreaming={true} agentNames={agentNames} />
                       {streamingContent && <MarkdownContent content={streamingContent} isStreaming />}
                       {pendingApprovals.length > 0 ? (
                         <ToolApprovalPanel

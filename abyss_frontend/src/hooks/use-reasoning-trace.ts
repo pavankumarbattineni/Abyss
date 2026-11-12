@@ -3,14 +3,16 @@
 import { useReducer } from "react";
 
 import {
+  addDelegation,
   appendThoughtContent,
   buildReasoningTrace,
   EMPTY_REASONING_TRACE,
   endToolCallSegment,
+  mainAgentName,
   settleAllLanes,
   startThoughtSegment,
   startToolCallSegment,
-  updateLane,
+  updateAgent,
 } from "@/lib/reasoning";
 import type { ReasoningStep, ReasoningTrace, StreamEvent } from "@/types";
 
@@ -31,16 +33,15 @@ function reasoningReducer(trace: ReasoningTrace, action: ReasoningAction): Reaso
       return buildReasoningTrace(action.steps);
 
     case "agent_start":
-      return updateLane(trace, action.data.agent_name, (lane) => ({
-        ...lane,
-        isDelegated: true,
-      }));
+      return updateAgent(trace, action.data.agent_name, (run) => ({ ...run, isDelegated: true }));
 
     case "agent_end":
-      return updateLane(trace, action.data.agent_name, (lane) => ({
-        ...lane,
-        status: "succeeded",
-      }));
+      return updateAgent(trace, action.data.agent_name, (run) => ({ ...run, status: "succeeded" }));
+
+    // The main agent handed a task to a specialist (sent right after that
+    // specialist's agent_start).
+    case "dispatch_decision":
+      return addDelegation(trace, mainAgentName(trace), action.data.target, action.data.reason);
 
     // A delegated sub-agent can run through several reasoning_start/…_token/…_end segments
     // interleaved with tool calls before its agent_end (see the market_screening_price_analyst
@@ -57,8 +58,8 @@ function reasoningReducer(trace: ReasoningTrace, action: ReasoningAction): Reaso
       return appendThoughtContent(trace, action.data.agent, action.data.content);
 
     case "reasoning_end":
-      return updateLane(trace, action.data.agent, (lane) =>
-        lane.isDelegated ? lane : { ...lane, status: "succeeded" },
+      return updateAgent(trace, action.data.agent, (run) =>
+        run.isDelegated ? run : { ...run, status: "succeeded" },
       );
 
     case "tool_start":

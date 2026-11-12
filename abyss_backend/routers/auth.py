@@ -59,9 +59,14 @@ async def me(
         The public user profile.
 
     Raises:
-        HTTPException: If the access token is missing or invalid.
+        HTTPException: 401 if the access token is missing or invalid, or its
+            user no longer exists -- 401 is what makes the client sign out
+            (a 422 left a deleted account stuck half-signed-in).
     """
-    return await oauth_service.me(session, user_id)
+    try:
+        return await oauth_service.me(session, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
 
 @router.patch("/setting", response_model=UserResponse)

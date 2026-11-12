@@ -121,7 +121,7 @@ export function ThreadSidebar({
                         className="flex max-w-64 flex-col items-start gap-0.5 break-words"
                       >
                         <span>{thread.title || "Untitled thread"}</span>
-                        <RelativeTime value={thread.created_at} className="opacity-70" />
+                        <RelativeTime value={thread.created_at} className="text-background/75" />
                       </TooltipContent>
                     </Tooltip>
                     <div className="shrink-0 opacity-0 group-hover:opacity-100">
