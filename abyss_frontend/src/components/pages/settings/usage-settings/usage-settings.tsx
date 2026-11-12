@@ -49,7 +49,7 @@ const columns: ColumnDef<UsageRun>[] = [
     cell: ({ row }) => (
       <Link
         href={`/agents/${row.original.agent_id}/threads/${row.original.thread_id}`}
-        className="font-medium text-primary hover:underline"
+        className="font-medium text-sage-text hover:text-foreground hover:underline"
       >
         {row.original.agent_name}
       </Link>
@@ -66,7 +66,7 @@ const columns: ColumnDef<UsageRun>[] = [
     cell: ({ row }) => {
       const { provider, model } = row.original;
       const label = [provider, model].filter(Boolean).join(" / ");
-      return <span className="text-xs text-muted-foreground">{label || "—"}</span>;
+      return <span className="text-xs whitespace-nowrap text-muted-foreground">{label || "—"}</span>;
     },
   },
   {

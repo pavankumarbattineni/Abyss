@@ -40,7 +40,7 @@ export const ActionMenu = ({ items }: ActionMenuProps) => {
               className={
                 item.variant === "destructive"
                   ? "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
-                  : "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-primary/5 hover:text-primary disabled:pointer-events-none disabled:opacity-50"
+                  : "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
               }
             >
               <Icon className="size-3.5 shrink-0" />

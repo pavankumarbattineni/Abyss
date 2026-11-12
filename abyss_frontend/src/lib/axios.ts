@@ -95,7 +95,7 @@ api.interceptors.response.use(
       }
 
       clearAuthTokens();
-      window.location.href = "/auth/login";
+      window.location.href = "/home";
     }
 
     return Promise.reject(error);

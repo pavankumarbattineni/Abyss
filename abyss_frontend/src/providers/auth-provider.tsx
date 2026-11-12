@@ -46,7 +46,7 @@ export function AuthProvider({ children, initialIsAuthenticated }: AuthProviderP
 
   useEffect(() => {
     if (!isAuthenticated && pathname !== "/" && pathname !== "/home" && !pathname?.startsWith("/auth")) {
-      router.replace("/auth/login");
+      router.replace("/home");
     }
   }, [isAuthenticated, pathname, router]);
 

@@ -66,8 +66,8 @@ export const AgentCreatePage = () => {
     mutationFn: () =>
       agentService.createAgent({
         name: draftAgent.name,
-        description: draftAgent.description,
-        system_prompt: draftAgent.system_prompt,
+        description: draftAgent.description ?? "",
+        system_prompt: draftAgent.system_prompt ?? "",
         tools: selectedTools.map((tool) => tool.id),
         sub_agents: subAgents.map((subAgent) => ({
           name: subAgent.name,

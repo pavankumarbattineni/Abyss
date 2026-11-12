@@ -10,7 +10,6 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^1.1.5",
     "@hookform/resolvers": "^5.4.0",
     "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-table": "^8.21.3",

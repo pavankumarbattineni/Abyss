@@ -17,6 +17,12 @@ class AgentService {
     return data;
   }
 
+  /** Suggested first questions; only the Abyss Guide has any. */
+  async getSampleQuestions(id: string): Promise<string[]> {
+    const { data } = await api.get<{ questions: string[] }>(`/agents/${id}/sample-questions`);
+    return data.questions;
+  }
+
   async updateAgent(id: string, payload: AgentUpdateRequest): Promise<Agent> {
     const { data } = await api.put<Agent>(`/agents/${id}`, payload);
     return data;

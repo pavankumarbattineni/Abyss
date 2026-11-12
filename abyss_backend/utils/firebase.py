@@ -37,6 +37,8 @@ def initialize_firebase() -> None:
 async def verify_firebase_token(id_token: str) -> dict:
     initialize_firebase()
     try:
-        return await asyncio.to_thread(auth.verify_id_token, id_token)
+        # A few seconds of leeway: a server clock slightly behind Google's
+        # otherwise rejects a just-issued token as "used too early".
+        return await asyncio.to_thread(auth.verify_id_token, id_token, clock_skew_seconds=10)
     except (auth.ExpiredIdTokenError, auth.InvalidIdTokenError, auth.RevokedIdTokenError) as exc:
         raise ValueError("Invalid or expired Firebase token") from exc

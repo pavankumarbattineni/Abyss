@@ -98,8 +98,8 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
     if (agent && !hasSeeded.current) {
       form.reset({
         name: agent.name,
-        description: agent.description,
-        system_prompt: agent.system_prompt,
+        description: agent.description ?? "",
+        system_prompt: agent.system_prompt ?? "",
       });
       setSubAgents(agent.sub_agents);
       setSelectedTools(agent.tools);
@@ -151,8 +151,8 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
       );
       form.reset({
         name: updatedAgent.name,
-        description: updatedAgent.description,
-        system_prompt: updatedAgent.system_prompt,
+        description: updatedAgent.description ?? "",
+        system_prompt: updatedAgent.system_prompt ?? "",
       });
       setSubAgents(updatedAgent.sub_agents);
       setSelectedTools(updatedAgent.tools);

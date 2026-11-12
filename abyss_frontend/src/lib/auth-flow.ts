@@ -11,9 +11,11 @@ import { firebaseAuth, googleProvider } from "@/lib/firebase";
  * state instead of leaving the browser half signed-in (Firebase-authenticated but without an Abyss
  * session).
  */
-export async function exchangeFirebaseUser(user: User) {
+export async function exchangeFirebaseUser(user: User, forceRefresh = false) {
   try {
-    return await authService.loginWithFirebase(await user.getIdToken());
+    // forceRefresh: a profile change (e.g. the display name set at sign-up)
+    // only reaches the ID token's claims once it is re-issued.
+    return await authService.loginWithFirebase(await user.getIdToken(forceRefresh));
   } catch (error) {
     await firebaseAuth.signOut().catch(() => undefined);
     throw error;
@@ -63,20 +65,35 @@ export function getAuthFeedback(error: unknown, fallback: string): AuthFeedback 
         level: "error",
         message: "Your browser blocked the Google window. Allow pop-ups for this site and try again.",
       };
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return { level: "error", message: "The email or password is incorrect." };
+    case "auth/invalid-email":
+      return { level: "error", message: "That email address isn't valid." };
+    case "auth/user-disabled":
+      return { level: "error", message: "This account has been disabled. Contact an administrator." };
+    case "auth/email-already-in-use":
+      return { level: "error", message: "An account with this email already exists. Sign in instead." };
+    case "auth/weak-password":
+      return { level: "error", message: "Choose a stronger password (at least 8 characters)." };
+    case "auth/too-many-requests":
+      return { level: "error", message: "Too many attempts. Wait a few minutes and try again." };
     case "auth/account-exists-with-different-credential":
       return {
         level: "error",
         message: "This email is already registered with a different sign-in method. Use your email and password instead.",
       };
     case "auth/unauthorized-domain":
+      return { level: "error", message: "Sign-in isn't enabled for this address. Contact an administrator." };
+    case "auth/operation-not-allowed":
+      // Also what Firebase returns when email/password sign-in is switched off.
       return {
         level: "error",
-        message: "Google sign-in isn't enabled for this address. Contact an administrator.",
+        message: "This sign-in method isn't enabled for Abyss. Use another method or contact an administrator.",
       };
-    case "auth/operation-not-allowed":
-      return { level: "error", message: "Google sign-in isn't enabled for this app. Contact an administrator." };
     case "auth/network-request-failed":
-      return { level: "error", message: "Unable to reach Google. Check your connection and try again." };
+      return { level: "error", message: "Can't reach the sign-in service. Check your connection and try again." };
     default:
       return { level: "error", message: fallback };
   }

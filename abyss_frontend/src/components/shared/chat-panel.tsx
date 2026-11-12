@@ -11,6 +11,7 @@ import {
   Pencil,
   Square,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { AgentAvatar } from "@/components/layout";
@@ -19,6 +20,7 @@ import { buildReasoningTrace, EMPTY_REASONING_TRACE, settleAllLanes, toToolName 
 import { cn } from "@/lib/utils";
 import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalPayload } from "@/types";
 import { contentForCopy } from "@/lib/interactive";
+import { agentService } from "@/services";
 import { CopyButton } from "./copy-button";
 import { MarkdownContent } from "./markdown-content";
 import { RelativeTime } from "./relative-time";
@@ -171,6 +173,14 @@ export function ChatPanel({
     </div>
   );
 
+  const showsEmptyState = !disabled && (!hasThread || (!isMessagesLoading && messages.length === 0 && !isStreaming));
+  const { data: sampleQuestions = [] } = useQuery<string[]>({
+    queryKey: ["agents", agent?.id, "sample-questions"],
+    queryFn: () => agentService.getSampleQuestions(agent!.id),
+    enabled: !!agent?.id && showsEmptyState,
+    staleTime: Infinity,
+  });
+
   const emptyHero = (
     <div className="flex w-full flex-col items-center gap-4">
       <AgentAvatar name={agent?.name ?? "Agent"} className="size-14 text-lg" />
@@ -183,6 +193,25 @@ export function ChatPanel({
         </p>
       </div>
       {composer}
+      {sampleQuestions.length > 0 && (
+        <div className="w-full max-w-3xl text-left">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Try asking</p>
+          <ul className="flex flex-col gap-1.5">
+            {sampleQuestions.map((question) => (
+              <li key={question}>
+                <button
+                  type="button"
+                  disabled={isSending || isStreaming}
+                  onClick={() => onSendMessage?.(question)}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+                >
+                  {question}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 
@@ -194,7 +223,7 @@ export function ChatPanel({
   ]);
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {showHeader && (
         <div className="flex items-center justify-end gap-2 p-4">
           {hasThread && (

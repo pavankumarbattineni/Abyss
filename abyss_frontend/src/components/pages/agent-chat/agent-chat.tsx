@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { ChatPanel } from "@/components/shared";
-import { useChatStream, useResizablePanel } from "@/hooks";
+import { MOBILE_QUERY, useChatStream, useMediaQuery, useResizablePanel } from "@/hooks";
 import { cn } from "@/lib/utils";
 import { agentService, threadService } from "@/services";
 import type { Agent, Message } from "@/types";
@@ -28,6 +28,13 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
     enabled: !!threadId,
   });
   const [collapsed, setCollapsed] = useState<boolean>(false);
+  // Phones: the thread list starts closed and opens over the chat.
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+  const [mobileThreadsOpen, setMobileThreadsOpen] = useState<boolean>(false);
+  useEffect(() => {
+    setMobileThreadsOpen(false);
+  }, [threadId]);
+  const threadsCollapsed = isMobile ? !mobileThreadsOpen : collapsed;
   const { width, isDragging, handlePointerDown } = useResizablePanel({
     initialWidth: 380,
     minWidth: 220,
@@ -59,18 +66,30 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="relative flex h-full">
+      {isMobile && mobileThreadsOpen && (
+        <div
+          className="absolute inset-0 z-20 bg-foreground/20"
+          aria-hidden="true"
+          onClick={() => setMobileThreadsOpen(false)}
+        />
+      )}
       <ThreadSidebar
         agent={agent}
         agentId={agentId}
         isLoading={isLoading}
-        width={width}
-        collapsed={collapsed}
-        onCollapsedChange={setCollapsed}
+        width={isMobile ? 300 : width}
+        collapsed={threadsCollapsed}
+        onCollapsedChange={isMobile ? (value) => setMobileThreadsOpen(!value) : setCollapsed}
         isResizing={isDragging}
+        className={
+          isMobile && mobileThreadsOpen
+            ? "absolute inset-y-0 left-0 z-30 max-w-[85vw] border-r border-border bg-background shadow-xl"
+            : undefined
+        }
       />
 
-      {!collapsed && (
+      {!threadsCollapsed && !isMobile && (
         <div
           role="separator"
           aria-orientation="vertical"

@@ -284,15 +284,10 @@ class AgentService:
 
         return [
             "What is Abyss and how do I get started?",
-            "How does delegation between a parent agent and its sub-agents "
-            "actually work, and can multiple sub-agents run at once?",
-            "If I mark a tool as 'Requires Approval,' walk me through exactly "
-            "what happens when an agent tries to use it, and what's the "
-            "difference between Allow Once and Always Allow?",
-            "Where can I see how many tokens and how much money each agent "
-            "run cost, and can I export it?",
-            "How do I use my own OpenAI API key instead of the platform "
-            "default, and what happens to an agent if I remove that key later?",
+            "How do specialists work, and can several run at once?",
+            "What happens when an agent uses a tool that needs my approval?",
+            "Where can I see what each agent run cost?",
+            "How do I use my own OpenAI API key?",
         ]
 
     async def create(

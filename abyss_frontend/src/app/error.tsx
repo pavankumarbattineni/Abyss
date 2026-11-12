@@ -2,8 +2,8 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { AlertTriangle, RotateCcw } from "lucide-react";
 
+import { AbyssLogo, AbyssWordmark } from "@/components/layout/abyss-logo";
 import { Button } from "@/components/ui";
 
 export default function ErrorPage({
@@ -18,74 +18,32 @@ export default function ErrorPage({
   }, [error]);
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-background">
-      {/* Dot-grid background */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.035]"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle, var(--primary) 1px, transparent 1px)",
-          backgroundSize: "28px 28px",
-        }}
-      />
-
-      {/* Ambient glow */}
-      <div className="pointer-events-none absolute right-0 top-0 h-96 w-96 rounded-full bg-destructive/5 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-0 left-0 h-80 w-80 rounded-full bg-primary/4 blur-3xl" />
-
-      {/* Brand header */}
-      <header className="relative z-10 flex items-center gap-2 px-8 py-6">
-        <div
-          className="size-6 shrink-0 rounded-md"
-          style={{
-            background:
-              "conic-gradient(from 200deg, var(--primary), var(--warning), var(--primary))",
-          }}
-        />
-        <span className="font-heading text-base font-semibold tracking-tight">
-          Abyss-AI
-        </span>
+    <div className="flex min-h-dvh flex-col bg-background">
+      <header className="px-4 py-4 sm:px-6 sm:py-5">
+        <Link href="/home" aria-label="Abyss home" className="flex w-fit items-center gap-2 rounded-lg">
+          <AbyssLogo size={34} />
+          <AbyssWordmark className="text-xl" />
+        </Link>
       </header>
-
-      {/* Main content */}
-      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-8 text-center">
-        {/* Icon badge */}
-        <div className="mb-6 flex size-16 items-center justify-center rounded-2xl bg-destructive/10 ring-1 ring-destructive/20">
-          <AlertTriangle className="size-8 text-destructive" />
-        </div>
-
-        <h1 className="mb-2 text-xl font-semibold text-foreground">
-          Something went wrong
+      <main className="flex flex-1 flex-col items-center justify-center px-4 pb-16 text-center">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          This page failed to load
         </h1>
-        <p className="mb-8 max-w-sm text-sm text-muted-foreground">
-          An unexpected error occurred. You can try again or head back to your
-          workspace.
+        <p className="mt-3 max-w-sm text-muted-foreground">
+          Try again. If it keeps failing, reload the page or go back to your agents.
         </p>
-
-        {/* Error digest for support reference */}
         {error.digest && (
-          <p className="mb-6 rounded-md bg-muted px-3 py-1.5 font-mono text-xs text-muted-foreground">
+          <p className="mt-4 rounded-md bg-muted px-3 py-1.5 font-mono text-xs text-muted-foreground">
             Error ID: {error.digest}
           </p>
         )}
-
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={unstable_retry}>
-            <RotateCcw className="size-4" />
-            Try again
-          </Button>
-          <Button asChild>
-            <Link href="/agents">Go to workspace</Link>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Button onClick={unstable_retry}>Try again</Button>
+          <Button variant="outline" asChild>
+            <Link href="/agents">Go to your agents</Link>
           </Button>
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="relative z-10 px-8 py-6 text-center">
-        <p className="text-xs text-muted-foreground/50">
-          Abyss-AI · Intelligence without limits
-        </p>
-      </footer>
     </div>
   );
 }

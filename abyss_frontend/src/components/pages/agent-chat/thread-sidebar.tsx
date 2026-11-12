@@ -21,6 +21,7 @@ interface ThreadSidebarProps {
   width: number;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  className?: string;
   isResizing: boolean;
 }
 
@@ -32,6 +33,7 @@ export function ThreadSidebar({
   collapsed,
   onCollapsedChange,
   isResizing,
+  className,
 }: ThreadSidebarProps) {
   const pathname = usePathname();
 
@@ -46,6 +48,7 @@ export function ThreadSidebar({
       className={cn(
         "flex shrink-0 flex-col overflow-hidden",
         !isResizing && "transition-[width] duration-200",
+        className,
       )}
     >
       {collapsed ? (
