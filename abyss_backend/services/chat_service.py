@@ -40,6 +40,7 @@ from utils.encryption import decrypt_value
 from abyss_agents.factory import build_agent
 from services.stream_projector import StreamProjector
 from utils.llm_providers import PROVIDERS, classify_llm_error
+from utils.thread_title import TITLE_SYSTEM_PROMPT, clean_title, fallback_title, title_request
 import utils.stream_manager as stream_manager
 
 logger = logging.getLogger(__name__)
@@ -248,36 +249,27 @@ def _compute_cost_usd(
 
 
 async def _generate_thread_title(user_message: str) -> str | None:
-    """Call the LLM once to produce a short, specific thread title from the opening message.
+    """A short, specific thread title for the opening message.
 
-    Returns None on any failure so the caller can continue without a title.
+    The candidate is validated (see utils.thread_title): a reply or refusal is
+    retried once, then replaced by a title from the message's key words. Only
+    an LLM failure returns None, so the caller continues without a title.
     """
     try:
-        response = await _get_llm().ainvoke([
-            {
-                "role": "system",
-                "content": (
-                    "You are a conversation-title writer. "
-                    "Your only job is to produce a short, specific title that captures "
-                    "the exact intent of the user's message.\n\n"
-                    "Rules:\n"
-                    "- 3 to 6 words, title case\n"
-                    "- Be specific to the actual topic — never generic\n"
-                    "- Lead with the key subject or action (e.g. 'Debug Payment Webhook Timeout', "
-                    "'Summarize Q3 Sales Report', 'Draft Apology Email to Client')\n"
-                    "- Prefer noun phrases or action + object; avoid starting with 'How', 'What', 'Can', 'Please'\n"
-                    "- No filler words: 'Help', 'Question', 'Chat', 'Conversation', 'Assistance', 'Info'\n"
-                    "- No quotes, no punctuation at the end, no markdown\n"
-                    "- Output ONLY the title — nothing else"
-                ),
-            },
-            {
-                "role": "user",
-                "content": user_message[:THREAD_TITLE_INPUT_MAX_CHARS],
-            },
-        ])
-        title = response.content.strip().strip('"').strip("'")[:THREAD_TITLE_OUTPUT_MAX_CHARS]
-        return title or None
+        for retry in (False, True):
+            response = await _get_llm().ainvoke([
+                {"role": "system", "content": TITLE_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": title_request(
+                        user_message, retry=retry, max_chars=THREAD_TITLE_INPUT_MAX_CHARS
+                    ),
+                },
+            ])
+            title = clean_title(getattr(response, "text", None) or str(response.content))
+            if title:
+                return title[:THREAD_TITLE_OUTPUT_MAX_CHARS]
+        return fallback_title(user_message)[:THREAD_TITLE_OUTPUT_MAX_CHARS]
     except Exception as exc:
         logger.warning("Thread title generation failed: %s", exc)
         return None
