@@ -3,7 +3,6 @@ export * from "./api-key-service";
 export * from "./auth-service";
 export * from "./mcp-service";
 export * from "./model-service";
-export * from "./schedule-service";
 export * from "./stream-service";
 export * from "./thread-service";
 export * from "./usage-service";

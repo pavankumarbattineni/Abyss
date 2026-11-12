@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUp,
-  CalendarClock,
   CircleSlash,
   MessageCircle,
   MessageSquarePlus,
@@ -194,12 +193,6 @@ export function ChatPanel({
               New thread
             </Button>
           )}
-          <Button type="button" variant="outline" size="sm" asChild>
-            <Link href={`/agents/${agent?.id ?? ""}/schedules`}>
-              <CalendarClock className="size-3.5" />
-              Schedules
-            </Link>
-          </Button>
           <Button type="button" variant="outline" size="sm" asChild>
             <Link href={`/agents/${agent?.id ?? ""}/builder`}>
               <Pencil className="size-3.5" />

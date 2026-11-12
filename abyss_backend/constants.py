@@ -102,33 +102,6 @@ SSE_HEARTBEAT_TIMEOUT_SECONDS = 30
 # a late-connecting client's reader gets them as separate reads instead of one burst.
 SSE_REPLAY_PACING_SECONDS: float = 0.01
 
-# Agent Scheduling
-
-MAX_SCHEDULES_PER_AGENT = 10
-SCHEDULER_TICK_INTERVAL_SECONDS = 60
-SCHEDULE_ALLOWED_INTERVAL_MINUTES = (15, 30, 45, 60)
-SCHEDULE_TRIGGER_MESSAGE = "Scheduled trigger: perform your configured task now."
-
-# Max due schedules claimed and dispatched concurrently in a single tick —
-# bounds how much work one tick can start at once (e.g. many hourly schedules
-# all becoming due at the same :00 boundary), so a large fleet can't overwhelm
-# the DB pool or the LLM provider in one burst.
-SCHEDULER_DISPATCH_BATCH_SIZE = 50
-
-# A RUNNING ScheduleRun whose heartbeat (or created_at, if it never got one)
-# is older than this is considered orphaned and reclaimed by the tick-level
-# sweep — comfortably longer than the LLM http client's own 120s timeout
-# (utils/llm_providers.py), so a run this stale has almost certainly already
-# died at a lower layer without ever reaching its except handler.
-SCHEDULE_RUN_STALE_SECONDS = 300
-
-# Transient scheduled-run failures (network/LLM errors, not e.g. "agent
-# deleted") are retried with backoff instead of failing terminally. Index i
-# is the delay before retry attempt i+1; once retry_count exceeds the length
-# of this tuple, the schedule gives up and resumes its normal cadence.
-MAX_SCHEDULE_RETRY_ATTEMPTS = 3
-SCHEDULE_RETRY_BACKOFF_SECONDS = (60, 300, 900)
-
 # MCP
 
 MCP_DEFAULT_TRANSPORT = "streamable_http"

@@ -33,7 +33,7 @@ from constants import (
 from database.checkpointer import get_checkpointer
 from database.models import (
     Agent, LlmCredential, Message, MCPTool, Provider, ProviderModel,
-    ScheduleRun, StreamRecord, Thread, User, utcnow,
+    StreamRecord, Thread, User, utcnow,
 )
 from schemas.stream import StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
 from utils.encryption import decrypt_value
@@ -292,7 +292,6 @@ async def _run_generation(
     agent_id: str,
     user_message: str,
     enable_thinking: bool = True,
-    is_interactive: bool = True,
     resume_map: dict[str, dict] | None = None,
     starting_chunk_index: int = 0,
 ) -> None:
@@ -393,7 +392,6 @@ async def _run_generation(
             built = await build_agent(
                 session, agent_record, llm_resolution.llm, checkpointer,
                 enable_thinking=enable_thinking, native_reasoning=llm_resolution.native_reasoning,
-                is_interactive=is_interactive,
             )
             graph = built.graph
             projector.sub_agent_names = built.sub_agent_names
@@ -437,15 +435,6 @@ async def _run_generation(
                             updated_at=utcnow(),
                             **usage_values(),
                         )
-                    )
-                    # Best-effort heartbeat for the scheduler's stale-run sweep
-                    # (utils/scheduler.py._reclaim_stale_runs) — a no-op for
-                    # manual (non-scheduled) chat, since no ScheduleRun row
-                    # references this stream_id in that case.
-                    await session.execute(
-                        update(ScheduleRun)
-                        .where(ScheduleRun.stream_id == stream_id)
-                        .values(heartbeat_at=utcnow())
                     )
                     await session.commit()
                     last_flush_count = projector.total_tokens
@@ -659,7 +648,6 @@ class ChatService:
         thread_id: str,
         user_id: str,
         user_message: str,
-        is_interactive: bool = True,
     ) -> StreamStartResponse:
         """Validate, persist user message, create StreamRecord, start generation.
 
@@ -671,9 +659,6 @@ class ChatService:
             thread_id: The thread to send the message to.
             user_id: The authenticated user's ID.
             user_message: The raw user message text.
-            is_interactive: False for unattended runs (e.g. scheduled triggers)
-                — a gated tool call auto-denies instead of pausing for an
-                approval nobody is present to give. True for normal chat.
 
         Returns:
             StreamStartResponse with message_id, stream_id, and status="PENDING".
@@ -739,7 +724,6 @@ class ChatService:
                 agent_id=thread.agent_id,
                 user_message=user_message,
                 enable_thinking=enable_thinking,
-                is_interactive=is_interactive,
             )
         )
         stream_manager.register_task(stream_record.id, task)

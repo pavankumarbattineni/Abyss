@@ -36,10 +36,6 @@ TRANSIENT_LLM_EXCEPTIONS = (
     ConnectionError,
 )
 
-UNATTENDED_SKIP_TEMPLATE = (
-    "Skipped {name}: it requires approval and this agent ran unattended "
-    "(e.g. on a schedule), so no one was available to approve it."
-)
 
 class ToolResultMiddleware(AgentMiddleware):
     """Normalizes every tool result before it reaches the model.
@@ -72,33 +68,6 @@ class ToolResultMiddleware(AgentMiddleware):
         if isinstance(result, ToolMessage):
             result.content = sanitize_for_reasoning_tags(extract_tool_output(result) or "")
         return result
-
-
-class UnattendedToolPolicyMiddleware(AgentMiddleware):
-    """Auto-skips approval-gated tools on unattended runs (e.g. scheduled).
-
-    Nobody is present to approve, so a gated tool must never run and the run
-    must never pause on an approval nobody can give. Used *instead of*
-    HumanInTheLoopMiddleware when the run is not interactive.
-    """
-
-    def __init__(self, gated_tools: set[str]) -> None:
-        super().__init__()
-        self._gated = gated_tools
-
-    async def awrap_tool_call(
-        self,
-        request: ToolCallRequest,
-        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
-    ) -> ToolMessage | Command[Any]:
-        name = request.tool_call["name"]
-        if name in self._gated:
-            return ToolMessage(
-                content=UNATTENDED_SKIP_TEMPLATE.format(name=name),
-                tool_call_id=request.tool_call["id"],
-                name=name,
-            )
-        return await handler(request)
 
 
 class SubAgentCallLimitMiddleware(AgentMiddleware):

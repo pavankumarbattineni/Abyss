@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from constants import MAX_SUB_AGENTS_PER_AGENT, MCP_CONNECTION_STATUS_CONNECTED
 from database.models import (
-    Agent, AgentSchedule, AgentTool, LlmCredential, MCPConnection, MCPTool, Provider, ProviderModel,
+    Agent, AgentTool, LlmCredential, MCPConnection, MCPTool, Provider, ProviderModel,
 )
 from schemas.agent import AgentCreate, AgentResponse, AgentToolInfo, AgentUpdate, SubAgentCreate, SubAgentInfo
 
@@ -289,8 +289,8 @@ class AgentService:
             "If I mark a tool as 'Requires Approval,' walk me through exactly "
             "what happens when an agent tries to use it, and what's the "
             "difference between Allow Once and Always Allow?",
-            "I scheduled an agent to run every 30 minutes, and it needs to "
-            "use a tool that requires approval — what happens?",
+            "Where can I see how many tokens and how much money each agent "
+            "run cost, and can I export it?",
             "How do I use my own OpenAI API key instead of the platform "
             "default, and what happens to an agent if I remove that key later?",
         ]
@@ -810,14 +810,6 @@ class AgentService:
         await session.execute(
             update(AgentTool)
             .where(AgentTool.agent_id.in_(all_agent_ids))
-            .values(is_active=False)
-        )
-
-        # Cascade-deactivate schedules so the scheduler tick loop stops
-        # picking them up for an agent that no longer exists.
-        await session.execute(
-            update(AgentSchedule)
-            .where(AgentSchedule.agent_id.in_(all_agent_ids))
             .values(is_active=False)
         )
 

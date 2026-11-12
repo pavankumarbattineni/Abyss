@@ -15,21 +15,18 @@ from constants import (
     STREAM_STATUS_RUNNING,
 )
 from database.checkpointer import init_checkpointer, close_checkpointer
-from database.db_enums import ScheduleRunStatus
-from database.models import Base, ScheduleRun, StreamRecord, utcnow
+from database.models import Base, StreamRecord, utcnow
 from database.session import async_session_maker, engine
 from middleware.middleware import setup_middleware
 from routers.api_keys import router as api_keys_router
 from routers.auth import router as auth_router
 from routers.agents import router as agents_router
 from routers.llm_credentials import router as llm_credentials_router
-from routers.schedules import router as schedules_router
 from routers.streams import router as streams_router
 from routers.threads import router as threads_router
 from routers.mcp import router as mcp_router
 from routers.usage import router as usage_router
 from utils.mcp_client import build_agent_tool_registry
-from utils.scheduler import start_scheduler, stop_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -62,40 +59,6 @@ async def _mark_orphaned_streams() -> None:
             )
 
 
-async def _mark_orphaned_schedule_runs() -> None:
-    """On startup, mark any RUNNING ScheduleRuns as FAILED.
-
-    Mirrors _mark_orphaned_streams: these are scheduled runs whose background
-    generation task was killed when the server last stopped. The scheduler's
-    per-schedule concurrency check treats a RUNNING run as still active, so
-    without this sweep an orphaned run would permanently block that schedule.
-
-    This is defense-in-depth for the moment of restart specifically —
-    utils/scheduler.py._reclaim_stale_runs now also sweeps on every tick
-    (heartbeat-based), which is what catches a run that gets orphaned
-    mid-session rather than only at boot.
-    """
-    cutoff = utcnow() - timedelta(seconds=STREAM_ORPHAN_GRACE_SECONDS)
-    async with async_session_maker() as session:
-        result = await session.execute(
-            update(ScheduleRun)
-            .where(
-                ScheduleRun.status == ScheduleRunStatus.RUNNING,
-                ScheduleRun.created_at < cutoff,
-            )
-            .values(
-                status=ScheduleRunStatus.FAILED,
-                error_message="Server restarted during generation",
-                updated_at=utcnow(),
-            )
-        )
-        await session.commit()
-        if result.rowcount:
-            logger.warning(
-                "Marked %d orphaned schedule run(s) as FAILED on startup", result.rowcount
-            )
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -107,12 +70,9 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE users DROP COLUMN IF EXISTS firebase_uid CASCADE"))
     await init_checkpointer()
     await _mark_orphaned_streams()
-    await _mark_orphaned_schedule_runs()
     async with async_session_maker() as db:
         await build_agent_tool_registry(db)
-    await start_scheduler()
     yield
-    await stop_scheduler()
     await close_checkpointer()
 
 
@@ -132,7 +92,6 @@ app.include_router(auth_router, prefix=prefix)
 app.include_router(api_keys_router, prefix=prefix)
 app.include_router(agents_router, prefix=prefix)
 app.include_router(llm_credentials_router, prefix=prefix)
-app.include_router(schedules_router, prefix=prefix)
 app.include_router(threads_router, prefix=prefix)
 app.include_router(streams_router, prefix=prefix)
 app.include_router(mcp_router, prefix=prefix)
