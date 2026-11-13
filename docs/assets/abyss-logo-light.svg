@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="80" viewBox="0 0 300 80" role="img" aria-label="Abyss">
+  <title>Abyss</title>
+  <!-- README logo for light backgrounds: the mark on its Sage tile + the wordmark.
+       The tile keeps the same colours in both themes; only the wordmark changes. -->
+  <rect x="4" y="4" width="72" height="72" rx="19" fill="#9CAF88"/>
+  <g transform="translate(8.4 8.4) scale(1.58)">
+    <circle cx="20" cy="18.5" r="11.5" fill="none" stroke="#1D2719" stroke-width="3.6"/>
+    <circle cx="20" cy="22" r="6.4" fill="#1D2719"/>
+    <circle cx="20" cy="24.2" r="2.3" fill="#E8412C"/>
+  </g>
+  <text x="96" y="55" fill="#1D2719" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="44" font-weight="700" letter-spacing="-1">Abyss</text>
+</svg>
