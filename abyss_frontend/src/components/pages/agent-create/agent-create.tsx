@@ -50,6 +50,8 @@ export const AgentCreatePage = () => {
     defaultValues: { name: "", description: "", system_prompt: "" },
     mode: "onChange",
   });
+  // React Compiler skips memoizing watch() results; re-rendering on each edit is intended here.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const values = form.watch();
 
   const draftAgent: Agent = {

@@ -36,6 +36,7 @@ from database.models import (
     StreamRecord, Thread, User, utcnow,
 )
 from schemas.stream import StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
+from utils.pricing import compute_cost_usd
 from utils.encryption import decrypt_value
 from abyss_agents.factory import build_agent
 from services.stream_projector import StreamProjector
@@ -57,13 +58,6 @@ if _langsmith_cfg.get("tracing_enabled", False):
     if _langsmith_cfg.get("project"):
         os.environ["LANGCHAIN_PROJECT"] = _langsmith_cfg["project"]
 
-# Must be set before importing litellm — forces pricing lookups to use only
-# the local data file bundled with the package, never a network fetch. This
-# avoids adding network latency (or a hang, if unreachable) to server startup,
-# and keeps cost calculation deterministic for a given litellm version rather
-# than silently drifting if the upstream pricing file changes underneath us.
-os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
-import litellm  # noqa: E402
 
 _llm: ChatOpenAI | None = None
 
@@ -225,27 +219,12 @@ def _compute_cost_usd(
     provider: str | None, model: str | None,
     input_tokens: int, cache_read_tokens: int, output_tokens: int,
 ) -> float | None:
-    """Compute a run's cost via LiteLLM's standardized per-model pricing.
-
-    Returns None (never a misleading 0) whenever cost genuinely can't be
-    determined: no provider/model resolved at all (e.g. the run failed
-    before resolving an agent), or LiteLLM doesn't recognize this exact
-    model string. Tokens are still recorded either way — this only affects
-    the derived dollar figure.
-    """
-    if not provider or not model or (input_tokens == 0 and output_tokens == 0):
-        return None
-    try:
-        prompt_cost, completion_cost = litellm.cost_per_token(
-            model=model,
-            prompt_tokens=input_tokens,
-            completion_tokens=output_tokens,
-            cache_read_input_tokens=cache_read_tokens,
-        )
-        return round(prompt_cost + completion_cost, 6)
-    except Exception as exc:
-        logger.warning("Cost calculation unavailable for %s/%s: %s", provider, model, exc)
-        return None
+    """A run's cost from the bundled price table (utils/pricing.py); None when
+    it can't be determined. Tokens are recorded either way."""
+    cost = compute_cost_usd(provider, model, input_tokens, cache_read_tokens, output_tokens)
+    if cost is None and provider and model and (input_tokens or output_tokens):
+        logger.warning("No price listed for %s/%s; cost left empty", provider, model)
+    return cost
 
 
 async def _generate_thread_title(user_message: str) -> str | None:

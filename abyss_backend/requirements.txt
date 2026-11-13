@@ -45,10 +45,8 @@ langgraph-checkpoint-postgres>=3.0.0
 # don't maintain our own pricing table (see services/chat_service.py).
 # LITELLM_LOCAL_MODEL_COST_MAP=True (set before import) makes pricing lookups
 # use only the bundled local data file — no network call at startup or per-request.
-litellm>=1.96.0
 
 # Testing
 # Pinned below 9 to avoid conflicts with langchain-tests / syrupy if installed
-pytest>=8.3,<9
-pytest-asyncio>=0.24.0
 pydantic[email]>=2.7.0,<3.0.0
+alembic>=1.13

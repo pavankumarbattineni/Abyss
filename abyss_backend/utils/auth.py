@@ -1,13 +1,13 @@
 import hashlib
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, Query, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from constants import API_KEY_PREFIX
-from database.models import ApiKey, utcnow
+from database.models import ApiKey, User, utcnow
 from database.session import get_async_session
 from utils.jwt import ACCESS, decode_token
 
@@ -48,15 +48,30 @@ async def _resolve_api_key(token: str, session: AsyncSession) -> str:
     return record.user_id
 
 
+async def _ensure_active_user(user_id: str, session: AsyncSession) -> str:
+    """A valid signature isn't enough: the account must still exist and be
+    active. Otherwise a deleted or deactivated user's token (or API key) would
+    keep working until it expired."""
+    result = await session.execute(
+        select(User.id).where(User.id == user_id, User.is_active == True)
+    )
+    if result.scalar_one_or_none() is None:
+        raise _UNAUTHORIZED
+    return user_id
+
+
 async def _resolve_any(token: str, session: AsyncSession) -> str:
     """Resolve a token that may be either an API key or a JWT access token."""
     if token.startswith(API_KEY_PREFIX):
-        return await _resolve_api_key(token, session)
-    return _resolve_jwt(token)
+        user_id = await _resolve_api_key(token, session)
+    else:
+        user_id = _resolve_jwt(token)
+    return await _ensure_active_user(user_id, session)
 
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_optional),
+    session: AsyncSession = Depends(get_async_session),
 ) -> str:
     """Authenticate protected APIs with an Abyss access token only."""
     if not credentials:
@@ -64,7 +79,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication — provide Authorization: Bearer <token>",
         )
-    return _resolve_jwt(credentials.credentials)
+    return await _ensure_active_user(_resolve_jwt(credentials.credentials), session)
 
 
 async def get_current_user_flexible(
@@ -88,24 +103,15 @@ async def get_current_user_flexible(
 
 
 async def get_current_user_sse(
-    token: Optional[str] = Query(None),
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_optional),
     x_api_key: Optional[str] = Header(None, alias="x-api-key"),
     session: AsyncSession = Depends(get_async_session),
 ) -> str:
-    """Authenticate an SSE request — accepts a JWT access token or API key.
-
-    Priority: Authorization header → X-Api-Key header → ?token query param.
-    Native EventSource cannot set headers, so it passes the token via ?token=.
-    """
-    raw: Optional[str] = None
-    if credentials:
-        raw = credentials.credentials
-    elif x_api_key:
-        raw = x_api_key
-    elif token:
-        raw = token
-
+    """Authenticate an SSE request -- a JWT access token or API key, in a
+    header only. (A ``?token=`` query parameter was accepted before; tokens in
+    URLs end up in access logs and browser history, and the web client streams
+    with fetch(), which can send headers.)"""
+    raw = credentials.credentials if credentials else x_api_key
     if not raw:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

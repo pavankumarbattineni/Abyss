@@ -95,6 +95,9 @@ api.interceptors.response.use(
       }
 
       clearAuthTokens();
+      // A full page load on purpose: it drops all cached client state of the
+      // expired session (an interceptor has no router anyway).
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = "/home";
     }
 

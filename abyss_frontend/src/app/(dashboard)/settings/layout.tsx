@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { SettingsNav } from "@/components/pages/settings";
 
 export const metadata: Metadata = {
-  title: "Settings",
+  // A plain string here would drop the root "%s | Abyss" template for every
+  // settings page below this layout.
+  title: { default: "Settings", template: "%s | Abyss" },
 };
 
 const SettingsLayout = ({ children }: { children: React.ReactNode }) => {

@@ -3,6 +3,11 @@ Ocean-AI/
 **/.env
 **/.env.local
 **/.env.*.local
+# Cloud credentials (e.g. a downloaded Firebase Admin key)
+**/*firebase-adminsdk*.json
+**/*service-account*.json
+**/*service_account*.json
+**/firebase-admin*.json
 
 # Local development artifacts
 **/.venv/

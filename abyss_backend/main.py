@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from sqlalchemy import text, update
+from sqlalchemy import update
 
 from constants import (
     API_V1_PREFIX,
@@ -15,8 +15,10 @@ from constants import (
     STREAM_STATUS_RUNNING,
 )
 from database.checkpointer import init_checkpointer, close_checkpointer
-from database.models import Base, StreamRecord, utcnow
-from database.session import async_session_maker, engine
+from database.migrations import run_migrations
+from database.models import StreamRecord, utcnow
+from database.seed import seed_catalog
+from database.session import async_session_maker
 from middleware.middleware import setup_middleware
 from routers.api_keys import router as api_keys_router
 from routers.auth import router as auth_router
@@ -61,13 +63,10 @@ async def _mark_orphaned_streams() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # Passwords are managed by Firebase; keep the legacy column nullable
-        # for existing databases while new users authenticate externally.
-        await conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
-        # Firebase UID is deliberately not an Abyss persistence field.
-        await conn.execute(text("ALTER TABLE users DROP COLUMN IF EXISTS firebase_uid CASCADE"))
+    # Schema via Alembic (migrations/), then the LLM model catalog.
+    await run_migrations()
+    async with async_session_maker() as db:
+        await seed_catalog(db)
     await init_checkpointer()
     await _mark_orphaned_streams()
     async with async_session_maker() as db:

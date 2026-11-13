@@ -60,6 +60,8 @@ export const DataTable = <TData, TValue>({
   const resolvedOnPaginationChange: OnChangeFn<PaginationState> =
     manualPagination && onPaginationChange ? onPaginationChange : setInternalPagination;
 
+  // TanStack Table manages its own memoization, so React Compiler skipping it is expected.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,
