@@ -19,6 +19,7 @@ import {
   Button,
   Heading,
   Popover,
+  PopoverClose,
   PopoverContent,
   PopoverTrigger,
   Skeleton,
@@ -265,15 +266,15 @@ export function Sidebar() {
               side="top"
               className="w-48 gap-0.5 p-1"
             >
-              <button
-                type="button"
-                disabled
-                aria-label="Profile (coming soon)"
-                className="flex w-full cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground opacity-60"
-              >
-                <User className="size-3.5" />
-                Profile
-              </button>
+              <PopoverClose asChild>
+                <Link
+                  href="/settings/profile"
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
+                >
+                  <User className="size-3.5" />
+                  Profile
+                </Link>
+              </PopoverClose>
               <button
                 type="button"
                 onClick={async () => {
