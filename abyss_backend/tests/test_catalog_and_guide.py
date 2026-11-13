@@ -12,10 +12,9 @@ def test_catalog_providers_are_supported():
     assert set(CATALOG) <= set(PROVIDERS)
 
 
-def test_platform_default_is_an_openai_catalog_model():
+def test_platform_default_is_a_catalog_model():
     provider, model = PLATFORM_DEFAULT
-    # It runs on the platform's own OpenAI key.
-    assert provider == "openai"
+    assert (provider, model) == ("google", "gemini-3.5-flash-lite")
     assert model in [name for name, _ in CATALOG[provider][1]]
 
 

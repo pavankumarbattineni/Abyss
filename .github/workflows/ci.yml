@@ -55,7 +55,8 @@ jobs:
          "DB": {"username": "abyss", "password": "ci", "database": "abyss",
                 "ip_address": "localhost", "port": "5432",
                 "pool_size": 5, "max_overflow": 5},
-         "LLM": {"openai_api_key": "ci-fake", "openai_model": "gpt-5-mini"},
+         "LLM": {"default_provider": "google", "default_model": "gemini-3.5-flash-lite",
+                 "api_keys": {"google": "ci-fake"}},
          "JWT": {"secret_key": "ci-jwt-secret-not-a-real-secret-0123456789", "algorithm": "HS256"},
          "LANGSMITH": {"tracing_enabled": false, "api_key": "", "project": "abyss-ci"},
          "MCP": {"encryption_key": "ci-encryption-key-not-a-real-secret"}}

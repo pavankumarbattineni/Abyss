@@ -46,6 +46,11 @@ tables, marks streams orphaned by a restart as failed, and loads MCP tools into 
    `synthesis_start`, then `done` or `error`.
 4. When the run ends, the answer, its reasoning trace, token counts and cost are saved.
 
+Agents without a model of their own use the platform default (the catalog row flagged
+`is_platform_default`, Gemini 3.5 Flash-Lite) on the platform's key for that provider from
+`ABYSS_CONFIG.LLM.api_keys` (`utils/platform_llm.py`); thread titles use the same model. Any
+other model runs on the user's own key.
+
 Reasoning comes from a `<reasoning>…</reasoning>` block the prompt asks for
 (`utils/reasoning_splitter.py` separates it from the answer), or from the provider's own
 reasoning output for models whose catalog row says `reasoning_mode = 'native'`.

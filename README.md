@@ -30,7 +30,7 @@ give it specialists that work in parallel, and approve anything sensitive before
 - **Human approval**: tools marked "requires approval" pause the run until you allow or deny them.
 - **Visible reasoning**: a timeline of each turn's thinking, delegations and tool calls, streamed live.
 - **Rich answers**: Markdown, maths, Mermaid diagrams, interactive charts and tables, copy buttons.
-- **Models**: runs on the platform's OpenAI model by default; bring your own OpenAI, Anthropic or Gemini key.
+- **Models**: runs on Gemini 3.5 Flash-Lite by default (the platform's key); bring your own OpenAI, Anthropic or Gemini key for other models.
 - **Usage & cost**: tokens and cost per run, filterable and downloadable as CSV.
 - **API access**: personal API keys for calling agents from your own code.
 
@@ -42,7 +42,7 @@ flowchart LR
     U -->|"REST + SSE"| BE["FastAPI + LangGraph<br/>(Render, Docker)"]
     U -->|sign-in| FB[(Firebase Auth)]
     BE --> PG[("PostgreSQL<br/>(Neon)")]
-    BE --> LLM["OpenAI · Anthropic · Gemini"]
+    BE --> LLM["Gemini (default) · OpenAI · Anthropic"]
     BE --> MCP["Your MCP servers"]
 ```
 
@@ -85,7 +85,7 @@ docker compose --env-file abyss_frontend/.env.local up --build
 
 | Variable | Where | What |
 |---|---|---|
-| `ABYSS_CONFIG` | backend | JSON: `DB` (add `"ssl": true` for Neon), `LLM` (platform OpenAI key + model), `JWT`, `MCP.encryption_key`, `LANGSMITH`. See [`.env.example`](abyss_backend/.env.example) |
+| `ABYSS_CONFIG` | backend | JSON: `DB` (add `"ssl": true` for Neon), `LLM` (platform default provider + model and the platform's API keys, e.g. Gemini), `JWT`, `MCP.encryption_key`, `LANGSMITH`. See [`.env.example`](abyss_backend/.env.example) |
 | `ABYSS_FIREBASE_ADMIN_CONFIG` | backend | Firebase service-account JSON |
 | `ABYSS_ALLOWED_ORIGINS` | backend | Frontend URL(s), comma-separated (CORS; `*` is refused) |
 | `NEXT_PUBLIC_API_URL` | frontend | Backend URL, no trailing slash |
