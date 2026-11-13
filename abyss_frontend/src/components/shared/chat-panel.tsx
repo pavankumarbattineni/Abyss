@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUp,
+  ChevronDown,
+  ChevronUp,
   Menu,
   CircleSlash,
   MessageCircle,
@@ -362,7 +364,7 @@ export function ChatPanel({
                           )}
                         </>
                       ) : (
-                        <p className="whitespace-pre-wrap wrap-break-word">{message.content}</p>
+                        <UserMessageText text={message.content} />
                       )}
                     </div>
                     <MessageMeta message={message} />
@@ -411,6 +413,31 @@ export function ChatPanel({
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
           {emptyHero}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Past this many characters a message you sent is shown folded to a few lines, so one long
+// paste doesn't push the conversation out of view. Display only -- nothing is cut.
+const USER_MESSAGE_FOLD_AT = 400;
+
+function UserMessageText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState<boolean>(false);
+  const long = text.length > USER_MESSAGE_FOLD_AT;
+  return (
+    <div>
+      <p className={cn("whitespace-pre-wrap wrap-break-word", long && !expanded && "line-clamp-4")}>{text}</p>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          className="mt-1.5 flex items-center gap-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          {expanded ? "Show less" : "Show more"}
+          {expanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+        </button>
       )}
     </div>
   );

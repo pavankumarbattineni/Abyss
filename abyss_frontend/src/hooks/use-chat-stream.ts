@@ -20,6 +20,13 @@ interface UseChatStreamOptions {
   agentId: string;
   threadId?: string;
   onThreadCreated?: (threadId: string) => void;
+  /**
+   * Called as soon as a new thread's first message is accepted, instead of streaming it here.
+   * The caller moves to the thread's own URL (with ?streamId=), whose page resumes the stream
+   * the same way a refresh does -- so a refresh mid-answer works from the very first message.
+   * Without it, the first answer streams in place and onThreadCreated fires when it's done.
+   */
+  onThreadStarted?: (threadId: string, streamId: string) => void;
 }
 
 interface UseChatStreamResult {
@@ -41,6 +48,7 @@ export function useChatStream({
   agentId,
   threadId,
   onThreadCreated,
+  onThreadStarted,
 }: UseChatStreamOptions): UseChatStreamResult {
   const queryClient = useQueryClient();
   const reasoning = useReasoningTrace();
@@ -54,7 +62,9 @@ export function useChatStream({
 
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState<boolean>(false);
-  const [isStreaming, setIsStreaming] = useState<boolean>(false);
+  // Opening a thread with a stream to resume (a refresh, or the hand-off from a new chat):
+  // show the answer as in progress straight away; resumeStream settles it from the status.
+  const [isStreaming, setIsStreaming] = useState<boolean>(() => Boolean(threadId && streamIdParam));
   const [streamingContent, setStreamingContent] = useState<string>("");
   const [pendingApprovals, setPendingApprovals] = useState<StreamToolInterrupt[]>([]);
   const [isResolvingApproval, setIsResolvingApproval] = useState<boolean>(false);
@@ -199,8 +209,12 @@ export function useChatStream({
         return;
       }
 
-      if (status.status !== "RUNNING") {
+      if (status.status !== "RUNNING" && status.status !== "PENDING") {
+        // Finished while we weren't connected: the answer is saved, so show it from the server
+        // (messages fetched before it finished would otherwise stay without it).
         setStreamIdParam(null);
+        setIsStreaming(false);
+        queryClient.invalidateQueries({ queryKey: ["thread-messages", resolvedThreadId] });
         return;
       }
 
@@ -219,7 +233,10 @@ export function useChatStream({
         lastEventIdRef.current ?? undefined,
       );
     } catch {
-      if (!isCancelled()) setStreamIdParam(null);
+      if (!isCancelled()) {
+        setStreamIdParam(null);
+        setIsStreaming(false);
+      }
     }
   };
 
@@ -272,6 +289,17 @@ export function useChatStream({
       const { stream_id } = await threadService.sendMessage(resolvedThreadId, {
         message: text,
       });
+
+      if (isNewThread && onThreadStarted) {
+        // Hand the stream to the thread's own page. Seed its messages with this one so it shows
+        // instantly (the page refetches the saved copy), and list the thread in the sidebar now.
+        queryClient.setQueryData<Message[]>(["thread-messages", resolvedThreadId], [
+          { ...userMessage, thread_id: resolvedThreadId },
+        ]);
+        queryClient.invalidateQueries({ queryKey: ["threads", agentId] });
+        onThreadStarted(resolvedThreadId, stream_id);
+        return;
+      }
 
       streamIdRef.current = stream_id;
       accumulatedRef.current = "";

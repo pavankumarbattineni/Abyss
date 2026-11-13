@@ -136,7 +136,7 @@ export interface ToolApprovalResponse {
   status: string;
 }
 
-export type StreamStatus = "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | "AWAITING_APPROVAL";
+export type StreamStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | "AWAITING_APPROVAL";
 
 export interface StreamCancelResponse {
   stream_id: string;
