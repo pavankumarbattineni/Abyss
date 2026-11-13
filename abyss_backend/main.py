@@ -26,6 +26,7 @@ from routers.agents import router as agents_router
 from routers.llm_credentials import router as llm_credentials_router
 from routers.streams import router as streams_router
 from routers.threads import router as threads_router
+from routers.traces import router as traces_router
 from routers.mcp import router as mcp_router
 from routers.usage import router as usage_router
 from utils.mcp_client import build_agent_tool_registry
@@ -95,6 +96,7 @@ app.include_router(threads_router, prefix=prefix)
 app.include_router(streams_router, prefix=prefix)
 app.include_router(mcp_router, prefix=prefix)
 app.include_router(usage_router, prefix=prefix)
+app.include_router(traces_router, prefix=prefix)
 
 
 @app.get("/health", include_in_schema=False)
