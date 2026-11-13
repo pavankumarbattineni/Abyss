@@ -132,7 +132,7 @@ export const TracingPage = () => {
 
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <div className="relative min-w-0 flex-1 basis-full sm:max-w-xs sm:basis-auto">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
               <Input
                 value={search}
@@ -143,7 +143,7 @@ export const TracingPage = () => {
               />
             </div>
             <Select value={status} onValueChange={(value) => { void setStatus(value as (typeof STATUSES)[number]); void setPage(1); }}>
-              <SelectTrigger className="w-36" aria-label="Status">
+              <SelectTrigger className="min-w-0 flex-1 sm:w-36 sm:flex-none" aria-label="Status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -153,7 +153,7 @@ export const TracingPage = () => {
               </SelectContent>
             </Select>
             <Select value={kind} onValueChange={(value) => { void setKind(value as (typeof KINDS)[number]); void setPage(1); }}>
-              <SelectTrigger className="w-40" aria-label="Run type">
+              <SelectTrigger className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label="Run type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
