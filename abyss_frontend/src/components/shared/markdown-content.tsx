@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import dynamic from "next/dynamic";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -131,6 +132,14 @@ function buildComponents(isStreaming: boolean): Components {
   };
 }
 
+// Built once, never per render: a new components object gives React new
+// component *types*, so every code block, diagram, chart and table of every
+// message was unmounted and rebuilt on each re-render of the chat (each
+// keystroke in the composer) -- diagrams collapsed to their placeholder and
+// redrew, and the chat's scroll position jumped with the changing height.
+const COMPONENTS: Components = buildComponents(false);
+const STREAMING_COMPONENTS: Components = buildComponents(true);
+
 interface MarkdownContentProps {
   content: string;
   /** True while the message is still being generated -- diagrams and
@@ -140,7 +149,13 @@ interface MarkdownContentProps {
   className?: string;
 }
 
-export function MarkdownContent({ content, isStreaming = false, className }: MarkdownContentProps) {
+/** Memoized: re-renders only when this message's own content changes, not on
+ * every update of the chat around it (e.g. typing the next question). */
+export const MarkdownContent = memo(function MarkdownContent({
+  content,
+  isStreaming = false,
+  className,
+}: MarkdownContentProps) {
   return (
     // Agent response typography, as in Trench: Source Serif 4 at a reading
     // size. Same element while streaming and after, so fonts never jump.
@@ -148,10 +163,10 @@ export function MarkdownContent({ content, isStreaming = false, className }: Mar
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}
         rehypePlugins={REHYPE_PLUGINS}
-        components={buildComponents(isStreaming)}
+        components={isStreaming ? STREAMING_COMPONENTS : COMPONENTS}
       >
         {normalizeMathDelimiters(content)}
       </ReactMarkdown>
     </div>
   );
-}
+});

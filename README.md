@@ -1,8 +1,9 @@
 <div align="center">
 
-<img src="abyss_frontend/public/images/abyss-logo.svg" alt="Abyss" width="96">
-
-# Abyss
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/abyss-logo-dark.svg">
+  <img src="docs/assets/abyss-logo-light.svg" alt="Abyss" width="300">
+</picture>
 
 **Build AI agents, connect real tools, and keep humans in control.**
 
