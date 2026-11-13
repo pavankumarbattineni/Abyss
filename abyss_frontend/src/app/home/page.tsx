@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { AuthTopBar } from "@/components/layout";
+import { AuthTopBar, SiteFooter } from "@/components/layout";
 import { Button } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -124,14 +124,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-muted-foreground sm:px-6">
-          <span>Abyss</span>
-          <Link href="/auth/signup" className="text-sage-text hover:text-foreground">
-            Create your first agent
-          </Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

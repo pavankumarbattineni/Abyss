@@ -15,6 +15,9 @@ interface AuthContextValue {
   refreshAuthState: () => void;
 }
 
+// Pages anyone can open signed out (keep in sync with src/proxy.ts).
+const PUBLIC_ROUTES = ["/", "/home", "/about-trench"];
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 interface AuthProviderProps {
@@ -45,7 +48,7 @@ export function AuthProvider({ children, initialIsAuthenticated }: AuthProviderP
   }, [isAuthenticated, queryClient]);
 
   useEffect(() => {
-    if (!isAuthenticated && pathname !== "/" && pathname !== "/home" && !pathname?.startsWith("/auth")) {
+    if (!isAuthenticated && !PUBLIC_ROUTES.includes(pathname ?? "") && !pathname?.startsWith("/auth")) {
       router.replace("/home");
     }
   }, [isAuthenticated, pathname, router]);
