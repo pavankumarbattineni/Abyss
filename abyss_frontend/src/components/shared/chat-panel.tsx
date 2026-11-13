@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUp,
+  Menu,
   CircleSlash,
   MessageCircle,
   MessageSquarePlus,
@@ -35,6 +36,8 @@ interface ChatPanelProps {
   messages?: Message[];
   isMessagesLoading?: boolean;
   onNewThread?: () => void;
+  /** Phones: opens the thread list (there's no side rail there). */
+  onOpenThreads?: () => void;
   onSendMessage?: (message: string) => void;
   onCancelStream?: () => void;
   isSending?: boolean;
@@ -54,6 +57,7 @@ export function ChatPanel({
   messages,
   isMessagesLoading = false,
   onNewThread,
+  onOpenThreads,
   onSendMessage,
   onCancelStream,
   isSending = false,
@@ -133,9 +137,9 @@ export function ChatPanel({
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={`Message ${agent?.name ?? "the agent"}...`}
-        className="field-sizing-content max-h-52 min-h-16 w-full resize-none overflow-y-auto border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+        className="field-sizing-content max-h-40 min-h-9 w-full sm:max-h-52 sm:min-h-16 resize-none overflow-y-auto border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
-      <div className="flex items-center justify-between gap-2 pt-3">
+      <div className="flex items-center justify-between gap-2 pt-2 sm:pt-3">
         <Button
           type="button"
           variant="ghost"
@@ -225,7 +229,19 @@ export function ChatPanel({
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {showHeader && (
-        <div className="flex items-center justify-end gap-2 p-4">
+        <div className="flex items-center justify-end gap-2 px-4 py-2 sm:p-4">
+          {onOpenThreads && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mr-auto -ml-2 text-muted-foreground hover:text-foreground"
+              onClick={onOpenThreads}
+            >
+              <Menu className="size-4" />
+              Threads
+            </Button>
+          )}
           {hasThread && (
             <Button type="button" size="sm" onClick={onNewThread}>
               <MessageSquarePlus className="size-3.5" />
@@ -277,9 +293,9 @@ export function ChatPanel({
           <>
             <div
               ref={scrollRef}
-              className="flex-1 overflow-x-hidden overflow-y-auto px-6 py-6"
+              className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6"
             >
-              <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+              <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 sm:gap-6">
                 {messages.map((message, index) => (
                   <div
                     key={message.id}
@@ -298,13 +314,13 @@ export function ChatPanel({
                     {message.role === "assistant" && (
                       <AgentAvatar
                         name={agent?.name ?? "Agent"}
-                        className="size-8 shrink-0 text-xs"
+                        className="size-8 shrink-0 text-xs max-sm:hidden"
                       />
                     )}
                     <div
                       className={cn(
                         "group/message flex min-w-0 flex-col gap-1",
-                        message.role === "user" ? "max-w-[75%] items-end" : "w-full items-start",
+                        message.role === "user" ? "max-w-[85%] items-end sm:max-w-[75%]" : "w-full items-start",
                       )}
                     >
                     <div
@@ -358,7 +374,7 @@ export function ChatPanel({
                   <div className="flex min-w-0 items-start gap-3">
                     <AgentAvatar
                       name={agent?.name ?? "Agent"}
-                      className="size-8 shrink-0 text-xs"
+                      className="size-8 shrink-0 text-xs max-sm:hidden"
                     />
                     <div className="min-w-0 w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground wrap-break-word">
                       <ReasoningPanel trace={reasoningTrace} isStreaming={true} agentNames={agentNames} />
@@ -386,7 +402,7 @@ export function ChatPanel({
               </div>
             </div>
 
-            <div className="flex justify-center border-t border-border-soft p-4">
+            <div className="flex justify-center border-t border-border-soft p-3 sm:p-4">
               {composer}
             </div>
           </>

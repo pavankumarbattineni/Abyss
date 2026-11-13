@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { ChatPanel } from "@/components/shared/chat-panel";
-import { MOBILE_QUERY, useChatStream, useMediaQuery, useResizablePanel } from "@/hooks";
+import {
+  MOBILE_QUERY,
+  useChatStream,
+  useMediaQuery,
+  useResizablePanel,
+} from "@/hooks";
 import { cn } from "@/lib/utils";
 import { agentService, threadService } from "@/services";
 import type { Agent, Message } from "@/types";
@@ -35,7 +40,8 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
   const threadKey = threadId ?? "new";
   const [threadsOpenOn, setThreadsOpenOn] = useState<string | null>(null);
   const mobileThreadsOpen = threadsOpenOn === threadKey;
-  const setMobileThreadsOpen = (open: boolean) => setThreadsOpenOn(open ? threadKey : null);
+  const setMobileThreadsOpen = (open: boolean) =>
+    setThreadsOpenOn(open ? threadKey : null);
   const threadsCollapsed = isMobile ? !mobileThreadsOpen : collapsed;
   const { width, isDragging, handlePointerDown } = useResizablePanel({
     initialWidth: 380,
@@ -55,15 +61,19 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
     cancelStream,
     resolveApprovals,
   } = useChatStream({
-      agentId,
-      threadId,
-      onThreadCreated: (newThreadId) =>
-        router.push(`/agents/${agentId}/threads/${newThreadId}`),
-    });
+    agentId,
+    threadId,
+    onThreadCreated: (newThreadId) =>
+      router.push(`/agents/${agentId}/threads/${newThreadId}`),
+  });
 
-  const hasActiveConversation = !!threadId || pendingMessages.length > 0 || isSending || isStreaming;
+  const hasActiveConversation =
+    !!threadId || pendingMessages.length > 0 || isSending || isStreaming;
   const displayMessages = useMemo(
-    () => (hasActiveConversation ? [...(messages ?? []), ...pendingMessages] : undefined),
+    () =>
+      hasActiveConversation
+        ? [...(messages ?? []), ...pendingMessages]
+        : undefined,
     [hasActiveConversation, messages, pendingMessages],
   );
 
@@ -76,20 +86,26 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
           onClick={() => setMobileThreadsOpen(false)}
         />
       )}
-      <ThreadSidebar
-        agent={agent}
-        agentId={agentId}
-        isLoading={isLoading}
-        width={isMobile ? 300 : width}
-        collapsed={threadsCollapsed}
-        onCollapsedChange={isMobile ? (value) => setMobileThreadsOpen(!value) : setCollapsed}
-        isResizing={isDragging}
-        className={
-          isMobile && mobileThreadsOpen
-            ? "absolute inset-y-0 left-0 z-30 max-w-[85vw] border-r border-border bg-background shadow-xl"
-            : undefined
-        }
-      />
+      {/* On phones the closed thread list takes no room: it opens from the
+          chat header's Threads button instead of a side rail. */}
+      {!(isMobile && threadsCollapsed) && (
+        <ThreadSidebar
+          agent={agent}
+          agentId={agentId}
+          isLoading={isLoading}
+          width={isMobile ? 300 : width}
+          collapsed={threadsCollapsed}
+          onCollapsedChange={
+            isMobile ? (value) => setMobileThreadsOpen(!value) : setCollapsed
+          }
+          isResizing={isDragging}
+          className={
+            isMobile && mobileThreadsOpen
+              ? "absolute inset-y-0 left-0 z-30 max-w-[85vw] border-r border-border bg-background shadow-xl"
+              : undefined
+          }
+        />
+      )}
 
       {!threadsCollapsed && !isMobile && (
         <div
@@ -113,6 +129,7 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
         messages={displayMessages}
         isMessagesLoading={isMessagesLoading}
         onNewThread={() => router.push(`/agents/${agentId}`)}
+        onOpenThreads={isMobile ? () => setMobileThreadsOpen(true) : undefined}
         onSendMessage={sendMessage}
         onCancelStream={cancelStream}
         isSending={isSending}

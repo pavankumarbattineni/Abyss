@@ -130,7 +130,9 @@ export function ConnectorToolsDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-2xl">
+        {/* Capped at the viewport: the header, legend and actions stay put and
+            only the tool list scrolls, however many tools a server has. */}
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{connection.name}</DialogTitle>
             <DialogDescription className="font-mono text-xs break-all">
@@ -173,7 +175,7 @@ export function ConnectorToolsDialog({
             </Select>
           </div>
 
-          <div className="flex max-h-[60vh] flex-col gap-1.5 overflow-y-auto">
+          <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-1 py-0.5">
             {isLoading ? (
               <div className="flex flex-col gap-2">
                 <Skeleton className="h-12 w-full" />
