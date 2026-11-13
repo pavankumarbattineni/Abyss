@@ -116,3 +116,32 @@ def test_title_trace_preview_is_the_users_message():
     assert ts._title_subject('Message: """Plan a trip to Goa"""\nTitle:') == "Plan a trip to Goa"
     assert ts._title_subject('Message: """A very long question cut off by the preview') == "A very long question cut off by the preview"
     assert ts._title_subject("plain text") == "plain text"
+
+
+def test_missing_langsmith_project_reads_as_no_runs(monkeypatch):
+    """LangSmith creates a project on its first traced run; before that a
+    refresh must find nothing, not fail."""
+    from datetime import UTC, datetime
+
+    from langsmith.utils import LangSmithNotFoundError
+
+    from utils import langsmith_client as ls
+
+    class Missing:
+        def list_runs(self, **_):
+            raise LangSmithNotFoundError("Project abyss-prod not found")
+
+    monkeypatch.setattr(ls, "_client", lambda: Missing())
+    assert ls.list_user_root_runs("u", datetime.now(UTC)) == []
+    assert ls.fetch_trace_runs("t") == []
+
+
+def test_refresh_errors_say_what_went_wrong():
+    from langsmith.utils import LangSmithAuthError, LangSmithConnectionError, LangSmithError
+
+    from routers.traces import _sync_error
+
+    assert "API key" in _sync_error(LangSmithAuthError("401"))
+    assert "API key" in _sync_error(LangSmithError("403 Client Error: Forbidden"))
+    assert "unreachable" in _sync_error(LangSmithConnectionError("timeout"))
+    assert "unreachable" not in _sync_error(ValueError("bug"))

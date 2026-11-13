@@ -14,6 +14,7 @@ from functools import lru_cache
 
 from langsmith import Client
 from langsmith.schemas import Run
+from langsmith.utils import LangSmithNotFoundError
 
 from config import config
 
@@ -37,7 +38,12 @@ def fetch_trace_runs(trace_id: str) -> list[Run]:
     """Every run of one trace, in Abyss's project."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        return list(_client().list_runs(project_name=project_name(), trace_id=trace_id))
+        try:
+            return list(_client().list_runs(project_name=project_name(), trace_id=trace_id))
+        except LangSmithNotFoundError:
+            # The project doesn't exist (yet): LangSmith creates it on the
+            # first traced run, so until then there's simply nothing to read.
+            return []
 
 
 def list_user_root_runs(user_id: str, since: datetime, limit: int = 100) -> list[Run]:
@@ -46,8 +52,11 @@ def list_user_root_runs(user_id: str, since: datetime, limit: int = 100) -> list
     query = f'and(eq(metadata_key, "user_id"), eq(metadata_value, "{user_id}"))'
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        return list(
-            _client().list_runs(
-                project_name=project_name(), is_root=True, start_time=since, filter=query, limit=limit
+        try:
+            return list(
+                _client().list_runs(
+                    project_name=project_name(), is_root=True, start_time=since, filter=query, limit=limit
+                )
             )
-        )
+        except LangSmithNotFoundError:
+            return []  # no project yet -- see fetch_trace_runs

@@ -1,9 +1,16 @@
 """Tracing: the signed-in user's own LangSmith traces, as copied by
 services/trace_sync.py. Every query is filtered by the caller's user id."""
+import logging
 from datetime import timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from langsmith.utils import (
+    LangSmithAuthError,
+    LangSmithConnectionError,
+    LangSmithError,
+    LangSmithRateLimitError,
+)
 from sqlalchemy import Date, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +30,7 @@ from services import trace_sync
 from utils import langsmith_client
 from utils.auth import get_current_user
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/traces", tags=["traces"])
 
 
@@ -119,9 +127,22 @@ async def sync_traces(user_id: str = Depends(get_current_user)):
     try:
         result = await trace_sync.sync_recent(user_id)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
-                            detail="LangSmith is unreachable right now. Try again shortly.") from exc
+        logger.exception("Trace refresh failed")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=_sync_error(exc)) from exc
     return TraceSyncResponse(**result)
+
+
+def _sync_error(exc: Exception) -> str:
+    """Why a refresh failed, in words a user can act on (or report)."""
+    if isinstance(exc, LangSmithAuthError) or "403" in str(exc) or "401" in str(exc):
+        return "LangSmith rejected this server's API key, so traces can't be refreshed. Ask an administrator to check it."
+    if isinstance(exc, LangSmithRateLimitError):
+        return "LangSmith is busy right now. Try again in a minute."
+    if isinstance(exc, LangSmithConnectionError):
+        return "LangSmith is unreachable right now. Try again shortly."
+    if isinstance(exc, LangSmithError):
+        return "LangSmith returned an error, so traces couldn't be refreshed. Try again shortly."
+    return "Traces couldn't be refreshed right now. Try again shortly."
 
 
 @router.get("/{trace_id}", response_model=TraceDetail)
