@@ -6,3 +6,4 @@ export * from "./model-service";
 export * from "./stream-service";
 export * from "./thread-service";
 export * from "./usage-service";
+export * from "./trace-service";

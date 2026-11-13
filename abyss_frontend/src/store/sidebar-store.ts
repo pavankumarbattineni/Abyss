@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Bot, Server, Workflow, type LucideIcon } from "lucide-react";
+import { Activity, Bot, Server, Workflow, type LucideIcon } from "lucide-react";
 
 export interface SidebarNavItem {
   id: string;
@@ -13,6 +13,7 @@ export const SIDEBAR_NAV_ITEMS: SidebarNavItem[] = [
   { id: "agents", label: "Agents", href: "/agents", icon: Bot },
   { id: "agent-builder", label: "Agent Builder", href: "/agents/create", icon: Workflow },
   { id: "mcp", label: "MCP Servers", href: "/mcp", icon: Server },
+  { id: "tracing", label: "Tracing", href: "/tracing", icon: Activity },
 ];
 
 interface SidebarState {

@@ -1,4 +1,5 @@
 import asyncio
+from uuid import UUID, uuid4
 import json
 import logging
 import os
@@ -34,6 +35,7 @@ from database.models import (
     StreamRecord, Thread, User, utcnow,
 )
 from schemas.stream import StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
+from services.trace_sync import KIND_AGENT_TURN, KIND_THREAD_TITLE, RUN_NAMES, sync_after_run
 from utils.platform_llm import build_platform_llm, configured_default
 from utils.pricing import compute_cost_usd
 from utils.encryption import decrypt_value
@@ -209,7 +211,9 @@ def _compute_cost_usd(
     return cost
 
 
-async def _generate_thread_title(user_message: str) -> str | None:
+async def _generate_thread_title(
+    user_message: str, trace_meta: dict | None = None, trace_ids: list[str] | None = None
+) -> str | None:
     """A short, specific thread title for the opening message.
 
     The candidate is validated (see utils.thread_title): a reply or refusal is
@@ -218,6 +222,9 @@ async def _generate_thread_title(user_message: str) -> str | None:
     """
     try:
         for retry in (False, True):
+            run_id = uuid4()
+            if trace_ids is not None:
+                trace_ids.append(str(run_id))
             response = await _get_llm().ainvoke([
                 {"role": "system", "content": TITLE_SYSTEM_PROMPT},
                 {
@@ -226,7 +233,7 @@ async def _generate_thread_title(user_message: str) -> str | None:
                         user_message, retry=retry, max_chars=THREAD_TITLE_INPUT_MAX_CHARS
                     ),
                 },
-            ])
+            ], config=_trace_config(run_id, KIND_THREAD_TITLE, trace_meta))
             title = clean_title(getattr(response, "text", None) or str(response.content))
             if title:
                 return title[:THREAD_TITLE_OUTPUT_MAX_CHARS]
@@ -245,6 +252,30 @@ def _approval_payload(interrupts) -> dict:
     """
     return {"interrupts": [{"interrupt_id": i.id, **i.value} for i in interrupts]}
 
+
+
+# Background trace syncs, kept referenced until done (asyncio holds only weak
+# references to tasks).
+_trace_tasks: set[asyncio.Task] = set()
+
+
+def _trace_config(run_id: UUID, kind: str, meta: dict | None) -> dict:
+    """LangSmith run settings for one traced call: a pre-assigned run id (so
+    the trace can be fetched exactly) and the metadata Tracing filters on."""
+    return {
+        "run_id": run_id,
+        "run_name": RUN_NAMES[kind],
+        "tags": ["abyss", kind],
+        "metadata": {**(meta or {}), "abyss_kind": kind},
+    }
+
+
+def _schedule_trace_sync(trace_ids: list[str], user_id: str | None) -> None:
+    if not trace_ids or not user_id:
+        return
+    task = asyncio.create_task(sync_after_run(list(trace_ids), user_id))
+    _trace_tasks.add(task)
+    task.add_done_callback(_trace_tasks.discard)
 
 
 async def _run_generation(
@@ -286,6 +317,10 @@ async def _run_generation(
             starting_chunk_index=starting_chunk_index,
         )
         last_flush_count = 0  # projector.total_tokens at the last periodic flush
+        # LangSmith traces this invocation produces (agent turn, title), synced
+        # into Tracing when it ends -- whatever the outcome.
+        trace_ids: list[str] = []
+        trace_meta: dict | None = None
         llm_provider_value: str | None = None  # set once resolved below; visible in except blocks too
         llm_model_value: str | None = None
         llm_source_value: str | None = None
@@ -340,6 +375,13 @@ async def _run_generation(
             agent_record = agent_result.scalar_one_or_none()
             if not agent_record:
                 raise ValueError("Agent not found or was deleted")
+            trace_meta = {
+                "user_id": agent_record.user_id,
+                "thread_id": thread_id,
+                "agent_id": agent_id,
+                "agent_name": agent_record.name,
+                "stream_id": stream_id,
+            }
 
             llm_resolution = await resolve_llm_for_agent(session, agent_record, enable_thinking)
             # Unlike tokens/reasoning, provider/model/source don't need
@@ -373,9 +415,12 @@ async def _run_generation(
             )
             # Each ReAct iteration is two graph steps (model + tools); the
             # ModelCallLimitMiddleware is the real cap, this is a backstop.
+            turn_run_id = uuid4()
+            trace_ids.append(str(turn_run_id))
             run_config = {
                 "configurable": {"thread_id": thread_id},
                 "recursion_limit": MAX_AGENT_ITERATIONS * 2 + 10,
+                **_trace_config(turn_run_id, KIND_AGENT_TURN, trace_meta),
             }
 
             async for event in graph.astream_events(graph_input, run_config, version="v2"):
@@ -455,7 +500,7 @@ async def _run_generation(
                     .limit(1)
                 )
                 title_source = opening_message.scalar_one_or_none() or user_message
-                generated_title = await _generate_thread_title(title_source)
+                generated_title = await _generate_thread_title(title_source, trace_meta, trace_ids)
                 if generated_title:
                     await session.execute(
                         update(Thread)
@@ -589,6 +634,7 @@ async def _run_generation(
             stream_manager.signal_done(stream_id)
 
         finally:
+            _schedule_trace_sync(trace_ids, (trace_meta or {}).get("user_id"))
             # Keep in-memory buffer alive for 5 minutes so reconnecting clients
             # can replay; then clean up all state for this stream. Skipped when
             # pausing for tool approval — that's not a terminal state, and the

@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.session import Base
 from constants import MCP_CONNECTION_STATUS_CONNECTED, MCP_DEFAULT_TRANSPORT, STREAM_STATUS_PENDING
@@ -235,3 +235,78 @@ class ApiKey(BasicModel):
     # NULL = never expires. Naive IST wall-clock, like every other timestamp
     # column (see utcnow() above) — compared directly against utcnow().
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+# ── Tracing (LangSmith traces copied into Abyss; see services/trace_sync.py) ──
+# Plain Base, not BasicModel: ids are LangSmith's own run UUIDs, and rows are
+# replaced wholesale on every sync rather than soft-deleted.
+
+
+class Trace(Base):
+    """One LangSmith trace (a root run and everything under it), summarised
+    for lists and charts. Only ever shown to its own user."""
+
+    __tablename__ = "traces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # LangSmith trace id = root run id
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    thread_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    agent_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    stream_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)  # agent_turn | thread_title
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # success | error | pending
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_cost: Mapped[Optional[float]] = mapped_column(Numeric(12, 6), nullable=True)
+    span_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    llm_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    models: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    input_preview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_preview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    langsmith_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # False while LangSmith hadn't finished ingesting it; re-fetched on sync.
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    __table_args__ = (Index("ix_traces_user_start", "user_id", "start_time"),)
+
+
+class TraceSpan(Base):
+    """One run inside a trace (chain, LLM call, tool call, ...)."""
+
+    __tablename__ = "trace_spans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # LangSmith run id
+    trace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("traces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    parent_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)  # execution order
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    run_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_cost: Mapped[Optional[float]] = mapped_column(Numeric(12, 6), nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    inputs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    outputs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    inputs_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    outputs_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    meta: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
