@@ -248,7 +248,6 @@ def summarize(root: Any, spans: list[dict]) -> dict:
         name = "Thread title"
     else:
         name = meta.get("agent_name") or root.name or "Agent run"
-    app_path = getattr(root, "app_path", None)
     return {
         "id": str(root.trace_id),
         "thread_id": meta.get("thread_id"),
@@ -279,7 +278,6 @@ def summarize(root: Any, spans: list[dict]) -> dict:
             else _preview(root_in, "user") or _preview(first_llm_in, "user")
         ),
         "output_preview": _preview(root_out, "assistant") or _preview(last_llm_out, "assistant"),
-        "langsmith_url": f"https://smith.langchain.com{app_path}" if app_path else None,
         "complete": end is not None and all(s["end_time"] is not None for s in spans),
     }
 

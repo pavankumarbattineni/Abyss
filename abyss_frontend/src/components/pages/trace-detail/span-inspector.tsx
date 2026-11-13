@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, ExternalLink, Wrench } from "lucide-react";
+import { AlertTriangle, Wrench } from "lucide-react";
 
 import { CopyButton } from "@/components/shared/copy-button";
 import { formatFullDateTime } from "@/lib/relative-time";
@@ -17,10 +17,9 @@ interface SpanInspectorProps {
   span: TraceSpan;
   /** ms from the start of the trace. */
   offsetMs: number;
-  langsmithUrl: string | null;
 }
 
-export function SpanInspector({ span, offsetMs, langsmithUrl }: SpanInspectorProps) {
+export function SpanInspector({ span, offsetMs }: SpanInspectorProps) {
   const [tab, setTab] = useState<Tab>("input");
   const style = spanTypeStyle(span.run_type);
   const Icon = style.icon;
@@ -108,12 +107,7 @@ export function SpanInspector({ span, offsetMs, langsmithUrl }: SpanInspectorPro
         <Payload key={tab} value={payload} />
         {truncated && (
           <p className="mt-2 text-xs text-muted-foreground">
-            Trimmed to 16 KB.{" "}
-            {langsmithUrl && (
-              <a href={langsmithUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-sage-text underline underline-offset-2 hover:text-foreground">
-                Full payload in LangSmith <ExternalLink className="size-3" aria-hidden="true" />
-              </a>
-            )}
+            Trimmed to 16 KB; the copy above is the stored part.
           </p>
         )}
       </div>
