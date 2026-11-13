@@ -16,6 +16,8 @@ from typing import Callable
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+from constants import GEMINI_THINKING_BUDGET
 from langchain_openai import ChatOpenAI
 
 
@@ -92,7 +94,9 @@ def _build_anthropic(model: str, api_key: str, native_reasoning: bool) -> BaseCh
 def _build_google(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
     if not native_reasoning:
         return ChatGoogleGenerativeAI(model=model, google_api_key=api_key)
-    return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, include_thoughts=True)
+    return ChatGoogleGenerativeAI(
+        model=model, google_api_key=api_key, include_thoughts=True, thinking_budget=GEMINI_THINKING_BUDGET,
+    )
 
 
 PROVIDERS: dict[str, ProviderSpec] = {

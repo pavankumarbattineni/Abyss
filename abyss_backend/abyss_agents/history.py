@@ -49,7 +49,7 @@ _REASONING_BLOCK = re.compile(r"<reasoning>.*?(?:</reasoning>|$)", re.DOTALL)
 # Native thinking/reasoning content blocks (Anthropic, Gemini, OpenAI).
 _THINKING_BLOCK_TYPES = {"thinking", "redacted_thinking", "reasoning"}
 
-CHAT_SUMMARY_PROMPT = """You are summarizing the earlier part of a conversation between a user and an AI assistant, so the assistant can continue it without the full history.
+CHAT_SUMMARY_PROMPT = r"""You are summarizing the earlier part of a conversation between a user and an AI assistant, so the assistant can continue it without the full history.
 
 Write a concise summary that keeps everything needed to continue naturally:
 
@@ -65,7 +65,7 @@ What the assistant already produced (briefly), so it isn't repeated or contradic
 ## Open questions
 Anything unresolved or promised for later. Write "None" if there is nothing.
 
-Write in plain prose and lists. Do not add anything that is not in the conversation.
+Write in plain prose and lists. Write maths as \( ... \) inline or \[ ... \] on its own line -- never with $ signs. Do not add anything that is not in the conversation.
 
 <messages>
 Messages to summarize:

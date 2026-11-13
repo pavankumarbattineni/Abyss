@@ -63,6 +63,9 @@ DEFAULT_CONTEXT_WINDOW = 128_000
 
 REASONING_MODE_PROMPT = "prompt"
 REASONING_MODE_NATIVE = "native"
+# Tokens a Gemini model may spend thinking in native mode. Without a budget,
+# Flash-Lite models don't think at all, so the reasoning panel stays empty.
+GEMINI_THINKING_BUDGET = 1024
 
 # Tool Permission States (MCPTool.permission_state)
 

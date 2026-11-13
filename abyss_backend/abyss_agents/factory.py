@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from abyss_agents.middleware import (
+    ActOrAnswerGuard,
     TRANSIENT_LLM_EXCEPTIONS,
     SubAgentCallLimitMiddleware,
     ToolApprovalMiddleware,
@@ -147,6 +148,7 @@ async def build_agent(
                 ToolResultMiddleware(),
                 *_tool_policy(tool_name, get_tool_permissions_for_agent(str(sub.id)), child_tools),
                 _model_retry(),
+                ActOrAnswerGuard(),
                 ModelCallLimitMiddleware(run_limit=_SUB_AGENT_MODEL_CALL_LIMIT),
             ],
             name=tool_name,
@@ -165,6 +167,7 @@ async def build_agent(
         middleware.append(SubAgentCallLimitMiddleware(sub_names, MAX_PARALLEL_TASKS))
     middleware += [
         _model_retry(),
+        ActOrAnswerGuard(),
         ModelCallLimitMiddleware(run_limit=MAX_AGENT_ITERATIONS),
         # History: summarize at turn start (sized to the selected model), then
         # send earlier turns as question + answer only (abyss_agents/history.py).
