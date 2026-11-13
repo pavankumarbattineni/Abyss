@@ -8,3 +8,4 @@ export * from "./stream";
 export * from "./thread";
 export * from "./usage";
 export * from "./profile";
+export * from "./trace";

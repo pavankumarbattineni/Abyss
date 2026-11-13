@@ -33,6 +33,7 @@ give it specialists that work in parallel, and approve anything sensitive before
 - **Rich answers**: Markdown, maths, Mermaid diagrams, interactive charts and tables, copy buttons.
 - **Models**: runs on Gemini 3.5 Flash-Lite by default (the platform's key); bring your own OpenAI, Anthropic or Gemini key for other models.
 - **Usage & cost**: tokens and cost per run, filterable and downloadable as CSV.
+- **Tracing**: every agent run copied from LangSmith (14 days): span tree on a timeline, LLM transcripts, tool calls, latency, tokens, cost and errors; each user sees only their own runs.
 - **API access**: personal API keys for calling agents from your own code.
 
 ## Architecture
