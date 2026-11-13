@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Brain,
   Check,
@@ -202,6 +204,34 @@ function StepIcon({ item, isLive }: { item: TimelineItem; isLive: boolean }) {
   );
 }
 
+/** Thoughts can be Markdown (native model reasoning, e.g. Gemini's "**Title**"
+ * + paragraph summaries): render it compactly -- bold titles, even spacing,
+ * no raw asterisks or runs of blank lines. Plain-text thoughts look as before. */
+const THOUGHT_MARKDOWN: Components = {
+  p: ({ children }) => <p className="mt-1.5 first:mt-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-medium text-foreground">{children}</strong>,
+  em: ({ children }) => <em>{children}</em>,
+  ul: ({ children }) => <ul className="mt-1.5 list-disc space-y-0.5 pl-4 first:mt-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mt-1.5 list-decimal space-y-0.5 pl-4 first:mt-0">{children}</ol>,
+  li: ({ children }) => <li>{children}</li>,
+  h1: ({ children }) => <p className="mt-2 font-medium text-foreground first:mt-0">{children}</p>,
+  h2: ({ children }) => <p className="mt-2 font-medium text-foreground first:mt-0">{children}</p>,
+  h3: ({ children }) => <p className="mt-2 font-medium text-foreground first:mt-0">{children}</p>,
+  code: ({ children }) => <code className="rounded bg-muted px-1 font-mono text-[12px]">{children}</code>,
+  pre: ({ children }) => <pre className="mt-1.5 overflow-x-auto rounded bg-muted p-2 text-[12px]">{children}</pre>,
+  a: ({ children }) => <span className="underline underline-offset-2">{children}</span>,
+};
+
+/** Trim each line and collapse runs of blank lines into one paragraph break. */
+function tidyThought(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function ThoughtStep({
   who,
   content,
@@ -218,14 +248,21 @@ function ThoughtStep({
   return (
     <div className="min-w-0">
       <p className="text-xs font-medium text-foreground">{who}</p>
-      <p
+      <div
         className={cn(
-          "mt-0.5 text-[13px] leading-relaxed whitespace-pre-wrap wrap-break-word text-muted-foreground",
-          clamped && "line-clamp-3",
+          "mt-0.5 text-[13px] leading-relaxed wrap-break-word text-muted-foreground",
+          // ~3 lines when folded (block children, so a height cap rather than line-clamp).
+          clamped && "max-h-[4.1rem] overflow-hidden",
         )}
       >
-        {text || "…"}
-      </p>
+        {text ? (
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={THOUGHT_MARKDOWN}>
+            {tidyThought(text)}
+          </ReactMarkdown>
+        ) : (
+          "…"
+        )}
+      </div>
       {isLong && !isLive && (
         <ExpandToggle
           expanded={expanded}
