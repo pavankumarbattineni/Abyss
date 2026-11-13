@@ -250,7 +250,7 @@ function ThoughtStep({
       <p className="text-xs font-medium text-foreground">{who}</p>
       <div
         className={cn(
-          "mt-0.5 text-[13px] leading-relaxed wrap-break-word text-muted-foreground",
+          "mt-1.5 text-[13px] leading-relaxed wrap-break-word text-muted-foreground",
           // ~3 lines when folded (block children, so a height cap rather than line-clamp).
           clamped && "max-h-[4.1rem] overflow-hidden",
         )}
