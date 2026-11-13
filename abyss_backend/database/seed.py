@@ -24,22 +24,50 @@ logger = logging.getLogger(__name__)
 PLATFORM_DEFAULT = ("google", "gemini-3.5-flash-lite")
 
 CATALOG: dict[str, tuple[str, list[tuple[str, str]]]] = {
+    # Chat Completions models whose tool calling works with Abyss's agents.
+    # GPT-6 is left out: through Chat Completions it can't call tools (or only
+    # with reasoning off), so it needs the Responses API first. Pro models are
+    # Responses-only for the same reason.
     "openai": ("OpenAI", [
+        ("gpt-5.6-sol", "GPT-5.6 Sol"),
+        ("gpt-5.6-terra", "GPT-5.6 Terra"),
+        ("gpt-5.6-luna", "GPT-5.6 Luna"),
         ("gpt-5.5", "GPT-5.5"),
         ("gpt-5.4", "GPT-5.4"),
         ("gpt-5.4-mini", "GPT-5.4 mini"),
+        ("gpt-5.2", "GPT-5.2"),
         ("gpt-5-mini", "GPT-5 mini"),
     ]),
     "anthropic": ("Anthropic", [
+        ("claude-fable-5-2", "Claude Fable 5.2"),
         ("claude-opus-5-5", "Claude Opus 5.5"),
         ("claude-sonnet-5-5", "Claude Sonnet 5.5"),
         ("claude-haiku-5-5", "Claude Haiku 5.5"),
-        ("claude-fable-5-2", "Claude Fable 5.2"),
+        ("claude-fable-5-1", "Claude Fable 5.1"),
+        ("claude-fable-5", "Claude Fable 5"),
+        ("claude-opus-5", "Claude Opus 5"),
+        ("claude-sonnet-5", "Claude Sonnet 5"),
+        ("claude-opus-4-8", "Claude Opus 4.8"),
+        ("claude-opus-4-7", "Claude Opus 4.7"),
+        ("claude-opus-4-6", "Claude Opus 4.6"),
+        ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+        ("claude-opus-4-5-20251101", "Claude Opus 4.5"),
+        ("claude-sonnet-4-5-20250929", "Claude Sonnet 4.5"),
+        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
     ]),
     "google": ("Google Gemini", [
+        ("gemini-4-carbon", "Gemini 4 Carbon"),
+        ("gemini-4-argon", "Gemini 4 Argon"),
+        ("gemini-4-hydrogen", "Gemini 4 Hydrogen"),
+        ("gemini-3.8-flash", "Gemini 3.8 Flash"),
+        ("gemini-3.7-flash", "Gemini 3.7 Flash"),
+        ("gemini-3.6-flash", "Gemini 3.6 Flash"),
         ("gemini-3.5-flash", "Gemini 3.5 Flash"),
         ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
-        ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("gemini-3.1-pro-preview", "Gemini 3.1 Pro (preview)"),
+        ("gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
+        ("gemini-3-flash-preview", "Gemini 3 Flash (preview)"),
+        # gemini-2.5-pro left out: Google no longer serves it to new users.
     ]),
 }
 
