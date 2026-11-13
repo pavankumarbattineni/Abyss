@@ -4,10 +4,11 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from datetime import timedelta
 
 from langchain_core.language_models import BaseChatModel
 from langgraph.types import Command
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import config
@@ -40,6 +41,7 @@ from utils.platform_llm import build_platform_llm, configured_default
 from utils.pricing import compute_cost_usd
 from utils.encryption import decrypt_value
 from abyss_agents.factory import build_agent
+from abyss_agents.history import SUMMARY_EVENT
 from services.stream_projector import StreamProjector
 from utils.llm_providers import PROVIDERS, classify_llm_error
 from utils.thread_title import TITLE_SYSTEM_PROMPT, clean_title, fallback_title, title_request
@@ -278,6 +280,43 @@ def _schedule_trace_sync(trace_ids: list[str], user_id: str | None) -> None:
     task.add_done_callback(_trace_tasks.discard)
 
 
+async def _save_summary(
+    session: AsyncSession,
+    projector: StreamProjector,
+    stream_id: str,
+    thread_id: str,
+    data: dict,
+) -> str:
+    """Save a conversation summary as a `summary` message placed just before the
+    question that triggered it, and show it live. Returns the message id."""
+    user_message_id = (await session.execute(
+        select(StreamRecord.user_message_id).where(StreamRecord.id == stream_id)
+    )).scalar_one_or_none()
+    asked_at = None
+    if user_message_id:
+        asked_at = (await session.execute(
+            select(Message.created_at).where(Message.id == user_message_id)
+        )).scalar_one_or_none()
+    message = Message(thread_id=thread_id, role="summary", content=str(data.get("content") or ""))
+    if asked_at is not None:
+        message.created_at = asked_at - timedelta(milliseconds=1)
+    session.add(message)
+    await session.commit()
+    projector._emit("summary", {
+        "message_id": message.id,
+        "content": message.content,
+        "created_at": message.created_at.isoformat(),
+        "messages_summarized": data.get("messages_summarized"),
+        "tokens_before": data.get("tokens_before"),
+        "tokens_after": data.get("tokens_after"),
+    })
+    logger.info(
+        "Conversation summarized | thread=%s messages=%s tokens %s -> %s",
+        thread_id, data.get("messages_summarized"), data.get("tokens_before"), data.get("tokens_after"),
+    )
+    return message.id
+
+
 async def _run_generation(
     stream_id: str,
     thread_id: str,
@@ -320,6 +359,7 @@ async def _run_generation(
         # LangSmith traces this invocation produces (agent turn, title), synced
         # into Tracing when it ends -- whatever the outcome.
         trace_ids: list[str] = []
+        summary_message_ids: list[str] = []  # summaries saved this turn (removed if cancelled)
         trace_meta: dict | None = None
         llm_provider_value: str | None = None  # set once resolved below; visible in except blocks too
         llm_model_value: str | None = None
@@ -424,6 +464,11 @@ async def _run_generation(
             }
 
             async for event in graph.astream_events(graph_input, run_config, version="v2"):
+                if event.get("event") == "on_custom_event" and event.get("name") == SUMMARY_EVENT:
+                    summary_message_ids.append(
+                        await _save_summary(session, projector, stream_id, thread_id, event.get("data") or {})
+                    )
+                    continue
                 projector.handle(event)
 
                 # Periodic crash-recovery flush every TOKEN_FLUSH_INTERVAL tokens.
@@ -541,6 +586,10 @@ async def _run_generation(
             logger.info("Stream %s cancelled", stream_id)
             try:
                 await session.rollback()
+                # The turn's state is rolled back below, so a summary made in it no
+                # longer applies: drop it from the chat too.
+                if summary_message_ids:
+                    await session.execute(delete(Message).where(Message.id.in_(summary_message_ids)))
                 # Close any pending reasoning blocks
                 projector.abort()
                 partial_text = "".join(projector.content_tokens)

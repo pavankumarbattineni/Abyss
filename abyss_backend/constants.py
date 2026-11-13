@@ -42,12 +42,22 @@ MAX_PARALLEL_TASKS = 5
 MAX_SUB_AGENTS_PER_AGENT = 5
 MAX_AGENT_ITERATIONS = 15
 
-# Context management — SummarizationMiddleware on the parent agent. Summarizes
-# older messages once the thread reaches either threshold (the fraction trigger
-# is skipped when the model profile doesn't report a context window).
+# Context management for the main agent (abyss_agents/history.py).
+# Earlier turns reach the model as question + final answer only (no tool calls,
+# specialist results or reasoning); the full history stays saved.
+TRIM_PAST_TURNS = True
+# At the start of a turn, older messages are summarized once the history the
+# model would see passes the smaller of SUMMARY_TOKEN_CAP (keeps long chats
+# affordable) and the selected model's context window x the fraction.
+SUMMARY_TOKEN_CAP = 40_000
 SUMMARIZATION_TRIGGER_FRACTION = 0.7
-SUMMARIZATION_TRIGGER_TOKENS = 100_000
 SUMMARIZATION_KEEP_MESSAGES = 20
+# How much of the replaced history the summarizer may read (LangChain's own
+# default is only the last 4,000 tokens, which silently drops the rest).
+SUMMARY_INPUT_TOKEN_LIMIT = 120_000
+# Context window assumed for a model LangChain has no profile for and that
+# isn't in database/seed.py's KNOWN_CONTEXT_WINDOWS.
+DEFAULT_CONTEXT_WINDOW = 128_000
 
 # Reasoning source for a model (ProviderModel.reasoning_mode)
 

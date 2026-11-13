@@ -20,7 +20,8 @@ export interface ThreadUpdateRequest {
   title: string;
 }
 
-export type MessageRole = "user" | "assistant";
+// "summary": earlier conversation condensed for the agent (shown collapsible).
+export type MessageRole = "user" | "assistant" | "summary";
 
 export interface Message {
   id: string;

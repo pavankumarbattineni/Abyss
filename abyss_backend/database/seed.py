@@ -72,6 +72,28 @@ CATALOG: dict[str, tuple[str, list[tuple[str, str]]]] = {
 }
 
 
+# Input context windows (tokens) for catalog models LangChain has no profile
+# for -- the selected model's window sets when a conversation is summarized
+# (abyss_agents/history.py). From the providers' model docs.
+KNOWN_CONTEXT_WINDOWS: dict[str, int] = {
+    "claude-fable-5-2": 1_000_000,
+    "claude-opus-5-5": 1_000_000,
+    "claude-sonnet-5-5": 1_000_000,
+    "claude-haiku-5-5": 1_000_000,
+    "claude-fable-5-1": 1_000_000,
+    "claude-fable-5": 1_000_000,
+    "claude-opus-5": 1_000_000,
+    "claude-sonnet-5": 1_000_000,
+    "claude-opus-4-8": 1_000_000,
+    "claude-opus-4-7": 1_000_000,
+    "claude-opus-4-6": 1_000_000,
+    "claude-sonnet-4-6": 1_000_000,
+    "claude-opus-4-5-20251101": 200_000,
+    "claude-sonnet-4-5-20250929": 200_000,
+    "claude-haiku-4-5-20251001": 200_000,
+}
+
+
 async def seed_catalog(session: AsyncSession) -> int:
     """Insert missing providers and models; returns how many models were added."""
     for name, (display_name, _) in CATALOG.items():
