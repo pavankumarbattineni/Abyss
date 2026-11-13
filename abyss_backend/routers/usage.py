@@ -87,7 +87,7 @@ async def list_usage_runs(
             content=content,
             media_type=content_type,
             headers={
-                "Content-Disposition": 'attachment; filename="thinkloop-usage.csv"',
+                "Content-Disposition": 'attachment; filename="abyss-usage.csv"',
                 "X-Total-Matching-Rows": str(total_matching),
                 "X-Export-Truncated": "true" if was_truncated else "false",
             },

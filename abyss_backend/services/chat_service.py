@@ -4,9 +4,7 @@ import logging
 import os
 from dataclasses import dataclass
 
-import httpx
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +34,7 @@ from database.models import (
     StreamRecord, Thread, User, utcnow,
 )
 from schemas.stream import StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
+from utils.platform_llm import build_platform_llm, configured_default
 from utils.pricing import compute_cost_usd
 from utils.encryption import decrypt_value
 from abyss_agents.factory import build_agent
@@ -46,7 +45,6 @@ import utils.stream_manager as stream_manager
 
 logger = logging.getLogger(__name__)
 
-_llm_cfg = config["LLM"]
 _langsmith_cfg = config.get("LANGSMITH", {})
 
 
@@ -59,32 +57,16 @@ if _langsmith_cfg.get("tracing_enabled", False):
         os.environ["LANGCHAIN_PROJECT"] = _langsmith_cfg["project"]
 
 
-_llm: ChatOpenAI | None = None
+_title_llm: BaseChatModel | None = None
 
-def _get_llm() -> ChatOpenAI:
-    """Return the shared ChatOpenAI instance, creating it on first call.
 
-    max_retries lets the OpenAI SDK's own retry logic absorb transient
-    connection-establishment failures. keepalive_expiry is kept short so a
-    pooled connection that's gone stale/half-open isn't handed out for a new
-    request — the more common source of a mid-stream BrokenResourceError.
-    """
-    global _llm
-    if _llm is None:
-        _llm = ChatOpenAI(
-            model=_llm_cfg["openai_model"],
-            api_key=_llm_cfg["openai_api_key"],
-            max_retries=2,
-            http_async_client=httpx.AsyncClient(
-                limits=httpx.Limits(
-                    max_keepalive_connections=20,
-                    max_connections=100,
-                    keepalive_expiry=15.0,
-                ),
-                timeout=httpx.Timeout(120.0, connect=10.0),
-            ),
-        )
-    return _llm
+def _get_llm() -> BaseChatModel:
+    """The platform default model (see utils/platform_llm.py), shared for
+    short utility calls such as thread titles."""
+    global _title_llm
+    if _title_llm is None:
+        _title_llm = build_platform_llm(*configured_default())
+    return _title_llm
 
 
 @dataclass(frozen=True)
@@ -103,9 +85,9 @@ async def resolve_llm_for_agent(
 ) -> LlmResolution:
     """Build the LLM this agent should use for the current turn.
 
-    agent_record.llm_model_id NULL means "Default" — always the platform's
-    own OpenAI key, paired with whichever provider_models row is currently
-    flagged is_platform_default, fully isolated from whatever credential the
+    agent_record.llm_model_id NULL means "Default": whichever provider_models
+    row is flagged is_platform_default, on the platform's own key for that
+    provider (utils/platform_llm.py), fully isolated from whatever credential the
     user may have added for a different, explicitly-configured agent. Any
     other (explicit) selection requires the owning user to have a valid
     LlmCredential for that model's provider; there is no platform fallback
@@ -126,9 +108,9 @@ async def resolve_llm_for_agent(
             .where(ProviderModel.is_platform_default == True, ProviderModel.is_active == True)
         )
         row = result.first()
-        provider, model, mode = row if row else ("openai", _llm_cfg["openai_model"], REASONING_MODE_PROMPT)
+        provider, model, mode = row if row else (*configured_default(), REASONING_MODE_PROMPT)
         native = enable_thinking and mode == REASONING_MODE_NATIVE
-        llm = PROVIDERS[provider].build(model, _llm_cfg["openai_api_key"], native)
+        llm = build_platform_llm(provider, model, native)
         return LlmResolution(
             llm=llm, provider=provider, model=model, llm_source=LLM_SOURCE_DEFAULT, native_reasoning=native,
         )

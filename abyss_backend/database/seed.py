@@ -16,10 +16,12 @@ from database.models import Provider, ProviderModel
 
 logger = logging.getLogger(__name__)
 
-# The platform default runs on the platform's own OpenAI key, so it must be
-# an OpenAI model. Every model uses the <reasoning> prompt protocol, which
-# works on any model; switch one to "native" only after testing it.
-PLATFORM_DEFAULT = ("openai", "gpt-5-mini")
+# The default for agents without a model of their own, on a fresh database.
+# It runs on the platform's key for its provider (ABYSS_CONFIG.LLM.api_keys);
+# existing databases were switched by migration 0003. Every model uses the
+# <reasoning> prompt protocol, which works on any model; switch one to
+# "native" only after testing it.
+PLATFORM_DEFAULT = ("google", "gemini-3.5-flash-lite")
 
 CATALOG: dict[str, tuple[str, list[tuple[str, str]]]] = {
     "openai": ("OpenAI", [
