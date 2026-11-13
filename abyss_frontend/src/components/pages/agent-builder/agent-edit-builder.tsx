@@ -10,7 +10,8 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { AgentAvatar } from "@/components/layout";
-import { ChatPanel, ConfirmDialog } from "@/components/shared";
+import { ChatPanel } from "@/components/shared/chat-panel";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Skeleton } from "@/components/ui";
 import { useChatStream, useResizablePanel } from "@/hooks";
 import { cn } from "@/lib/utils";
@@ -92,14 +93,16 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
     defaultValues: { name: "", description: "", system_prompt: "" },
     mode: "onChange",
   });
+  // React Compiler skips memoizing watch() results; re-rendering on each edit is intended here.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const values = form.watch();
 
   useEffect(() => {
     if (agent && !hasSeeded.current) {
       form.reset({
         name: agent.name,
-        description: agent.description,
-        system_prompt: agent.system_prompt,
+        description: agent.description ?? "",
+        system_prompt: agent.system_prompt ?? "",
       });
       setSubAgents(agent.sub_agents);
       setSelectedTools(agent.tools);
@@ -151,8 +154,8 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
       );
       form.reset({
         name: updatedAgent.name,
-        description: updatedAgent.description,
-        system_prompt: updatedAgent.system_prompt,
+        description: updatedAgent.description ?? "",
+        system_prompt: updatedAgent.system_prompt ?? "",
       });
       setSubAgents(updatedAgent.sub_agents);
       setSelectedTools(updatedAgent.tools);

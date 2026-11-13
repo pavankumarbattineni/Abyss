@@ -33,13 +33,15 @@ from constants import (
 from database.checkpointer import get_checkpointer
 from database.models import (
     Agent, LlmCredential, Message, MCPTool, Provider, ProviderModel,
-    ScheduleRun, StreamRecord, Thread, User, utcnow,
+    StreamRecord, Thread, User, utcnow,
 )
 from schemas.stream import StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
+from utils.pricing import compute_cost_usd
 from utils.encryption import decrypt_value
 from abyss_agents.factory import build_agent
 from services.stream_projector import StreamProjector
 from utils.llm_providers import PROVIDERS, classify_llm_error
+from utils.thread_title import TITLE_SYSTEM_PROMPT, clean_title, fallback_title, title_request
 import utils.stream_manager as stream_manager
 
 logger = logging.getLogger(__name__)
@@ -56,13 +58,6 @@ if _langsmith_cfg.get("tracing_enabled", False):
     if _langsmith_cfg.get("project"):
         os.environ["LANGCHAIN_PROJECT"] = _langsmith_cfg["project"]
 
-# Must be set before importing litellm — forces pricing lookups to use only
-# the local data file bundled with the package, never a network fetch. This
-# avoids adding network latency (or a hang, if unreachable) to server startup,
-# and keeps cost calculation deterministic for a given litellm version rather
-# than silently drifting if the upstream pricing file changes underneath us.
-os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
-import litellm  # noqa: E402
 
 _llm: ChatOpenAI | None = None
 
@@ -224,60 +219,36 @@ def _compute_cost_usd(
     provider: str | None, model: str | None,
     input_tokens: int, cache_read_tokens: int, output_tokens: int,
 ) -> float | None:
-    """Compute a run's cost via LiteLLM's standardized per-model pricing.
-
-    Returns None (never a misleading 0) whenever cost genuinely can't be
-    determined: no provider/model resolved at all (e.g. the run failed
-    before resolving an agent), or LiteLLM doesn't recognize this exact
-    model string. Tokens are still recorded either way — this only affects
-    the derived dollar figure.
-    """
-    if not provider or not model or (input_tokens == 0 and output_tokens == 0):
-        return None
-    try:
-        prompt_cost, completion_cost = litellm.cost_per_token(
-            model=model,
-            prompt_tokens=input_tokens,
-            completion_tokens=output_tokens,
-            cache_read_input_tokens=cache_read_tokens,
-        )
-        return round(prompt_cost + completion_cost, 6)
-    except Exception as exc:
-        logger.warning("Cost calculation unavailable for %s/%s: %s", provider, model, exc)
-        return None
+    """A run's cost from the bundled price table (utils/pricing.py); None when
+    it can't be determined. Tokens are recorded either way."""
+    cost = compute_cost_usd(provider, model, input_tokens, cache_read_tokens, output_tokens)
+    if cost is None and provider and model and (input_tokens or output_tokens):
+        logger.warning("No price listed for %s/%s; cost left empty", provider, model)
+    return cost
 
 
 async def _generate_thread_title(user_message: str) -> str | None:
-    """Call the LLM once to produce a short, specific thread title from the opening message.
+    """A short, specific thread title for the opening message.
 
-    Returns None on any failure so the caller can continue without a title.
+    The candidate is validated (see utils.thread_title): a reply or refusal is
+    retried once, then replaced by a title from the message's key words. Only
+    an LLM failure returns None, so the caller continues without a title.
     """
     try:
-        response = await _get_llm().ainvoke([
-            {
-                "role": "system",
-                "content": (
-                    "You are a conversation-title writer. "
-                    "Your only job is to produce a short, specific title that captures "
-                    "the exact intent of the user's message.\n\n"
-                    "Rules:\n"
-                    "- 3 to 6 words, title case\n"
-                    "- Be specific to the actual topic — never generic\n"
-                    "- Lead with the key subject or action (e.g. 'Debug Payment Webhook Timeout', "
-                    "'Summarize Q3 Sales Report', 'Draft Apology Email to Client')\n"
-                    "- Prefer noun phrases or action + object; avoid starting with 'How', 'What', 'Can', 'Please'\n"
-                    "- No filler words: 'Help', 'Question', 'Chat', 'Conversation', 'Assistance', 'Info'\n"
-                    "- No quotes, no punctuation at the end, no markdown\n"
-                    "- Output ONLY the title — nothing else"
-                ),
-            },
-            {
-                "role": "user",
-                "content": user_message[:THREAD_TITLE_INPUT_MAX_CHARS],
-            },
-        ])
-        title = response.content.strip().strip('"').strip("'")[:THREAD_TITLE_OUTPUT_MAX_CHARS]
-        return title or None
+        for retry in (False, True):
+            response = await _get_llm().ainvoke([
+                {"role": "system", "content": TITLE_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": title_request(
+                        user_message, retry=retry, max_chars=THREAD_TITLE_INPUT_MAX_CHARS
+                    ),
+                },
+            ])
+            title = clean_title(getattr(response, "text", None) or str(response.content))
+            if title:
+                return title[:THREAD_TITLE_OUTPUT_MAX_CHARS]
+        return fallback_title(user_message)[:THREAD_TITLE_OUTPUT_MAX_CHARS]
     except Exception as exc:
         logger.warning("Thread title generation failed: %s", exc)
         return None
@@ -300,7 +271,6 @@ async def _run_generation(
     agent_id: str,
     user_message: str,
     enable_thinking: bool = True,
-    is_interactive: bool = True,
     resume_map: dict[str, dict] | None = None,
     starting_chunk_index: int = 0,
 ) -> None:
@@ -401,7 +371,6 @@ async def _run_generation(
             built = await build_agent(
                 session, agent_record, llm_resolution.llm, checkpointer,
                 enable_thinking=enable_thinking, native_reasoning=llm_resolution.native_reasoning,
-                is_interactive=is_interactive,
             )
             graph = built.graph
             projector.sub_agent_names = built.sub_agent_names
@@ -445,15 +414,6 @@ async def _run_generation(
                             updated_at=utcnow(),
                             **usage_values(),
                         )
-                    )
-                    # Best-effort heartbeat for the scheduler's stale-run sweep
-                    # (utils/scheduler.py._reclaim_stale_runs) — a no-op for
-                    # manual (non-scheduled) chat, since no ScheduleRun row
-                    # references this stream_id in that case.
-                    await session.execute(
-                        update(ScheduleRun)
-                        .where(ScheduleRun.stream_id == stream_id)
-                        .values(heartbeat_at=utcnow())
                     )
                     await session.commit()
                     last_flush_count = projector.total_tokens
@@ -667,7 +627,6 @@ class ChatService:
         thread_id: str,
         user_id: str,
         user_message: str,
-        is_interactive: bool = True,
     ) -> StreamStartResponse:
         """Validate, persist user message, create StreamRecord, start generation.
 
@@ -679,9 +638,6 @@ class ChatService:
             thread_id: The thread to send the message to.
             user_id: The authenticated user's ID.
             user_message: The raw user message text.
-            is_interactive: False for unattended runs (e.g. scheduled triggers)
-                — a gated tool call auto-denies instead of pausing for an
-                approval nobody is present to give. True for normal chat.
 
         Returns:
             StreamStartResponse with message_id, stream_id, and status="PENDING".
@@ -747,7 +703,6 @@ class ChatService:
                 agent_id=thread.agent_id,
                 user_message=user_message,
                 enable_thinking=enable_thinking,
-                is_interactive=is_interactive,
             )
         )
         stream_manager.register_task(stream_record.id, task)

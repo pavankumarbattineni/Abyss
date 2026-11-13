@@ -57,8 +57,8 @@ Background Task (_run_generation)
                                 parent emits several tool calls; results go back to the
                                 parent, which writes the final response)
       Every on_chat_model_end event's usage_metadata is accumulated into
-      input/output/cache-read token counts; cost is computed via LiteLLM's
-      local pricing table once the run reaches a terminal state.
+      input/output/cache-read token counts; cost is computed from the bundled
+      price table (utils/model_prices.json) once the run reaches a terminal state.
 
 Background Task (scheduler tick loop, utils/scheduler.py)
   │
@@ -263,7 +263,7 @@ schedule_runs
 
 **Sub-agents** are stored in the `agents` table with `parent_id` set to their parent agent's ID. Top-level (parent) agents have `parent_id = NULL`. The `agent_tools` join table links agents to their allowed `mcp_tools` by primary key ID.
 
-**Native enum columns, no Alembic:** `agent_schedules.schedule_type` and `schedule_runs.status` are native Postgres `ENUM` types (`schedule_type_enum`, `schedule_run_status_enum`) backed by the Python enums in `database/db_enums.py`. This project has no migration framework — `Base.metadata.create_all` creates missing tables/types on boot but never alters existing ones. Adding a new enum value later (including any new `stream_records` column, like the token/cost fields above) requires a manual `ALTER TABLE`/`ALTER TYPE` run directly against the database.
+**Migrations (Alembic):** the schema is managed by Alembic (`migrations/`). Startup runs `alembic upgrade head`; a database created before Alembic is adopted at the baseline (`0001`) first, and `0002` removes that era's leftovers (scheduling tables, the old `firebase_uid` column). After changing `database/models.py`, run `uv run alembic revision --autogenerate -m "..."` and review the generated file.
 
 ---
 
@@ -343,7 +343,7 @@ Only the **parent agent's** model output is treated as final user-visible conten
 
 ### Native provider reasoning (`provider_models.reasoning_mode`)
 
-Each catalog model has a `reasoning_mode`: `prompt` (default — the `<reasoning>` protocol above, works on any model) or `native` (the provider's own reasoning output). For a `native` model, when the user's thinking toggle is on, `utils/llm_providers.py` builds the model with the provider's reasoning enabled (OpenAI Responses API with reasoning summaries, Anthropic extended thinking, Gemini `include_thoughts`) and the prompt-based reasoning instruction is left out. The provider's `reasoning` content blocks are projected to the same `reasoning_start` / `reasoning_token` / `reasoning_end` SSE events and persisted steps, so clients cannot tell the two apart. Switch a model with a plain `UPDATE provider_models SET reasoning_mode = 'native' WHERE ...`; no model is flagged `native` by default. Existing databases need `ALTER TABLE provider_models ADD COLUMN reasoning_mode VARCHAR(10) NOT NULL DEFAULT 'prompt'` once (there is no Alembic).
+Each catalog model has a `reasoning_mode`: `prompt` (default — the `<reasoning>` protocol above, works on any model) or `native` (the provider's own reasoning output). For a `native` model, when the user's thinking toggle is on, `utils/llm_providers.py` builds the model with the provider's reasoning enabled (OpenAI Responses API with reasoning summaries, Anthropic extended thinking, Gemini `include_thoughts`) and the prompt-based reasoning instruction is left out. The provider's `reasoning` content blocks are projected to the same `reasoning_start` / `reasoning_token` / `reasoning_end` SSE events and persisted steps, so clients cannot tell the two apart. Switch a model with a plain `UPDATE provider_models SET reasoning_mode = 'native' WHERE ...`; no model is flagged `native` by default. The column is added by migration `0002` on older databases. The catalog itself (providers and models, with `gpt-5-mini` as the platform default) is seeded at startup by `database/seed.py`, which only inserts missing rows.
 
 `services/stream_projector.py`'s `StreamProjector` is what turns LangGraph `astream_events` into these SSE events and accumulates the answer text, structured reasoning steps and token usage that `_run_generation` persists.
 
@@ -509,7 +509,7 @@ Every agent run (each message sent, and each scheduled trigger) is recorded with
 
 ### Cost calculation
 
-Cost is computed via **LiteLLM**'s bundled local pricing table (`litellm.cost_per_token`), not a hand-maintained pricing map — `LITELLM_LOCAL_MODEL_COST_MAP=True` is set before import so pricing lookups never make a network call. If a model's pricing is unknown to LiteLLM, `cost_usd` is stored as `NULL` (never `0` — that would read as genuinely free) while the token counts themselves are still recorded.
+Cost comes from a bundled price table, `utils/model_prices.json` (per-token input, output and cache-read prices for the OpenAI, Anthropic and Google models), via `utils/pricing.py`. It replaced a runtime LiteLLM import (~130 MB, ~15 s) that was used only for this lookup; refresh the table from LiteLLM's public list with `uv run python scripts/update_model_prices.py`. Cache-read tokens are billed at the cache-read price. If a model isn't listed, `cost_usd` is stored as `NULL` (never `0` — that would read as genuinely free) while the token counts themselves are still recorded.
 
 ### API
 
@@ -644,8 +644,11 @@ Create a `.env` file as shown in [Configuration](#configuration).
 ### Run (development)
 
 ```bash
-uvicorn main:app --reload --port 8000
+uv run python scripts/dev.py            # http://127.0.0.1:8100 (Windows-safe event loop)
+uv run python scripts/dev.py --reload   # restart on code changes
 ```
+
+`ABYSS_ALLOWED_ORIGINS` (comma-separated, default `http://localhost:3100,http://127.0.0.1:3100`) lists the browser origins allowed to call the API; set it to the frontend's URL in production.
 
 ### Run (production-style, single worker)
 
@@ -667,12 +670,11 @@ gunicorn main:app -k uvicorn.workers.UvicornWorker -w 1 --bind 0.0.0.0:8000 --ti
 
 On every start, the application's `lifespan`:
 
-1. **`Base.metadata.create_all`** — creates all tables (and any new native enum types) if they don't already exist
-2. **`init_checkpointer()`** — opens the psycopg pool and creates LangGraph checkpoint tables
-3. **`_mark_orphaned_streams()`** — marks any `PENDING`/`RUNNING` streams older than `STREAM_ORPHAN_GRACE_SECONDS` (30s) as `FAILED`
-4. **`_mark_orphaned_schedule_runs()`** — same recovery for `schedule_runs` left `RUNNING` by a killed process
+1. **`run_migrations()`** — `alembic upgrade head` (adopting a pre-Alembic database at the baseline first)
+2. **`seed_catalog()`** — inserts any missing providers/models of the LLM catalog
+3. **`init_checkpointer()`** — opens the psycopg pool and creates LangGraph checkpoint tables
+4. **`_mark_orphaned_streams()`** — marks any `PENDING`/`RUNNING` streams older than `STREAM_ORPHAN_GRACE_SECONDS` (30s) as `FAILED`
 5. **`build_agent_tool_registry()`** — loads MCP tools into memory for all active agents using a single batch query
-6. **`start_scheduler()`** — starts the background scheduler tick loop
 
 ---
 
@@ -1007,7 +1009,7 @@ See [Token Usage & Cost Tracking](#token-usage--cost-tracking) for how capture a
 | Tool approval mechanism | LangGraph `interrupt()`, checkpointer as source of truth | Pausing is a first-class graph state, not an ad-hoc flag; resuming re-validates against the durable checkpoint so a stale/forged approval request can't succeed |
 | Tool approval scope | Global per tool (`MCPTool.permission_state`), not per-agent or per-thread | One switch protects a tool everywhere it's assigned; simpler mental model than per-agent or per-conversation overrides, at the cost of no thread-scoped "allow just this chat" option (considered, not built) |
 | Scheduled-run approval handling | Auto-deny (skip), never pause | No human is present to answer a scheduled trigger's pause; skipping keeps the run moving instead of hanging forever |
-| Cost calculation | LiteLLM local pricing table (`LITELLM_LOCAL_MODEL_COST_MAP=True`) instead of a hand-maintained map | Standardized, provider-agnostic pricing without owning a pricing table; forcing the local-only mode avoids a network call at import time; unknown models cleanly fall back to `cost_usd: NULL` |
+| Cost calculation | Bundled price table `utils/model_prices.json`, refreshed from LiteLLM's public list by a script | Same standardized prices without a ~130 MB runtime dependency; unknown models fall back to `cost_usd: NULL` |
 | Token capture point | LangGraph's `on_chat_model_end` `usage_metadata`, not a custom wrapper | Already standardized across every supported provider by LangChain itself; no per-provider parsing needed |
 | Usage export | `is_download` flag on `GET /usage/runs`, not a separate export endpoint | The list and the download share one filter-building code path — the exported file can never drift from what the UI's filtered list shows |
 | BYOK credential resolution | Single `resolve_llm_for_agent()` returning `LlmResolution` | One place decides default-vs-BYOK per run; the same `llm_source`/`provider`/`model` it returns is what gets persisted for usage/cost tracking — no duplicated resolution logic |

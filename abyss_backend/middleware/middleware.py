@@ -7,6 +7,8 @@ This module centralizes all middleware configuration including:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from config import ALLOWED_ORIGINS
+
 from middleware.error_handler import GlobalErrorHandlerMiddleware
 
 
@@ -23,17 +25,12 @@ def setup_middleware(app: FastAPI):
     # Add global exception handler middleware
     app.add_middleware(GlobalErrorHandlerMiddleware)
 
-    # Configure CORS middleware
+    # CORS: only the configured frontend origins (ABYSS_ALLOWED_ORIGINS).
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "*",
-        ],
+        allow_origins=ALLOWED_ORIGINS,
         allow_credentials=True,
-        allow_methods=[
-            "*",
-        ],
-        allow_headers=[
-            "*",
-        ],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Api-Key", "Last-Event-ID", "Accept"],
+        expose_headers=["Content-Disposition"],
     )

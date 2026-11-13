@@ -1,18 +1,16 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
-from sqlalchemy import Enum as PgEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.session import Base
-from database.db_enums import ScheduleRunStatus, ScheduleType
 from constants import MCP_CONNECTION_STATUS_CONNECTED, MCP_DEFAULT_TRANSPORT, STREAM_STATUS_PENDING
 
-_IST = timezone(timedelta(hours=5, minutes=30))
-
-
 def utcnow() -> datetime:
-    return datetime.now(_IST).replace(tzinfo=None)
+    """The current time in UTC, timezone-naive -- how every timestamp column
+    is stored. The API sends these without an offset; the frontend reads a
+    zone-less timestamp as UTC (lib/server-date.ts)."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class BasicModel(Base):
@@ -223,97 +221,6 @@ class StreamRecord(BasicModel):
     llm_source: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # 'default' | 'byok'
     llm_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     llm_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-
-
-class AgentSchedule(BasicModel):
-    __tablename__ = "agent_schedules"
-
-    agent_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    user_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    # Native Postgres ENUM (schedule_type_enum) backed by ScheduleType (database/db_enums.py).
-    schedule_type: Mapped[ScheduleType] = mapped_column(
-        PgEnum(
-            ScheduleType,
-            name="schedule_type_enum",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-        ),
-        nullable=False,
-    )
-    interval_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    time_of_day: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)  # "HH:MM", 24h
-    weekdays: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # "0,2,4" Mon=0..Sun=6
-    day_of_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1-31
-    input_query: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    dedup_signature: Mapped[str] = mapped_column(String(255), nullable=False)
-    next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
-    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    agent: Mapped["Agent"] = relationship("Agent")
-
-    # Partial unique index — active schedules only. A soft-deleted (is_active=False)
-    # row with the same signature must not block recreating that recurrence.
-    __table_args__ = (
-        Index(
-            "uq_agent_schedule_signature",
-            "agent_id", "dedup_signature",
-            unique=True,
-            postgresql_where=text("is_active = true"),
-        ),
-    )
-
-
-class ScheduleRun(BasicModel):
-    __tablename__ = "schedule_runs"
-
-    schedule_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("agent_schedules.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    agent_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    scheduled_for: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    # A dedicated new Thread is created per scheduled execution (no shared
-    # conversation memory across runs); stream_id lets the tick loop reconcile
-    # this row's status against the StreamRecord once generation finishes.
-    thread_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("threads.id"), nullable=True)
-    stream_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    # Native Postgres ENUM (schedule_run_status_enum) backed by ScheduleRunStatus (database/db_enums.py).
-    status: Mapped[ScheduleRunStatus] = mapped_column(
-        PgEnum(
-            ScheduleRunStatus,
-            name="schedule_run_status_enum",
-            values_callable=lambda enum_cls: [member.value for member in enum_cls],
-        ),
-        nullable=False,
-        default=ScheduleRunStatus.PENDING,
-    )
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # Updated whenever the generation this run is watching makes observable
-    # progress (see chat_service._run_generation's periodic flush). Combined
-    # with created_at as a floor, this is what lets the tick-level sweep
-    # reclaim a run stuck RUNNING mid-session — not just at server boot.
-    heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    # Which retry attempt this row represents (1 = first try). Copied from
-    # AgentSchedule.retry_count at creation time — informational only, not
-    # used for control flow (the schedule's own retry_count is authoritative).
-    attempt: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("schedule_id", "scheduled_for", name="uq_schedule_run_schedule_timestamp"),
-        # Enforces "at most one active run per schedule" at the database level —
-        # this is what makes the atomic-claim pattern in utils/scheduler.py safe
-        # across multiple concurrent workers/instances, not just within one
-        # in-process tick loop.
-        Index(
-            "uq_schedule_runs_one_active",
-            "schedule_id",
-            unique=True,
-            postgresql_where=text("status = 'RUNNING'"),
-        ),
-    )
 
 
 class ApiKey(BasicModel):

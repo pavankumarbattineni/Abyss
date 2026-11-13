@@ -30,7 +30,6 @@ from abyss_agents.middleware import (
     SubAgentCallLimitMiddleware,
     ToolApprovalMiddleware,
     ToolResultMiddleware,
-    UnattendedToolPolicyMiddleware,
 )
 from abyss_agents.naming import to_tool_name
 from abyss_agents.prompts import build_parent_prompt, build_sub_agent_prompt
@@ -80,18 +79,15 @@ def _model_retry() -> ModelRetryMiddleware:
     )
 
 
-def _tool_policy(label: str, permissions: dict[str, bool], tools: list, is_interactive: bool) -> list:
+def _tool_policy(label: str, permissions: dict[str, bool], tools: list) -> list:
     """Approval middleware for the tools in `tools` that are flagged in `permissions`.
 
-    On interactive runs the approval node is present even when no tool is
-    currently gated. A paused run's checkpoint is waiting on that node, so the
-    graph rebuilt to resume it must contain it regardless of any permission
-    change (e.g. "Always Allow") made in the meantime; with nothing gated the
-    node is a no-op.
+    The approval node is present even when no tool is currently gated. A
+    paused run's checkpoint is waiting on that node, so the graph rebuilt to
+    resume it must contain it regardless of any permission change (e.g.
+    "Always Allow") made in the meantime; with nothing gated it's a no-op.
     """
     gated = {t.name for t in tools if permissions.get(t.name, False)}
-    if not is_interactive:
-        return [UnattendedToolPolicyMiddleware(gated)] if gated else []
     return [
         ToolApprovalMiddleware(
             tool_ids={t.name: (t.metadata or {}).get("tool_id") for t in tools if t.name in gated},
@@ -120,7 +116,6 @@ async def build_agent(
     *,
     enable_thinking: bool = True,
     native_reasoning: bool = False,
-    is_interactive: bool = True,
 ) -> BuiltAgent:
     """Build and compile the parent agent graph for `agent_record`.
 
@@ -134,8 +129,6 @@ async def build_agent(
         enable_thinking: The user's thinking toggle.
         native_reasoning: The model already emits the provider's own reasoning
             blocks, so the prompt-based `<reasoning>` protocol is not used.
-        is_interactive: False for unattended runs (e.g. scheduled): gated tools
-            are skipped instead of pausing for an approval nobody can give.
 
     Returns:
         BuiltAgent with the compiled graph and the sub-agent tool names.
@@ -165,7 +158,7 @@ async def build_agent(
             system_prompt=build_sub_agent_prompt(sub.system_prompt, include_reasoning=prompt_reasoning),
             middleware=[
                 ToolResultMiddleware(),
-                *_tool_policy(tool_name, get_tool_permissions_for_agent(str(sub.id)), child_tools, is_interactive),
+                *_tool_policy(tool_name, get_tool_permissions_for_agent(str(sub.id)), child_tools),
                 _model_retry(),
                 ModelCallLimitMiddleware(run_limit=_SUB_AGENT_MODEL_CALL_LIMIT),
             ],
@@ -179,7 +172,7 @@ async def build_agent(
 
     middleware = [
         ToolResultMiddleware(),
-        *_tool_policy(PARENT_AGENT_NAME, parent_permissions, parent_tools, is_interactive),
+        *_tool_policy(PARENT_AGENT_NAME, parent_permissions, parent_tools),
     ]
     if sub_names:
         middleware.append(SubAgentCallLimitMiddleware(sub_names, MAX_PARALLEL_TASKS))

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { PaginationState } from "@tanstack/react-table";
 
-import { PageHeader } from "@/components/shared";
+import { PageHeader } from "@/components/shared/page-header";
 import { Card, DataTable } from "@/components/ui";
 import { useDebounce } from "@/hooks";
 import { usageService } from "@/services";
@@ -18,6 +18,7 @@ import type { UsageRun, UsageRunsQuery, UsageSummary } from "@/types";
 import { DEFAULT_USAGE_FILTERS, UsageFilters, type UsageFiltersValue } from "./usage-filters";
 import { UsageRunStatusBadge } from "./usage-run-status-badge";
 import { UsageSummaryCards } from "./usage-summary-cards";
+import { parseServerDate } from "@/lib/server-date";
 
 // The API types start_date/end_date as date-time, so a bare "YYYY-MM-DD" from the date input
 // needs a time component — start of day for the lower bound, end of day for the upper one so
@@ -48,7 +49,7 @@ const columns: ColumnDef<UsageRun>[] = [
     cell: ({ row }) => (
       <Link
         href={`/agents/${row.original.agent_id}/threads/${row.original.thread_id}`}
-        className="font-medium text-primary hover:underline"
+        className="font-medium text-sage-text hover:text-foreground hover:underline"
       >
         {row.original.agent_name}
       </Link>
@@ -65,7 +66,7 @@ const columns: ColumnDef<UsageRun>[] = [
     cell: ({ row }) => {
       const { provider, model } = row.original;
       const label = [provider, model].filter(Boolean).join(" / ");
-      return <span className="text-xs text-muted-foreground">{label || "—"}</span>;
+      return <span className="text-xs whitespace-nowrap text-muted-foreground">{label || "—"}</span>;
     },
   },
   {
@@ -133,7 +134,7 @@ const columns: ColumnDef<UsageRun>[] = [
     header: "Started",
     cell: ({ getValue }) => (
       <span className="text-xs text-muted-foreground">
-        {format(new Date(getValue<string>()), "MMM d, yyyy h:mm a")}
+        {format(parseServerDate(getValue<string>()), "MMM d, yyyy h:mm a")}
       </span>
     ),
   },

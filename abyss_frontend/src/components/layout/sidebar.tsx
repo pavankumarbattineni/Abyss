@@ -11,6 +11,7 @@ import {
   Plus,
   Settings,
   User,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ import {
   PopoverTrigger,
   Skeleton,
 } from "@/components/ui";
+import { MOBILE_QUERY, useMediaQuery } from "@/hooks";
 import { useAuth } from "@/providers";
 import { agentService, authService } from "@/services";
 import { useSidebarStore } from "@/store";
@@ -44,7 +46,11 @@ function getEmailInitials(email?: string): string {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const collapsed = useSidebarStore((state) => state.collapsed);
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+  // The phone menu always shows labels; collapsing is a desktop choice.
+  const collapsed = useSidebarStore((state) => state.collapsed) && !isMobile;
+  const mobileOpen = useSidebarStore((state) => state.mobileOpen);
+  const setMobileOpen = useSidebarStore((state) => state.setMobileOpen);
   const navItems = useSidebarStore((state) => state.navItems);
   const toggleCollapsed = useSidebarStore((state) => state.toggleCollapsed);
   const { data: agents = [], isLoading } = useQuery<Agent[]>({
@@ -56,6 +62,11 @@ export function Sidebar() {
   useEffect(() => {
     useSidebarStore.persist.rehydrate();
   }, []);
+
+  // Navigating closes the phone menu.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname, setMobileOpen]);
 
   const allHrefs = [
     ...navItems.map((item) => item.href),
@@ -70,173 +81,215 @@ export function Sidebar() {
   const isActive = (href: string) => href === activeHref;
 
   return (
-    <aside
-      className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-border-soft bg-surface px-3 py-4 transition-[width] duration-150",
-        collapsed ? "w-16" : "w-64",
+    <>
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-foreground/30 md:hidden"
+          aria-hidden="true"
+          onClick={() => setMobileOpen(false)}
+        />
       )}
-    >
-      <div
+      <aside
         className={cn(
-          "mb-4 flex items-center gap-2 px-1",
-          collapsed && "flex-col gap-2",
+          "flex h-dvh shrink-0 flex-col border-r border-border-soft bg-surface px-3 py-4",
+          // Phones: an off-canvas menu. Desktop: a column that can collapse.
+          "fixed inset-y-0 left-0 z-50 w-72 transition-transform duration-200 md:static md:z-auto md:translate-x-0 md:transition-[width] md:duration-150",
+          mobileOpen ? "translate-x-0 shadow-xl" : "-translate-x-full",
+          collapsed ? "md:w-16" : "md:w-64",
         )}
+        aria-label="Main navigation"
       >
-        <AbyssLogo size={collapsed ? 24 : 34} />
-        {!collapsed && (
-          <Heading as="span" size="lg">
-            <AbyssWordmark />
-          </Heading>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className={cn("text-muted-foreground hover:text-foreground", !collapsed && "ml-auto")}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={toggleCollapsed}
+        <div
+          className={cn(
+            "mb-4 flex items-center gap-2 px-1",
+            collapsed && "flex-col gap-2",
+          )}
         >
-          {collapsed ? (
-            <ChevronsRight className="size-3.5" />
-          ) : (
-            <ChevronsLeft className="size-3.5" />
-          )}
-        </Button>
-      </div>
-
-      <div className="flex flex-1 flex-col overflow-y-auto">
-        {!collapsed && (
-          <Heading as="div" size="xs" className="px-2 pb-1.5 pt-3">
-            Platform
-          </Heading>
-        )}
-        <nav className="flex flex-col gap-0.5">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.id}
-                href={item.href}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                  active && "bg-accent font-medium text-foreground",
-                )}
-              >
-                <Icon className="size-4 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="flex items-center px-2 pb-1.5 pt-4">
-          {!collapsed && (
-            <Heading as="span" size="xs">
-              Agents
-            </Heading>
-          )}
+          <Link
+            href="/home"
+            aria-label="Abyss home"
+            className={cn(
+              "flex items-center gap-2 rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              collapsed && "flex-col",
+            )}
+          >
+            <AbyssLogo size={collapsed ? 24 : 34} />
+            {!collapsed && (
+              <Heading as="span" size="lg">
+                <AbyssWordmark />
+              </Heading>
+            )}
+          </Link>
           <Button
             type="button"
             variant="ghost"
-            size="icon-xs"
-            className="ml-auto text-muted-foreground hover:text-foreground"
-            aria-label="New agent"
-            asChild
+            size="icon-sm"
+            className={cn(
+              "text-muted-foreground hover:text-foreground",
+              !collapsed && "ml-auto",
+            )}
+            aria-label={
+              isMobile
+                ? "Close menu"
+                : collapsed
+                  ? "Expand sidebar"
+                  : "Collapse sidebar"
+            }
+            onClick={isMobile ? () => setMobileOpen(false) : toggleCollapsed}
           >
-            <Link href="/agents/create">
-              <Plus className="size-3.5" />
-            </Link>
+            {isMobile ? (
+              <X className="size-4" />
+            ) : collapsed ? (
+              <ChevronsRight className="size-3.5" />
+            ) : (
+              <ChevronsLeft className="size-3.5" />
+            )}
           </Button>
         </div>
-        <nav className="flex flex-col gap-0.5">
-          {isLoading
-            ? Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className="flex items-center gap-2.5 px-2.5 py-2">
-                  <Skeleton className="size-6 rounded-md" />
-                  {!collapsed && <Skeleton className="h-3 flex-1" />}
-                </div>
-              ))
-            : agents.map((agent) => (
+
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          {!collapsed && (
+            <Heading as="div" size="xs" className="px-2 pb-1.5 pt-3">
+              Platform
+            </Heading>
+          )}
+          <nav className="flex flex-col gap-0.5">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = isActive(item.href);
+              return (
                 <Link
-                  key={agent.id}
-                  href={`/agents/${agent.id}`}
-                  title={collapsed ? agent.name : undefined}
+                  key={item.id}
+                  href={item.href}
+                  title={collapsed ? item.label : undefined}
                   className={cn(
                     "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                    isActive(`/agents/${agent.id}`) &&
-                      "bg-accent font-medium text-foreground",
+                    active && "bg-accent font-medium text-foreground",
                   )}
                 >
-                  <AgentAvatar name={agent.name} className="size-6 text-xs" />
-                  {!collapsed && <span className="truncate">{agent.name}</span>}
+                  <Icon className="size-4 shrink-0" />
+                  {!collapsed && <span>{item.label}</span>}
                 </Link>
-              ))}
-        </nav>
-      </div>
+              );
+            })}
+          </nav>
 
-      <div className="flex flex-col gap-1 border-t border-border-soft pt-3">
-        <Link
-          href="/settings"
-          title={collapsed ? "Settings" : undefined}
-          className={cn(
-            "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-            isActive("/settings") && "bg-accent font-medium text-foreground",
-          )}
-        >
-          <Settings className="size-4 shrink-0" />
-          {!collapsed && <span>Settings</span>}
-        </Link>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
+          <div className="flex items-center px-2 pb-1.5 pt-4">
+            {!collapsed && (
+              <Heading as="span" size="xs">
+                Agents
+              </Heading>
+            )}
+            <Button
               type="button"
-              aria-label="Account menu"
-              className={cn(
-                "flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-surface-hover",
-                collapsed && "flex-col gap-2",
-              )}
+              variant="ghost"
+              size="icon-xs"
+              className="ml-auto text-muted-foreground hover:text-foreground"
+              aria-label="New agent"
+              asChild
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                {getEmailInitials(user?.email)}
-              </span>
-              {!collapsed &&
-                (isUserLoading ? (
-                  <Skeleton className="h-3 flex-1" />
-                ) : (
-                  <span className="flex-1 truncate text-sm text-muted-foreground text-left">
-                    {user?.email ?? "Account"}
-                  </span>
+              <Link href="/agents/create">
+                <Plus className="size-3.5" />
+              </Link>
+            </Button>
+          </div>
+          <nav className="flex flex-col gap-0.5">
+            {isLoading
+              ? Array.from({ length: 3 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2.5 px-2.5 py-2"
+                  >
+                    <Skeleton className="size-6 rounded-md" />
+                    {!collapsed && <Skeleton className="h-3 flex-1" />}
+                  </div>
+                ))
+              : agents.map((agent) => (
+                  <Link
+                    key={agent.id}
+                    href={`/agents/${agent.id}`}
+                    title={collapsed ? agent.name : undefined}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                      isActive(`/agents/${agent.id}`) &&
+                        "bg-accent font-medium text-foreground",
+                    )}
+                  >
+                    <AgentAvatar name={agent.name} className="size-6 text-xs" />
+                    {!collapsed && (
+                      <span className="truncate">{agent.name}</span>
+                    )}
+                  </Link>
                 ))}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" side="top" className="w-48 gap-0.5 p-1">
-            <button
-              type="button"
-              disabled
-              aria-label="Profile (coming soon)"
-              className="flex w-full cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground opacity-60"
+          </nav>
+        </div>
+
+        <div className="flex flex-col gap-1 border-t border-border-soft pt-3">
+          <Link
+            href="/settings"
+            title={collapsed ? "Settings" : undefined}
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+              isActive("/settings") && "bg-accent font-medium text-foreground",
+            )}
+          >
+            <Settings className="size-4 shrink-0" />
+            {!collapsed && <span>Settings</span>}
+          </Link>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Account menu"
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-surface-hover",
+                  collapsed && "flex-col gap-2",
+                )}
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                  {getEmailInitials(user?.email)}
+                </span>
+                {!collapsed &&
+                  (isUserLoading ? (
+                    <Skeleton className="h-3 flex-1" />
+                  ) : (
+                    <span className="flex-1 truncate text-sm text-muted-foreground text-left">
+                      {user?.email ?? "Account"}
+                    </span>
+                  ))}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              side="top"
+              className="w-48 gap-0.5 p-1"
             >
-              <User className="size-3.5" />
-              Profile
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await authService.logout();
-                refreshAuthState();
-                router.push("/auth/login");
-              }}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
-            >
-              <LogOut className="size-3.5" />
-              Log out
-            </button>
-          </PopoverContent>
-        </Popover>
-      </div>
-    </aside>
+              <button
+                type="button"
+                disabled
+                aria-label="Profile (coming soon)"
+                className="flex w-full cursor-not-allowed items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground opacity-60"
+              >
+                <User className="size-3.5" />
+                Profile
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await authService.logout();
+                  refreshAuthState();
+                  router.push("/home");
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
+              >
+                <LogOut className="size-3.5" />
+                Log out
+              </button>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </aside>
+    </>
   );
 }

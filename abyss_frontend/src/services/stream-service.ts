@@ -29,6 +29,7 @@ function parseSseFrame(frame: string): StreamEvent | null {
   switch (eventType) {
     case "agent_start":
     case "agent_end":
+    case "dispatch_decision":
     case "tool_start":
     case "tool_end":
     case "reasoning_start":

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Optional
 
 from constants import STREAM_CLEANUP_DELAY_SECONDS
 

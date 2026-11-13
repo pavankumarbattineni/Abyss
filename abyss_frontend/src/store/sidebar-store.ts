@@ -20,6 +20,9 @@ interface SidebarState {
   navItems: SidebarNavItem[];
   toggleCollapsed: () => void;
   setCollapsed: (collapsed: boolean) => void;
+  /** Phones only: whether the slide-in sidebar is open. Not persisted. */
+  mobileOpen: boolean;
+  setMobileOpen: (open: boolean) => void;
 }
 
 export const useSidebarStore = create<SidebarState>()(
@@ -29,6 +32,8 @@ export const useSidebarStore = create<SidebarState>()(
       navItems: SIDEBAR_NAV_ITEMS,
       toggleCollapsed: () => set((state) => ({ collapsed: !state.collapsed })),
       setCollapsed: (collapsed) => set({ collapsed }),
+      mobileOpen: false,
+      setMobileOpen: (mobileOpen) => set({ mobileOpen }),
     }),
     {
       name: "thinkloop-sidebar",

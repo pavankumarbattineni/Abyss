@@ -1,0 +1,171 @@
+# Continuous Deployment: staging migration rehearsal -> approval -> production.
+#
+#   CI green on development (push/merge)
+#     -> migrate-staging   : migrations + catalog seed on the Neon *staging* branch
+#     -> deploy-production : PAUSES for approval (environment "production"),
+#                            then migrates Neon production, deploys that exact
+#                            commit to Render, waits until /health reports it,
+#                            then deploys the frontend to Vercel.
+#
+# Manual run (Actions tab -> Deploy -> Run workflow) deploys any commit, e.g.
+# to roll the backend back to a previous release.
+#
+# Configuration (Settings -> Secrets and variables / Environments), never here:
+#   Repository variables : BACKEND_URL  (e.g. https://abyss-backend.onrender.com)
+#                          FRONTEND_URL (e.g. https://abyss.vercel.app)
+#   Environment staging    : secret ABYSS_CONFIG (DB = Neon staging branch)
+#   Environment production : secrets ABYSS_CONFIG (same as Render),
+#                            RENDER_DEPLOY_HOOK_URL, VERCEL_DEPLOY_HOOK_URL;
+#                            required reviewer = you (the approval pause)
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [development]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA to deploy (empty = latest development)"
+        required: false
+        default: ""
+
+# One deploy at a time; a newer one waits instead of cancelling a deploy that
+# may be half-way through migrating the production database.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  resolve:
+    name: Resolve commit
+    # Only after a *successful* CI run for a push to development (a merge),
+    # never for pull-request CI runs -- or a manual run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: development
+          fetch-depth: 0
+      # The commit CI tested (workflow_run), the commit asked for (manual
+      # run), or the tip of development (manual run, no input).
+      - id: sha
+        env:
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          ref="${CI_SHA:-${INPUT_REF:-development}}"
+          sha=$(git rev-parse --verify "${ref}^{commit}")
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Deploying commit \`$sha\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  migrate-staging:
+    name: Migrate staging (rehearsal)
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    defaults:
+      run:
+        working-directory: abyss_backend
+    env:
+      ABYSS_CONFIG: ${{ secrets.ABYSS_CONFIG }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: abyss_backend/uv.lock
+      - run: uv sync --frozen --no-dev
+      - name: Migrate + seed (Neon staging)
+        run: uv run python scripts/migrate.py
+
+  # ---------------------------------------------------------------------------
+  deploy-production:
+    name: Deploy production
+    needs: [resolve, migrate-staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Required reviewers on this environment make the job wait for approval.
+    environment:
+      name: production
+      url: ${{ vars.FRONTEND_URL }}
+    defaults:
+      run:
+        working-directory: abyss_backend
+    env:
+      SHA: ${{ needs.resolve.outputs.sha }}
+      ABYSS_CONFIG: ${{ secrets.ABYSS_CONFIG }}
+      BACKEND_URL: ${{ vars.BACKEND_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: abyss_backend/uv.lock
+      - run: uv sync --frozen --no-dev
+
+      # 1) Schema first: the new code may need it; the running old code keeps
+      #    working as long as migrations only add (expand, then contract later).
+      - name: Migrate + seed (Neon production)
+        run: uv run python scripts/migrate.py
+
+      # 2) Deploy exactly this commit to Render (not "whatever is newest").
+      - name: Deploy backend (Render)
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${HOOK}&ref=${SHA}")
+          echo "Render deploy hook -> HTTP $status"
+          # 200 = started, 202 = queued behind a deploy already in progress
+          [ "$status" = 200 ] || [ "$status" = 202 ]
+
+      # 3) "Requested" isn't "live": wait until /health reports this commit
+      #    (Render sets RENDER_GIT_COMMIT). A free Render build takes ~5-12 min.
+      - name: Wait for the new backend version
+        run: |
+          deadline=$((SECONDS + 1500))
+          until body=$(curl -fsS --max-time 30 "$BACKEND_URL/health") \
+                && echo "$body" | grep -q "\"version\":\"$SHA\""; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "::error::Backend did not report version $SHA within 25 minutes. Last /health: ${body:-unreachable}"
+              exit 1
+            fi
+            echo "waiting... (/health: ${body:-unreachable})"
+            sleep 30
+          done
+          echo "Backend is live: $body"
+
+      # 4) Frontend last, so it never runs against an older backend.
+      - name: Deploy frontend (Vercel)
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: curl -fsS -o /dev/null -X POST "$HOOK" && echo "Vercel deploy triggered"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Production deploy"
+            echo "- Commit: \`$SHA\`"
+            echo "- Backend: $BACKEND_URL/health"
+            echo "- Frontend: ${{ vars.FRONTEND_URL }} (Vercel builds ~2-3 min after the hook)"
+            echo "- Rollback: Render -> Deploys -> Rollback; Vercel -> Deployments -> Instant Rollback;"
+            echo "  or run this workflow manually with an earlier commit SHA."
+          } >> "$GITHUB_STEP_SUMMARY"

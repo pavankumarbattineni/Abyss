@@ -6,8 +6,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { AgentAvatar } from "@/components/layout";
-import { ConfirmDialog } from "@/components/shared";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Card, Heading, Skeleton } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { agentService } from "@/services";
 import type { Agent } from "@/types";
 
@@ -27,39 +28,51 @@ export function AgentCard({ agent }: AgentCardProps) {
       setDeleteOpen(false);
     },
     onError: () => {
-      toast.error("Failed to delete agent. Please try again.");
+      toast.error("The agent wasn't deleted. Try again.");
     },
   });
 
+  const summary = agentSummary(agent);
+  const specialists = agent.sub_agents.length;
+  const tools = agent.tools.length;
+
   return (
-    <Card className="flex flex-col gap-4 p-4">
-      <Link href={`/agents/${agent.id}`} className="flex items-center gap-3">
+    // The name link stretches over the whole card (after:inset-0), so the
+    // card opens the chat; Edit/Delete sit above it (relative z-10).
+    <Card className="group relative flex flex-col gap-3 p-4 transition-colors focus-within:border-primary hover:border-primary">
+      <div className="flex items-center gap-3">
         <AgentAvatar name={agent.name} />
-        <div className="min-w-0">
-          <Heading as="div" size="sm" className="truncate hover:underline">
+        <Link
+          href={`/agents/${agent.id}`}
+          className="min-w-0 rounded-sm after:absolute after:inset-0 after:rounded-[inherit] focus-visible:outline-none"
+        >
+          <Heading as="div" size="sm" className="truncate">
             {agent.name}
           </Heading>
-        </div>
-      </Link>
+        </Link>
+      </div>
 
-      <p className="line-clamp-2 min-h-10 text-sm text-muted-foreground">
-        {agent.description}
+      <p
+        className={cn(
+          "line-clamp-3 min-h-15 text-sm leading-5",
+          summary.isFallback ? "text-muted-foreground italic" : "text-muted-foreground",
+        )}
+      >
+        {summary.text}
       </p>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-border-soft pt-2 mt-auto">
+      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-3">
         <span className="text-xs text-muted-foreground">
-          {agent.tools.length} tools
+          {plural(specialists, "specialist")} · {plural(tools, "tool")}
         </span>
-        <span className="text-xs text-muted-foreground">
-          {agent.sub_agents.length} sub-agents
-        </span>
-        <div className="ml-auto flex gap-1.5">
+        <div className="relative z-10 ml-auto flex gap-1.5">
           <Button variant="outline" size="sm" asChild>
             <Link href={`/agents/${agent.id}/builder`}>Edit</Link>
           </Button>
           <Button
-            variant="destructive"
+            variant="ghost"
             size="sm"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => setDeleteOpen(true)}
           >
             Delete
@@ -71,14 +84,27 @@ export function AgentCard({ agent }: AgentCardProps) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete agent"
-        description={`Delete "${agent.name}"? This cannot be undone.`}
-        confirmLabel="Delete"
+        description={`Delete "${agent.name}" with its specialists and chat history? This can't be undone.`}
+        confirmLabel="Delete agent"
         variant="destructive"
         loading={isDeleting}
         onConfirm={() => deleteAgent()}
       />
     </Card>
   );
+}
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+/** The description, or else the start of the instructions, so no card is blank. */
+function agentSummary(agent: Agent): { text: string; isFallback: boolean } {
+  const description = (agent.description ?? "").trim();
+  if (description) return { text: description, isFallback: false };
+  const instructions = (agent.system_prompt ?? "").replace(/\s+/g, " ").trim();
+  if (instructions) return { text: instructions, isFallback: false };
+  return { text: "No description yet. Open Edit to describe what this agent does.", isFallback: true };
 }
 
 export function AgentCardSkeleton() {
@@ -94,7 +120,7 @@ export function AgentCardSkeleton() {
         <Skeleton className="h-3 w-4/5" />
       </div>
 
-      <div className="flex items-center gap-2 border-t border-border-soft pt-3">
+      <div className="flex items-center gap-2 border-t border-border pt-3">
         <Skeleton className="h-3 w-14" />
         <Skeleton className="h-3 w-20" />
         <div className="ml-auto flex gap-1.5">

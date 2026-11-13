@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { AgentAvatar } from "@/components/layout";
-import { ChatPanel } from "@/components/shared";
+import { ChatPanel } from "@/components/shared/chat-panel";
 import { Button } from "@/components/ui";
 import { useResizablePanel } from "@/hooks";
 import { cn } from "@/lib/utils";
@@ -50,6 +50,8 @@ export const AgentCreatePage = () => {
     defaultValues: { name: "", description: "", system_prompt: "" },
     mode: "onChange",
   });
+  // React Compiler skips memoizing watch() results; re-rendering on each edit is intended here.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const values = form.watch();
 
   const draftAgent: Agent = {
@@ -66,8 +68,8 @@ export const AgentCreatePage = () => {
     mutationFn: () =>
       agentService.createAgent({
         name: draftAgent.name,
-        description: draftAgent.description,
-        system_prompt: draftAgent.system_prompt,
+        description: draftAgent.description ?? "",
+        system_prompt: draftAgent.system_prompt ?? "",
         tools: selectedTools.map((tool) => tool.id),
         sub_agents: subAgents.map((subAgent) => ({
           name: subAgent.name,

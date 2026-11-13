@@ -1,51 +1,47 @@
-"use client";
-
-import { useId } from "react";
-
 import { cn } from "@/lib/utils";
+
+/**
+ * Abyss's mark, "the descent": a ring with a solid disc sitting low inside
+ * it and a Tomato point at the deepest spot -- looking down into a well that
+ * recedes into depth, with the spark of intelligence brought up from the
+ * bottom. Built like Trench's mark (an ink symbol on a brand-colour tile) so
+ * the two apps read as siblings, but its own symbol.
+ *
+ * Colours come from the theme tokens, so the tile follows light/dark mode.
+ * Keep in sync with src/app/icon.svg (the favicon, which needs fixed colours).
+ */
+export function AbyssMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
+      <circle cx="20" cy="18.5" r="11.5" fill="none" stroke="currentColor" strokeWidth="3.6" />
+      <circle cx="20" cy="22" r="6.4" fill="currentColor" />
+      <circle cx="20" cy="24.2" r="2.3" fill="var(--highlight)" />
+    </svg>
+  );
+}
 
 interface AbyssLogoProps {
   size?: number;
   className?: string;
 }
 
+/** The mark on its Sage tile. */
 export function AbyssLogo({ size = 40, className }: AbyssLogoProps) {
-  const gradientId = useId();
-
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 100 100"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
+    <span
       role="img"
-      aria-label="Abyss-AI"
-      className={cn("shrink-0", className)}
+      aria-label="Abyss"
+      style={{ width: size, height: size, borderRadius: size * 0.27 }}
+      className={cn(
+        "flex shrink-0 items-center justify-center bg-primary text-primary-foreground",
+        className,
+      )}
     >
-      <path
-        d="M51,4 L94,96 L8,96 Z M51,21 L66,66 L36,70 Z"
-        fillRule="evenodd"
-        fill={`url(#${gradientId})`}
-      />
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#6FC3CF" />
-          <stop offset="50%" stopColor="#3A7CA5" />
-          <stop offset="100%" stopColor="#2B3A67" />
-        </linearGradient>
-      </defs>
-    </svg>
+      <AbyssMark className="size-[88%]" />
+    </span>
   );
 }
 
-// "Abyss" follows the theme's heading color so it is readable on both light and dark
-// backgrounds; "-AI" uses the brand teal.
 export function AbyssWordmark({ className }: { className?: string }) {
-  return (
-    <span className={cn("font-mono font-semibold", className)}>
-      <span className="text-foreground">Abyss</span>
-      <span className="text-primary">-AI</span>
-    </span>
-  );
+  return <span className={cn("font-bold tracking-tight text-foreground", className)}>Abyss</span>;
 }

@@ -17,8 +17,9 @@ export interface SubAgent {
 export interface Agent {
   id: string;
   name: string;
-  description: string;
-  system_prompt: string;
+  /** null when the agent was saved without one. */
+  description: string | null;
+  system_prompt: string | null;
   llm_model_id: string;
   tools: AgentToolRef[];
   sub_agents: SubAgent[];

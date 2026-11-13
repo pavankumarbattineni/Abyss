@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Check, Hand } from "lucide-react";
 import { toast } from "sonner";
 
-import { ConfirmDialog } from "@/components/shared";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   Button,
   Dialog,

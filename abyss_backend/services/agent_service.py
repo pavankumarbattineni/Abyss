@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from constants import MAX_SUB_AGENTS_PER_AGENT, MCP_CONNECTION_STATUS_CONNECTED
 from database.models import (
-    Agent, AgentSchedule, AgentTool, LlmCredential, MCPConnection, MCPTool, Provider, ProviderModel,
+    Agent, AgentTool, LlmCredential, MCPConnection, MCPTool, Provider, ProviderModel,
 )
 from schemas.agent import AgentCreate, AgentResponse, AgentToolInfo, AgentUpdate, SubAgentCreate, SubAgentInfo
 
@@ -284,15 +284,10 @@ class AgentService:
 
         return [
             "What is Abyss and how do I get started?",
-            "How does delegation between a parent agent and its sub-agents "
-            "actually work, and can multiple sub-agents run at once?",
-            "If I mark a tool as 'Requires Approval,' walk me through exactly "
-            "what happens when an agent tries to use it, and what's the "
-            "difference between Allow Once and Always Allow?",
-            "I scheduled an agent to run every 30 minutes, and it needs to "
-            "use a tool that requires approval — what happens?",
-            "How do I use my own OpenAI API key instead of the platform "
-            "default, and what happens to an agent if I remove that key later?",
+            "How do specialists work, and can several run at once?",
+            "What happens when an agent uses a tool that needs my approval?",
+            "Where can I see what each agent run cost?",
+            "How do I use my own OpenAI API key?",
         ]
 
     async def create(
@@ -810,14 +805,6 @@ class AgentService:
         await session.execute(
             update(AgentTool)
             .where(AgentTool.agent_id.in_(all_agent_ids))
-            .values(is_active=False)
-        )
-
-        # Cascade-deactivate schedules so the scheduler tick loop stops
-        # picking them up for an agent that no longer exists.
-        await session.execute(
-            update(AgentSchedule)
-            .where(AgentSchedule.agent_id.in_(all_agent_ids))
             .values(is_active=False)
         )
 

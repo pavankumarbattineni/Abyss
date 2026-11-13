@@ -5,7 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ActionMenu, ConfirmDialog } from "@/components/shared";
+import { ActionMenu } from "@/components/shared/action-menu";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { apiKeyService } from "@/services";
 import type { ApiKey } from "@/types";
 import { RenameApiKeyDialog } from "./rename-api-key-dialog";

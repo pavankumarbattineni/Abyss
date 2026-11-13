@@ -18,16 +18,20 @@ export function SettingsNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="flex w-48 shrink-0 flex-col gap-0.5">
+    <nav
+      aria-label="Settings"
+      className="-mx-4 flex shrink-0 gap-1 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:w-48 md:flex-col md:gap-0.5 md:overflow-visible md:px-0"
+    >
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
         const active = pathname === item.href;
         return (
           <Link
             key={item.href}
+            aria-current={active ? "page" : undefined}
             href={item.href}
             className={cn(
-              "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+              "flex shrink-0 items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm whitespace-nowrap text-muted-foreground hover:bg-surface-hover hover:text-foreground",
               active && "bg-accent font-medium text-foreground",
             )}
           >

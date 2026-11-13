@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUp,
-  CalendarClock,
   CircleSlash,
   MessageCircle,
   MessageSquarePlus,
@@ -12,14 +11,19 @@ import {
   Pencil,
   Square,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { AgentAvatar } from "@/components/layout";
 import { Button, Heading, Skeleton, Textarea } from "@/components/ui";
-import { buildReasoningTrace, EMPTY_REASONING_TRACE, settleAllLanes } from "@/lib/reasoning";
+import { buildReasoningTrace, EMPTY_REASONING_TRACE, settleAllLanes, toToolName } from "@/lib/reasoning";
 import { cn } from "@/lib/utils";
 import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalPayload } from "@/types";
+import { contentForCopy } from "@/lib/interactive";
+import { agentService } from "@/services";
+import { CopyButton } from "./copy-button";
 import { MarkdownContent } from "./markdown-content";
+import { RelativeTime } from "./relative-time";
 import { ReasoningPanel } from "./reasoning-panel";
 import { ToolApprovalPanel } from "./tool-approval-panel";
 
@@ -169,6 +173,14 @@ export function ChatPanel({
     </div>
   );
 
+  const showsEmptyState = !disabled && (!hasThread || (!isMessagesLoading && messages.length === 0 && !isStreaming));
+  const { data: sampleQuestions = [] } = useQuery<string[]>({
+    queryKey: ["agents", agent?.id, "sample-questions"],
+    queryFn: () => agentService.getSampleQuestions(agent!.id),
+    enabled: !!agent?.id && showsEmptyState,
+    staleTime: Infinity,
+  });
+
   const emptyHero = (
     <div className="flex w-full flex-col items-center gap-4">
       <AgentAvatar name={agent?.name ?? "Agent"} className="size-14 text-lg" />
@@ -181,11 +193,37 @@ export function ChatPanel({
         </p>
       </div>
       {composer}
+      {sampleQuestions.length > 0 && (
+        <div className="w-full max-w-3xl text-left">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Try asking</p>
+          <ul className="flex flex-col gap-1.5">
+            {sampleQuestions.map((question) => (
+              <li key={question}>
+                <button
+                  type="button"
+                  disabled={isSending || isStreaming}
+                  onClick={() => onSendMessage?.(question)}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-primary hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+                >
+                  {question}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 
+  // Stream labels -> the names the user gave: the main agent streams as
+  // "agent", each specialist as its tool name (see lib/reasoning toToolName).
+  const agentNames: Record<string, string> = Object.fromEntries([
+    ["agent", agent?.name ?? "Agent"],
+    ...(agent?.sub_agents ?? []).map((sub) => [toToolName(sub.name), sub.name]),
+  ]);
+
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       {showHeader && (
         <div className="flex items-center justify-end gap-2 p-4">
           {hasThread && (
@@ -194,12 +232,6 @@ export function ChatPanel({
               New thread
             </Button>
           )}
-          <Button type="button" variant="outline" size="sm" asChild>
-            <Link href={`/agents/${agent?.id ?? ""}/schedules`}>
-              <CalendarClock className="size-3.5" />
-              Schedules
-            </Link>
-          </Button>
           <Button type="button" variant="outline" size="sm" asChild>
             <Link href={`/agents/${agent?.id ?? ""}/builder`}>
               <Pencil className="size-3.5" />
@@ -271,9 +303,15 @@ export function ChatPanel({
                     )}
                     <div
                       className={cn(
+                        "group/message flex min-w-0 flex-col gap-1",
+                        message.role === "user" ? "max-w-[75%] items-end" : "w-full items-start",
+                      )}
+                    >
+                    <div
+                      className={cn(
                         "min-w-0 wrap-break-word",
                         message.role === "user"
-                          ? "max-w-[75%] overflow-x-auto rounded-2xl rounded-tr-none bg-accent px-4 py-2.5 text-sm text-accent-foreground"
+                          ? "max-w-full overflow-x-auto rounded-2xl rounded-tr-none bg-accent px-4 py-2.5 text-sm text-accent-foreground"
                           : "w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground",
                       )}
                     >
@@ -286,11 +324,12 @@ export function ChatPanel({
                                 "succeeded",
                               )}
                               isStreaming={false}
+                              agentNames={agentNames}
                             />
                           ) : (
                             !isStreaming &&
                             index === messages.length - 1 && (
-                              <ReasoningPanel trace={reasoningTrace} isStreaming={false} />
+                              <ReasoningPanel trace={reasoningTrace} isStreaming={false} agentNames={agentNames} />
                             )
                           )}
                           {message.content && <MarkdownContent content={message.content} />}
@@ -310,6 +349,8 @@ export function ChatPanel({
                         <p className="whitespace-pre-wrap wrap-break-word">{message.content}</p>
                       )}
                     </div>
+                    <MessageMeta message={message} />
+                    </div>
                   </div>
                 ))}
 
@@ -320,8 +361,8 @@ export function ChatPanel({
                       className="size-8 shrink-0 text-xs"
                     />
                     <div className="min-w-0 w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground wrap-break-word">
-                      <ReasoningPanel trace={reasoningTrace} isStreaming={true} />
-                      {streamingContent && <MarkdownContent content={streamingContent} />}
+                      <ReasoningPanel trace={reasoningTrace} isStreaming={true} agentNames={agentNames} />
+                      {streamingContent && <MarkdownContent content={streamingContent} isStreaming />}
                       {pendingApprovals.length > 0 ? (
                         <ToolApprovalPanel
                           interrupts={pendingApprovals}
@@ -355,6 +396,37 @@ export function ChatPanel({
           {emptyHero}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Time and copy under a message, as in Trench: time then copy for the
+ * user's messages (revealed on hover/focus, always shown on touch screens),
+ * copy then time for the agent's. Copying an answer turns interactive views
+ * into readable text instead of raw JSON. */
+function MessageMeta({ message }: { message: Message }) {
+  const isUser = message.role === "user";
+  if (!message.content) {
+    return (
+      <div className="px-1 text-xs text-muted-foreground">
+        <RelativeTime value={message.created_at} />
+      </div>
+    );
+  }
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1 px-1 text-xs text-muted-foreground",
+        isUser &&
+          "opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
+      )}
+    >
+      {isUser && <RelativeTime value={message.created_at} />}
+      <CopyButton
+        label={isUser ? "Copy message" : "Copy response"}
+        text={isUser ? message.content : contentForCopy(message.content)}
+      />
+      {!isUser && <RelativeTime value={message.created_at} />}
     </div>
   );
 }

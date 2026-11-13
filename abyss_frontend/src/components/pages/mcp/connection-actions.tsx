@@ -5,7 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Eye, Pencil, Plug, PlugZap, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ActionMenu, ConfirmDialog } from "@/components/shared";
+import { ActionMenu } from "@/components/shared/action-menu";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { mcpService } from "@/services";
 import type { McpConnection } from "@/types";
 import { EditServerDialog } from "./edit-server-dialog";

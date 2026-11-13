@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronsLeft, Menu, MessageSquare } from "lucide-react";
 
-import { Button, Heading, Skeleton } from "@/components/ui";
+import { RelativeTime } from "@/components/shared/relative-time";
+import { Button, Heading, Skeleton, Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { threadService } from "@/services";
 import type { Agent, Thread } from "@/types";
@@ -20,6 +21,7 @@ interface ThreadSidebarProps {
   width: number;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  className?: string;
   isResizing: boolean;
 }
 
@@ -31,6 +33,7 @@ export function ThreadSidebar({
   collapsed,
   onCollapsedChange,
   isResizing,
+  className,
 }: ThreadSidebarProps) {
   const pathname = usePathname();
 
@@ -45,6 +48,7 @@ export function ThreadSidebar({
       className={cn(
         "flex shrink-0 flex-col overflow-hidden",
         !isResizing && "transition-[width] duration-200",
+        className,
       )}
     >
       {collapsed ? (
@@ -100,15 +104,29 @@ export function ThreadSidebar({
                       isActive ? "bg-muted" : "hover:bg-muted/60",
                     )}
                   >
-                    <Link
-                      href={`/agents/${agentId}/threads/${thread.id}`}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    >
-                      <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate text-sm text-foreground">
-                        {thread.title || "Untitled thread"}
-                      </span>
-                    </Link>
+                    {/* Long titles stay truncated; the tooltip always shows the
+                        full title and when the thread was started (as Trench). */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link
+                          href={`/agents/${agentId}/threads/${thread.id}`}
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        >
+                          <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="truncate text-sm text-foreground">
+                            {thread.title || "Untitled thread"}
+                          </span>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="right"
+                        sideOffset={8}
+                        className="flex max-w-64 flex-col items-start gap-0.5 break-words"
+                      >
+                        <span>{thread.title || "Untitled thread"}</span>
+                        <RelativeTime value={thread.created_at} className="text-background/75" />
+                      </TooltipContent>
+                    </Tooltip>
                     <div className="shrink-0 opacity-0 group-hover:opacity-100">
                       <ThreadActions thread={thread} agentId={agentId} isActive={isActive} />
                     </div>

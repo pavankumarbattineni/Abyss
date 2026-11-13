@@ -10,7 +10,7 @@ const headingVariants = cva("font-heading text-foreground", {
       lg: "text-lg font-semibold",
       md: "text-base font-semibold",
       sm: "text-sm font-semibold",
-      xs: "text-xs font-semibold uppercase tracking-wide text-muted-foreground",
+      xs: "text-xs font-semibold text-muted-foreground",
     },
   },
   defaultVariants: {

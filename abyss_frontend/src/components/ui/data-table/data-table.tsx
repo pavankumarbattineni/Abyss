@@ -60,6 +60,8 @@ export const DataTable = <TData, TValue>({
   const resolvedOnPaginationChange: OnChangeFn<PaginationState> =
     manualPagination && onPaginationChange ? onPaginationChange : setInternalPagination;
 
+  // TanStack Table manages its own memoization, so React Compiler skipping it is expected.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,
@@ -107,7 +109,7 @@ export const DataTable = <TData, TValue>({
                       key={header.id}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                       className={cn(
-                        "text-left px-6 py-4 text-xs font-semibold tracking-wider uppercase whitespace-nowrap",
+                        "text-left px-6 py-3.5 text-xs font-semibold text-muted-foreground whitespace-nowrap",
                         canSort && "cursor-pointer select-none hover:text-foreground transition-colors"
                       )}
                     >

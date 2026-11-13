@@ -1,32 +1,38 @@
-export type AgentLaneStatus = "running" | "succeeded" | "failed";
+export type AgentRunStatus = "running" | "succeeded" | "failed";
 
-export interface ToolCallRecord {
-  id: string;
-  toolName: string;
-  status: "running" | "succeeded";
-  output?: string;
-}
-
-export type LaneSegment =
-  | { kind: "thought"; id: string; content: string }
-  | { kind: "tool_call"; id: string; toolCall: ToolCallRecord };
-
-export interface AgentLane {
+/** One agent taking part in a turn: the main agent, or a specialist it
+ * delegated to. */
+export interface AgentRun {
   agentName: string;
-  status: AgentLaneStatus;
-  segments: LaneSegment[];
-  // True once an agent_start has been seen for this lane, i.e. it was actually delegated to
-  // (a sub-agent) rather than just reasoning directly (the top-level orchestrator, which only
-  // ever gets reasoning_start/reasoning_end with no delegation wrapper around it).
+  status: AgentRunStatus;
+  // True once the agent was delegated to (an agent_start was seen) -- i.e. a
+  // specialist, not the main agent, which only ever streams reasoning.
   isDelegated: boolean;
 }
+
+/** One step of a turn, in the order it happened across all agents. */
+export type TimelineItem =
+  | { kind: "thought"; id: string; agent: string; content: string; durationMs?: number }
+  | { kind: "delegation"; id: string; agent: string; target: string; task: string }
+  | {
+      kind: "tool_call";
+      id: string;
+      agent: string;
+      toolName: string;
+      status: "running" | "succeeded";
+      input?: string;
+      output?: string;
+      durationMs?: number;
+    };
 
 export interface SynthesisState {
   agentsCompleted: string[];
 }
 
 export interface ReasoningTrace {
-  lanes: Record<string, AgentLane>;
+  agents: Record<string, AgentRun>;
+  /** Agent names in order of first appearance. */
   order: string[];
+  timeline: TimelineItem[];
   synthesis: SynthesisState | null;
 }

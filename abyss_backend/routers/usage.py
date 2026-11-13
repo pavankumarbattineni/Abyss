@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_async_session
-from schemas.usage import UsageRunListResponse, UsageSummaryResponse
+from schemas.usage import UsageSummaryResponse
 from services.usage_service import UsageService
 from utils.auth import get_current_user
 

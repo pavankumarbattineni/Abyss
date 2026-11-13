@@ -4,12 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import type { ColumnDef } from "@tanstack/react-table";
 
-import { PageHeader } from "@/components/shared";
+import { PageHeader } from "@/components/shared/page-header";
 import { Card, DataTable } from "@/components/ui";
 import { modelService } from "@/services";
 import type { LlmCredential } from "@/types";
 import { AddCredentialDialog } from "./add-credential-dialog";
 import { ProviderSecretActions } from "./provider-secret-actions";
+import { parseServerDate } from "@/lib/server-date";
 
 const columns: ColumnDef<LlmCredential>[] = [
   {
@@ -31,7 +32,7 @@ const columns: ColumnDef<LlmCredential>[] = [
     header: "Created",
     cell: ({ getValue }) => (
       <span className="text-xs text-muted-foreground">
-        {format(new Date(getValue<string>()), "MMM d, yyyy")}
+        {format(parseServerDate(getValue<string>()), "MMM d, yyyy")}
       </span>
     ),
   },
@@ -40,7 +41,7 @@ const columns: ColumnDef<LlmCredential>[] = [
     header: "Updated",
     cell: ({ getValue }) => (
       <span className="text-xs text-muted-foreground">
-        {format(new Date(getValue<string>()), "MMM d, yyyy")}
+        {format(parseServerDate(getValue<string>()), "MMM d, yyyy")}
       </span>
     ),
   },

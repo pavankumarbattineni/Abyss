@@ -4,7 +4,7 @@ import type { UsageRunStatus } from "@/types";
 const STATUS_STYLES: Record<UsageRunStatus, string> = {
   COMPLETED: "bg-success/10 text-success",
   FAILED: "bg-destructive/10 text-destructive",
-  RUNNING: "bg-primary/10 text-primary",
+  RUNNING: "bg-primary/15 text-sage-text",
   CANCELLED: "bg-muted text-muted-foreground",
 };
 
