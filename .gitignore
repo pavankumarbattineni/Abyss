@@ -3,6 +3,9 @@ Ocean-AI/
 **/.env
 **/.env.local
 **/.env.*.local
+# Any other env variant (.env.compose, .env.neon, ...); only examples are tracked
+**/.env.*
+!**/.env.example
 # Cloud credentials (e.g. a downloaded Firebase Admin key)
 **/*firebase-adminsdk*.json
 **/*service-account*.json

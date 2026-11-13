@@ -41,4 +41,14 @@ pythonpath = ["."]
 dev = [
     "pytest>=8.3,<9",
     "pytest-asyncio>=0.24.0",
+    "ruff>=0.14",
 ]
+
+[tool.ruff]
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+# Real mistakes only (undefined names, unused imports/variables, syntax
+# errors); style rules would mean churning code that works.
+select = ["E9", "F"]

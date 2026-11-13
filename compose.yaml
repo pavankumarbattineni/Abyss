@@ -1,0 +1,67 @@
+# Abyss: the whole stack with one command.
+#
+#   docker compose --env-file abyss_frontend/.env.local up --build
+#
+# --env-file supplies the NEXT_PUBLIC_* values baked into the frontend build.
+# The backend reads abyss_backend/.env.compose (git-ignored; see
+# abyss_backend/.env.example): ABYSS_CONFIG with DB host "postgres", plus the
+# POSTGRES_* values below. Ports avoid Trench's stack (3000/8000/5433) and a
+# local Postgres (5432).
+name: abyss
+
+services:
+  # --- PostgreSQL 18, data kept in the "pgdata" volume ------------------------
+  postgres:
+    image: postgres:18
+    env_file: abyss_backend/.env.compose      # POSTGRES_USER / _PASSWORD / _DB
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5434:5432"     # optional: lets DB tools on the host connect
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # --- FastAPI backend: migrates + seeds the catalog on startup ----------------
+  backend:
+    build: ./abyss_backend
+    image: abyss-backend:dev
+    env_file: abyss_backend/.env.compose
+    environment:
+      ABYSS_ALLOWED_ORIGINS: http://localhost:3100,http://127.0.0.1:3100
+    ports:
+      - "8100:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M     # same as Render's free plan
+    restart: unless-stopped
+
+  # --- Next.js frontend ----------------------------------------------------------
+  frontend:
+    build:
+      context: ./abyss_frontend
+      args:                # browser-visible, baked into the bundle
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID}
+    image: abyss-frontend:dev
+    ports:
+      - "3100:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:     # kept across `docker compose down`; deleted only with the -v flag

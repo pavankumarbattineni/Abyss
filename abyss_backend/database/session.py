@@ -1,3 +1,4 @@
+from urllib.parse import quote_plus
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -21,7 +22,14 @@ MAX_OVERFLOW = _db.get("max_overflow", 10)
 POOL_TIMEOUT = _db.get("pool_timeout", 30)
 POOL_RECYCLE = _db.get("pool_recycle", 1800)
 
-DATABASE_URL = f"postgresql+asyncpg://{USERNAME}:{PASSWORD}@{IP_ADDRESS}:{PORT}/{DATABASE}"
+# Hosted Postgres (Neon) requires TLS: set "ssl": true in ABYSS_CONFIG.DB.
+SSL = bool(_db.get("ssl", False))
+
+# The password is URL-encoded so characters like @ : / # can't break the URL.
+DATABASE_URL = (
+    f"postgresql+asyncpg://{quote_plus(USERNAME)}:{quote_plus(PASSWORD)}"
+    f"@{IP_ADDRESS}:{PORT}/{DATABASE}"
+)
 
 
 class Base(DeclarativeBase):
@@ -30,6 +38,7 @@ class Base(DeclarativeBase):
 
 engine = create_async_engine(
     DATABASE_URL,
+    connect_args={"ssl": "require"} if SSL else {},
     pool_size=POOL_SIZE,
     max_overflow=MAX_OVERFLOW,
     pool_timeout=POOL_TIMEOUT,

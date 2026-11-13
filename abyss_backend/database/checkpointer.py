@@ -1,3 +1,5 @@
+from urllib.parse import quote_plus
+
 from psycopg_pool import AsyncConnectionPool
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
@@ -11,13 +13,13 @@ _db = config["DB"]
 
 
 def _build_conninfo() -> str:
-    """Build a plain postgresql:// conninfo string from config for psycopg_pool."""
-    username = _db["username"]
-    password = _db["password"]
-    ip_address = _db["ip_address"]
-    port = _db["port"]
-    database = _db["database"]
-    return f"postgresql://{username}:{password}@{ip_address}:{port}/{database}"
+    """A postgresql:// conninfo for psycopg_pool (password URL-encoded; TLS
+    when ABYSS_CONFIG.DB.ssl is true, as Neon requires)."""
+    url = (
+        f"postgresql://{quote_plus(_db['username'])}:{quote_plus(_db['password'])}"
+        f"@{_db['ip_address']}:{_db['port']}/{_db['database']}"
+    )
+    return url + "?sslmode=require" if _db.get("ssl") else url
 
 
 async def init_checkpointer() -> None:

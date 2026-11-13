@@ -1,0 +1,29 @@
+# Files Docker must NOT send into the build: secrets, local environments,
+# and anything the running API doesn't need.
+
+# Secrets: never in the image. Configuration is passed at run time.
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+*service-account*.json
+
+# Local virtualenv (the image builds its own, for Linux) and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Not needed to run the API
+tests/
+studio/
+langgraph.json
+requirements*.txt
+gunicorn_starter.sh
+README.md
+*.log
+
+# Docker's own files
+Dockerfile
+.dockerignore

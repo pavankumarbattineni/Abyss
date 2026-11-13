@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import database.models  # noqa: F401 -- registers every table on Base.metadata
-from database.session import DATABASE_URL, Base
+from database.session import DATABASE_URL, SSL, Base
 
 config = context.config
 if config.config_file_name is not None and not config.attributes.get("skip_logging_config"):
@@ -47,7 +47,7 @@ def _run_sync(connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    engine = create_async_engine(DATABASE_URL)
+    engine = create_async_engine(DATABASE_URL, connect_args={"ssl": "require"} if SSL else {})
     async with engine.connect() as connection:
         await connection.run_sync(_run_sync)
     await engine.dispose()

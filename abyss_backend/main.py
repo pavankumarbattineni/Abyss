@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from sqlalchemy import update
+from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import text, update
 
 from constants import (
     API_V1_PREFIX,
@@ -99,7 +99,16 @@ app.include_router(usage_router, prefix=prefix)
 
 @app.get("/health", include_in_schema=False)
 async def health():
-    return {"status": "ok", "image_tag": os.environ.get("IMAGE_TAG", "unknown")}
+    """Liveness + database check, and the running commit (Render sets
+    RENDER_GIT_COMMIT), which the deploy workflow waits for."""
+    version = os.environ.get("RENDER_GIT_COMMIT") or os.environ.get("IMAGE_TAG", "unknown")
+    try:
+        async with async_session_maker() as db:
+            await db.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Health check: database unreachable")
+        return JSONResponse(status_code=503, content={"status": "degraded", "database": "unreachable", "version": version})
+    return {"status": "ok", "database": "ok", "version": version}
 
 
 @app.get("/redoc", include_in_schema=False)

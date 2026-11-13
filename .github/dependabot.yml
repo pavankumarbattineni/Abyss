@@ -1,0 +1,41 @@
+# Dependabot: weekly PRs that bump dependencies; CI tests each one.
+# Minor/patch bumps are grouped into one PR per ecosystem to keep the noise
+# down; major bumps (possible breaking changes) still get their own PR.
+version: 2
+
+updates:
+  # Python packages (uv.lock)
+  - package-ecosystem: uv
+    directory: /abyss_backend
+    target-branch: development
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    commit-message: { prefix: "build(deps)" }
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  # npm packages (package-lock.json)
+  - package-ecosystem: npm
+    directory: /abyss_frontend
+    target-branch: development
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    commit-message: { prefix: "build(deps)" }
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  # Base images in the Dockerfiles (python:3.13-slim, node:24-slim, uv)
+  - package-ecosystem: docker
+    directories: [/abyss_backend, /abyss_frontend]
+    target-branch: development
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: "build(deps)" }
+
+  # Pinned action SHAs in .github/workflows
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: development
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: "ci(deps)" }
