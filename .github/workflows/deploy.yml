@@ -11,8 +11,8 @@
 # to roll the backend back to a previous release.
 #
 # Configuration (Settings -> Secrets and variables / Environments), never here:
-#   Repository variables : BACKEND_URL  (e.g. https://abyss-backend.onrender.com)
-#                          FRONTEND_URL (e.g. https://abyss.vercel.app)
+#   Repository variables : BACKEND_URL / FRONTEND_URL -- optional overrides of
+#                          the live URLs written below (they aren't secret)
 #   Environment staging    : secret ABYSS_CONFIG (DB = Neon staging branch)
 #   Environment production : secrets ABYSS_CONFIG (same as Render),
 #                            RENDER_DEPLOY_HOOK_URL, VERCEL_DEPLOY_HOOK_URL;
@@ -103,14 +103,14 @@ jobs:
     # Required reviewers on this environment make the job wait for approval.
     environment:
       name: production
-      url: ${{ vars.FRONTEND_URL }}
+      url: ${{ vars.FRONTEND_URL || 'https://abyss-fleet.vercel.app' }}
     defaults:
       run:
         working-directory: abyss_backend
     env:
       SHA: ${{ needs.resolve.outputs.sha }}
       ABYSS_CONFIG: ${{ secrets.ABYSS_CONFIG }}
-      BACKEND_URL: ${{ vars.BACKEND_URL }}
+      BACKEND_URL: ${{ vars.BACKEND_URL || 'https://abyss-backend-nj9r.onrender.com' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -125,7 +125,7 @@ jobs:
       #    25 minutes. The URLs aren't secret, so they are printed.
       - name: Check configuration
         env:
-          FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+          FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://abyss-fleet.vercel.app' }}
           HAS_RENDER_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
           HAS_VERCEL_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL != '' }}
         run: |
@@ -186,7 +186,7 @@ jobs:
             echo "### Production deploy"
             echo "- Commit: \`$SHA\`"
             echo "- Backend: $BACKEND_URL/health"
-            echo "- Frontend: ${{ vars.FRONTEND_URL }} (Vercel builds ~2-3 min after the hook)"
+            echo "- Frontend: ${{ vars.FRONTEND_URL || 'https://abyss-fleet.vercel.app' }} (Vercel builds ~2-3 min after the hook)"
             echo "- Rollback: Render -> Deploys -> Rollback; Vercel -> Deployments -> Instant Rollback;"
             echo "  or run this workflow manually with an earlier commit SHA."
           } >> "$GITHUB_STEP_SUMMARY"
