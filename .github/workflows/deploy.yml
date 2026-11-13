@@ -11,8 +11,8 @@
 # to roll the backend back to a previous release.
 #
 # Configuration (Settings -> Secrets and variables / Environments), never here:
-#   Repository variables : BACKEND_URL / FRONTEND_URL -- optional overrides of
-#                          the live URLs written below (they aren't secret)
+#   Repository variables : BACKEND_URL  (e.g. https://abyss-backend.onrender.com)
+#                          FRONTEND_URL (e.g. https://abyss.vercel.app)
 #   Environment staging    : secret ABYSS_CONFIG (DB = Neon staging branch)
 #   Environment production : secrets ABYSS_CONFIG (same as Render),
 #                            RENDER_DEPLOY_HOOK_URL, VERCEL_DEPLOY_HOOK_URL;
@@ -103,14 +103,14 @@ jobs:
     # Required reviewers on this environment make the job wait for approval.
     environment:
       name: production
-      url: ${{ vars.FRONTEND_URL || 'https://abyss-fleet.vercel.app' }}
+      url: ${{ vars.FRONTEND_URL }}
     defaults:
       run:
         working-directory: abyss_backend
     env:
       SHA: ${{ needs.resolve.outputs.sha }}
       ABYSS_CONFIG: ${{ secrets.ABYSS_CONFIG }}
-      BACKEND_URL: ${{ vars.BACKEND_URL || 'https://abyss-backend-nj9r.onrender.com' }}
+      BACKEND_URL: ${{ vars.BACKEND_URL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -120,27 +120,6 @@ jobs:
           enable-cache: true
           cache-dependency-glob: abyss_backend/uv.lock
       - run: uv sync --frozen --no-dev
-
-      # 0) Fail fast on missing configuration, instead of polling nothing for
-      #    25 minutes. The URLs aren't secret, so they are printed.
-      - name: Check configuration
-        env:
-          FRONTEND_URL: ${{ vars.FRONTEND_URL || 'https://abyss-fleet.vercel.app' }}
-          HAS_RENDER_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
-          HAS_VERCEL_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK_URL != '' }}
-        run: |
-          missing=""
-          [ -n "$BACKEND_URL" ]  || missing="$missing BACKEND_URL(variable)"
-          [ -n "$FRONTEND_URL" ] || missing="$missing FRONTEND_URL(variable)"
-          [ -n "$ABYSS_CONFIG" ] || missing="$missing ABYSS_CONFIG(secret)"
-          [ "$HAS_RENDER_HOOK" = true ] || missing="$missing RENDER_DEPLOY_HOOK_URL(secret)"
-          [ "$HAS_VERCEL_HOOK" = true ] || missing="$missing VERCEL_DEPLOY_HOOK_URL(secret)"
-          if [ -n "$missing" ]; then echo "::error::Missing configuration:$missing"; exit 1; fi
-          echo "Backend to wait for: $BACKEND_URL/health"
-          echo "Frontend: $FRONTEND_URL"
-          # The backend must answer now (old version is fine) -- otherwise
-          # BACKEND_URL points at the wrong service.
-          curl -fsS --max-time 90 "$BACKEND_URL/health"             || { echo "::error::$BACKEND_URL/health does not answer. Check the BACKEND_URL variable."; exit 1; }
 
       # 1) Schema first: the new code may need it; the running old code keeps
       #    working as long as migrations only add (expand, then contract later).
@@ -186,7 +165,7 @@ jobs:
             echo "### Production deploy"
             echo "- Commit: \`$SHA\`"
             echo "- Backend: $BACKEND_URL/health"
-            echo "- Frontend: ${{ vars.FRONTEND_URL || 'https://abyss-fleet.vercel.app' }} (Vercel builds ~2-3 min after the hook)"
+            echo "- Frontend: ${{ vars.FRONTEND_URL }} (Vercel builds ~2-3 min after the hook)"
             echo "- Rollback: Render -> Deploys -> Rollback; Vercel -> Deployments -> Instant Rollback;"
             echo "  or run this workflow manually with an earlier commit SHA."
           } >> "$GITHUB_STEP_SUMMARY"
