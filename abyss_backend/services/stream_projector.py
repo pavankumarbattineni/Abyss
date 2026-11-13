@@ -27,6 +27,7 @@ from collections.abc import Callable
 from langchain_core.messages import AIMessage, ToolMessage
 
 from abyss_agents.factory import PARENT_AGENT_NAME
+from utils.fake_tool_call import CallTextFilter
 from utils.reasoning_splitter import ReasoningSplitter
 from utils.tool_output import extract_tool_output
 
@@ -70,6 +71,8 @@ class StreamProjector:
         self._reasoning_token_count = 0
 
         self._splitters: dict[str, ReasoningSplitter] = {}
+        # Drops tool calls a model wrote as text from the visible answer (utils/fake_tool_call.py).
+        self._call_filters: dict[str, CallTextFilter] = {}
         self._labels: dict[str, str] = {}
         self._is_final: dict[str, bool] = {}
         self._turn_start: dict[str, int] = {}        # run_id → len(content_tokens) at turn start
@@ -143,8 +146,9 @@ class StreamProjector:
                     if sc.event == "end":
                         self._close_reasoning(run_id, label, sc.truncated)
                 elif sc.text and self._is_final.get(run_id, False):
-                    self.content_tokens.append(sc.text)
-                    self._emit("token", {"content": sc.text})
+                    self._emit_answer(run_id, sc.text)
+            if self._is_final.get(run_id, False):
+                self._emit_answer(run_id, "", flush=True)
 
     def abort(self) -> None:
         """Close open reasoning blocks after a cancel. Records steps only — nothing is emitted."""
@@ -270,10 +274,19 @@ class StreamProjector:
                     self._emit("reasoning_token", {"content": sc.text, "agent": label})
             elif sc.text:
                 if self._is_final[run_id]:
-                    self.content_tokens.append(sc.text)
-                    self._emit("token", {"content": sc.text})
+                    self._emit_answer(run_id, sc.text)
                 else:
                     self._side_tokens += 1
+
+    def _emit_answer(self, run_id: str, text: str, flush: bool = False) -> None:
+        """Stream answer text to the user, minus any tool call written as text."""
+        call_filter = self._call_filters.setdefault(run_id, CallTextFilter())
+        visible = call_filter.feed(text)
+        if flush:
+            visible += call_filter.flush()
+        if visible:
+            self.content_tokens.append(visible)
+            self._emit("token", {"content": visible})
 
     def _on_model_end(self, event: dict) -> None:
         message = event.get("data", {}).get("output")

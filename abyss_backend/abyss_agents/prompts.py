@@ -35,7 +35,10 @@ REASONING_INSTRUCTION = (
     "third similar call: change approach or report the item as unavailable.\n"
     "6. Close with `</reasoning>`, then at once either make the tool call(s) you "
     "described (no text in between) or write the final answer. Never end a turn "
-    "with only a reasoning block."
+    "with only a reasoning block.\n"
+    "7. Make tool calls only through the function-calling interface. Never write "
+    "a call as text (no `<call>`, `default_api:` or call JSON in your reply) -- "
+    "a written call does nothing."
 )
 
 _TOOL_RULES = (

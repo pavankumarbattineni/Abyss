@@ -107,6 +107,24 @@ export function useChatStream({
       if (event.type === "token") {
         accumulatedRef.current += event.data.content;
         setStreamingContent(accumulatedRef.current);
+      } else if (event.type === "summary") {
+        // Show it just before the question that triggered it -- unless it's already listed
+        // (a reconnect replays events, and after a reload it comes from the saved messages).
+        const saved = queryClient.getQueryData<Message[]>(["thread-messages", resolvedThreadId]) ?? [];
+        const summary: Message = {
+          id: event.data.message_id,
+          thread_id: resolvedThreadId,
+          role: "summary",
+          content: event.data.content,
+          is_partial: false,
+          reasoning: null,
+          created_at: event.data.created_at,
+        };
+        setPendingMessages((prev) => {
+          if (prev.some((m) => m.id === summary.id) || saved.some((m) => m.id === summary.id)) return prev;
+          const lastUser = prev.map((m) => m.role).lastIndexOf("user");
+          return lastUser === -1 ? [summary, ...prev] : [...prev.slice(0, lastUser), summary, ...prev.slice(lastUser)];
+        });
       } else if (event.type === "thread_title") {
         queryClient.setQueryData<Thread[]>(["threads", agentId], (prev) =>
           prev

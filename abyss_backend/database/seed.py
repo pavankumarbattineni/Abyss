@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from constants import REASONING_MODE_PROMPT
+from constants import REASONING_MODE_NATIVE, REASONING_MODE_PROMPT
 from database.models import Provider, ProviderModel
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,33 @@ CATALOG: dict[str, tuple[str, list[tuple[str, str]]]] = {
 }
 
 
+# Models tested with the provider's own (native) reasoning. With the <reasoning>
+# prompt protocol, Gemini 3.5 Flash-Lite sometimes wrote tool calls as text or
+# stopped after its reasoning, so specialists were skipped (migration 0006).
+NATIVE_REASONING_MODELS = {"gemini-3.5-flash-lite"}
+
+# Input context windows (tokens) for catalog models LangChain has no profile
+# for -- the selected model's window sets when a conversation is summarized
+# (abyss_agents/history.py). From the providers' model docs.
+KNOWN_CONTEXT_WINDOWS: dict[str, int] = {
+    "claude-fable-5-2": 1_000_000,
+    "claude-opus-5-5": 1_000_000,
+    "claude-sonnet-5-5": 1_000_000,
+    "claude-haiku-5-5": 1_000_000,
+    "claude-fable-5-1": 1_000_000,
+    "claude-fable-5": 1_000_000,
+    "claude-opus-5": 1_000_000,
+    "claude-sonnet-5": 1_000_000,
+    "claude-opus-4-8": 1_000_000,
+    "claude-opus-4-7": 1_000_000,
+    "claude-opus-4-6": 1_000_000,
+    "claude-sonnet-4-6": 1_000_000,
+    "claude-opus-4-5-20251101": 200_000,
+    "claude-sonnet-4-5-20250929": 200_000,
+    "claude-haiku-4-5-20251001": 200_000,
+}
+
+
 async def seed_catalog(session: AsyncSession) -> int:
     """Insert missing providers and models; returns how many models were added."""
     for name, (display_name, _) in CATALOG.items():
@@ -100,7 +127,7 @@ async def seed_catalog(session: AsyncSession) -> int:
                     model_name=model_name,
                     display_name=display_name,
                     is_platform_default=is_default,
-                    reasoning_mode=REASONING_MODE_PROMPT,
+                    reasoning_mode=REASONING_MODE_NATIVE if model_name in NATIVE_REASONING_MODELS else REASONING_MODE_PROMPT,
                 )
                 .on_conflict_do_nothing(constraint="uq_provider_models_provider_model")
             )

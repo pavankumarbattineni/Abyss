@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ArrowUp,
   ChevronDown,
+  History,
   ChevronUp,
   Menu,
   CircleSlash,
@@ -298,7 +299,9 @@ export function ChatPanel({
               className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6"
             >
               <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 sm:gap-6">
-                {messages.map((message, index) => (
+                {messages.map((message, index) => message.role === "summary" ? (
+                  <ConversationSummary key={message.id} content={message.content} />
+                ) : (
                   <div
                     key={message.id}
                     ref={(node) => {
@@ -412,6 +415,44 @@ export function ChatPanel({
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
           {emptyHero}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Where earlier messages were condensed into a summary for the agent (like Claude Code's
+ * "compacted" marker). Collapsed to a divider; opens to show the summary itself. The earlier
+ * messages stay on screen -- only what the agent remembers of them changed.
+ */
+function ConversationSummary({ content }: { content: string }) {
+  const [open, setOpen] = useState<boolean>(false);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border-soft" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          className="flex shrink-0 items-center gap-1.5 rounded-full border border-border-soft bg-surface-raised px-3 py-1 font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <History className="size-3.5" aria-hidden="true" />
+          Earlier conversation summarized
+          {open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+        </button>
+        <span className="h-px flex-1 bg-border-soft" aria-hidden="true" />
+      </div>
+      {open && (
+        <div className="rounded-2xl border border-border-soft bg-muted/30 px-4 py-3">
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Your earlier messages stay here; the agent now remembers them through this summary.
+            </p>
+            <CopyButton label="Copy summary" text={content} />
+          </div>
+          <MarkdownContent content={content} />
         </div>
       )}
     </div>

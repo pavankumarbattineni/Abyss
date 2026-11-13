@@ -16,16 +16,18 @@ import logging
 from dataclasses import dataclass, field
 
 from langchain.agents import create_agent
+import constants
+from abyss_agents.history import PastTurnTrimMiddleware, TurnStartSummarization
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
     ModelRetryMiddleware,
-    SummarizationMiddleware,
 )
 from langchain_core.language_models import BaseChatModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from abyss_agents.middleware import (
+    ActOrAnswerGuard,
     TRANSIENT_LLM_EXCEPTIONS,
     SubAgentCallLimitMiddleware,
     ToolApprovalMiddleware,
@@ -40,9 +42,6 @@ from constants import (
     MAX_AGENT_ITERATIONS,
     MAX_PARALLEL_TASKS,
     SUB_AGENT_RECURSION_LIMIT,
-    SUMMARIZATION_KEEP_MESSAGES,
-    SUMMARIZATION_TRIGGER_FRACTION,
-    SUMMARIZATION_TRIGGER_TOKENS,
 )
 from database.models import Agent
 from utils.mcp_client import get_tool_permissions_for_agent, get_tools_for_agent
@@ -97,17 +96,6 @@ def _tool_policy(label: str, permissions: dict[str, bool], tools: list) -> list:
     ]
 
 
-def _summarization(llm: BaseChatModel) -> SummarizationMiddleware:
-    trigger: list = [("tokens", SUMMARIZATION_TRIGGER_TOKENS)]
-    if (getattr(llm, "profile", None) or {}).get("max_input_tokens"):
-        trigger.insert(0, ("fraction", SUMMARIZATION_TRIGGER_FRACTION))
-    return SummarizationMiddleware(
-        model=llm,
-        trigger=trigger,
-        keep=("messages", SUMMARIZATION_KEEP_MESSAGES),
-    )
-
-
 async def build_agent(
     session: AsyncSession,
     agent_record: Agent,
@@ -160,6 +148,7 @@ async def build_agent(
                 ToolResultMiddleware(),
                 *_tool_policy(tool_name, get_tool_permissions_for_agent(str(sub.id)), child_tools),
                 _model_retry(),
+                ActOrAnswerGuard(),
                 ModelCallLimitMiddleware(run_limit=_SUB_AGENT_MODEL_CALL_LIMIT),
             ],
             name=tool_name,
@@ -178,9 +167,14 @@ async def build_agent(
         middleware.append(SubAgentCallLimitMiddleware(sub_names, MAX_PARALLEL_TASKS))
     middleware += [
         _model_retry(),
+        ActOrAnswerGuard(),
         ModelCallLimitMiddleware(run_limit=MAX_AGENT_ITERATIONS),
-        _summarization(llm),
+        # History: summarize at turn start (sized to the selected model), then
+        # send earlier turns as question + answer only (abyss_agents/history.py).
+        TurnStartSummarization(llm),
     ]
+    if constants.TRIM_PAST_TURNS:
+        middleware.append(PastTurnTrimMiddleware())
 
     graph = create_agent(
         llm,

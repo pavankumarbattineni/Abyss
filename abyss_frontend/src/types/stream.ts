@@ -54,6 +54,19 @@ export interface StreamThreadTitleEvent {
   data: { title: string };
 }
 
+/** Earlier conversation was summarized before this answer (saved as a "summary" message). */
+export interface StreamSummaryEvent {
+  type: "summary";
+  data: {
+    message_id: string;
+    content: string;
+    created_at: string;
+    messages_summarized: number | null;
+    tokens_before: number | null;
+    tokens_after: number | null;
+  };
+}
+
 export interface StreamDoneEvent {
   type: "done";
   data: { message_id: string; total_chunks: number };
@@ -91,6 +104,7 @@ export interface StreamToolApprovalRequiredEvent {
 }
 
 export type StreamEvent = { id: string } & (
+  | StreamSummaryEvent
   | StreamAgentStartEvent
   | StreamAgentEndEvent
   | StreamDispatchDecisionEvent

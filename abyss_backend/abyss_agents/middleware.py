@@ -7,17 +7,19 @@ that are specific to Abyss live here.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import anyio
 import httpx
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
+from utils.fake_tool_call import has_written_call, strip_written_calls
 from utils.reasoning_splitter import sanitize_for_reasoning_tags
 from utils.tool_output import extract_tool_output
 
@@ -128,3 +130,43 @@ class ToolApprovalMiddleware(HumanInTheLoopMiddleware):
         if tool_id:
             action_request["tool_id"] = tool_id
         return action_request, review_config
+
+
+_REASONING_BLOCKS = re.compile(r"<reasoning>.*?(?:</reasoning>|$)", re.DOTALL)
+ACT_OR_ANSWER_NUDGE = (
+    "[Note from the system, not the user] Your last reply ended without acting: it "
+    "either stopped after the reasoning or wrote a tool call as text, so nothing ran. "
+    "Now make the tool call you described through the function-calling interface "
+    "(never as text), or write the final answer."
+)
+
+
+def _needs_another_try(message: AIMessage) -> bool:
+    """A reply that did nothing: no real tool call, and either only reasoning
+    (no answer) or a tool call written out as text."""
+    if message.tool_calls:
+        return False
+    text = message.text if isinstance(message.text, str) else str(message.text)
+    if has_written_call(text):
+        return True
+    return not strip_written_calls(_REASONING_BLOCKS.sub("", text)).strip()
+
+
+class ActOrAnswerGuard(AgentMiddleware):
+    """Asks the model once more when a reply neither acts nor answers.
+
+    Some models occasionally end a turn with only their `<reasoning>` block, or
+    write a tool call as text instead of making it, so nothing runs (and the
+    main agent's turn ends with no answer). One retry, with a short note that
+    names the mistake; a second miss is returned as is.
+    """
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        response = await handler(request)
+        message = next((m for m in reversed(response.result) if isinstance(m, AIMessage)), None)
+        if message is None or not _needs_another_try(message):
+            return response
+        logger.warning("Model reply neither acted nor answered; asking once more")
+        return await handler(
+            request.override(messages=[*request.messages, HumanMessage(ACT_OR_ANSWER_NUDGE)])
+        )
