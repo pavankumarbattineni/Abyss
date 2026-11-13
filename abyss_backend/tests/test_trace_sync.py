@@ -83,7 +83,7 @@ def test_summary_totals_and_previews():
     assert summary["input_preview"] == "What is Abyss?"
     assert summary["output_preview"] == "A no-code agent platform."
     assert summary["latency_ms"] == 4000 and summary["complete"] is True
-    assert summary["langsmith_url"] == "https://smith.langchain.com/o/org/projects/p/proj/r/run"
+    assert "langsmith_url" not in summary
 
 
 def test_unfinished_trace_is_not_complete():

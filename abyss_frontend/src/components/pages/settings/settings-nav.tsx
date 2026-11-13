@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Cpu, Key, Sparkles, SunMoon } from "lucide-react";
+import { BarChart3, Cpu, Key, Sparkles, SunMoon, UserRound } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
+  { href: "/settings/profile", label: "Profile", icon: UserRound },
   { href: "/settings", label: "Appearance", icon: SunMoon },
   { href: "/settings/preferences", label: "Preferences", icon: Sparkles },
   { href: "/settings/provider-secrets", label: "Provider Secrets", icon: Cpu },
