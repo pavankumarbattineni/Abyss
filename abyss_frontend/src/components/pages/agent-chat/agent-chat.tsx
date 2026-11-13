@@ -63,8 +63,10 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
   } = useChatStream({
     agentId,
     threadId,
-    onThreadCreated: (newThreadId) =>
-      router.push(`/agents/${agentId}/threads/${newThreadId}`),
+    // The first message moves straight to the thread's URL, which resumes the stream there, so
+    // refreshing mid-answer works from the first message on (see useChatStream).
+    onThreadStarted: (newThreadId, streamId) =>
+      router.replace(`/agents/${agentId}/threads/${newThreadId}?streamId=${encodeURIComponent(streamId)}`),
   });
 
   const hasActiveConversation =
