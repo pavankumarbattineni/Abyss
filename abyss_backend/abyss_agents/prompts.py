@@ -115,7 +115,11 @@ _VISUALS = (
     "max, round, abs, sqrt and pow.\n"
     "- Every number must come from the user or a tool result. For a value "
     "computed from a formula, give a calculator rather than doing the "
-    "arithmetic yourself."
+    "arithmetic yourself.\n"
+    "- An app or UI these components can't express: ONE runnable file, shown as "
+    "a live preview -- an ```html page (inline CSS/JS) or a ```jsx React "
+    "component with `export default`, importing only \"react\" (Tailwind works). "
+    "Offline: no external resources or network."
 )
 
 _SUB_AGENT_OUTPUT = (

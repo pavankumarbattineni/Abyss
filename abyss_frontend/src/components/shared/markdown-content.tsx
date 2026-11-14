@@ -8,10 +8,12 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import "katex/dist/katex.min.css";
 
+import { previewKind } from "@/lib/code-preview";
 import { INTERACTIVE_LANGUAGE, looksLikeInteractiveJson } from "@/lib/interactive";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
 import { cn } from "@/lib/utils";
 import { CodeBlock, CopyableTable } from "./code-block";
+import { CodePreview } from "./code-preview";
 // Charts pull in recharts, which is large: load it only when an answer
 // actually contains an interactive block.
 const InteractiveBlock = dynamic(
@@ -121,6 +123,10 @@ function buildComponents(isStreaming: boolean): Components {
       ) {
         return <InteractiveBlock source={block.code} isStreaming={isStreaming} />;
       }
+      // A complete HTML page or React component runs as a sandboxed live
+      // preview once the answer has finished streaming; other code stays code.
+      const kind = block && !isStreaming ? previewKind(block.language, block.code) : null;
+      if (block && kind) return <CodePreview kind={kind} language={block.language} code={block.code} />;
       if (block) return <CodeBlock language={block.language} code={block.code} />;
       return <pre {...props} className="mb-3 last:mb-0" />;
     },

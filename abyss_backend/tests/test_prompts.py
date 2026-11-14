@@ -63,9 +63,11 @@ def test_sub_agent_prompt_reports_to_the_main_agent():
 def test_prompts_stay_within_their_size_budget():
     """The framework alone (empty agent prompt), in characters (~4 per token):
     parent ~1,140 tokens without specialists (incl. ~370 for diagrams and
-    interactive views), sub-agent ~600 -- down from ~1,600 and ~1,270."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 5100
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 6300  # + delegation rules
+    interactive views), sub-agent ~600 -- down from ~1,600 and ~1,270.
+    +~60 tokens since: the live-preview rule (runnable html/jsx) and the
+    "real tool calls only" reasoning rule."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 5350
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 6500  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 2800
 
 
