@@ -10,6 +10,7 @@ import {
   CodeXml,
   Info,
   LayoutDashboard,
+  Play,
   RotateCcw,
   TriangleAlert,
 } from "lucide-react";
@@ -680,7 +681,8 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
     [source, isStreaming]
   );
   const parsed = analysis?.block ?? null;
-  const [showData, setShowData] = useState(false);
+  // Preview (default) shows only the rendered view; Code shows only its JSON.
+  const [mode, setMode] = useState<"preview" | "code">("preview");
 
   if (isStreaming) {
     return (
@@ -711,25 +713,31 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
           Interactive view
         </span>
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={showData ? "Hide data" : "View data"}
-            aria-pressed={showData}
-            title={showData ? "Hide data" : "View data"}
-            onClick={() => setShowData((s) => !s)}
-            className={cn("text-muted-foreground hover:text-foreground", showData && "bg-background text-foreground")}
-          >
-            <CodeXml className="size-3.5" />
-          </Button>
+          {([
+            { value: "preview", label: "Preview", Icon: Play },
+            { value: "code", label: "Code", Icon: CodeXml },
+          ] as const).map(({ value, label, Icon }) => (
+            <Button
+              key={value}
+              variant="ghost"
+              size="icon-xs"
+              aria-label={label}
+              aria-pressed={mode === value}
+              title={label}
+              onClick={() => setMode(value)}
+              className={cn("text-muted-foreground hover:text-foreground", mode === value && "bg-background text-foreground")}
+            >
+              <Icon className="size-3.5" />
+            </Button>
+          ))}
           <CopyButton label="Copy as text" text={interactiveBlockToText(parsed)} />
         </div>
       </div>
-      {showData && (
-        <div className="border-b border-border p-3">
+      {mode === "code" ? (
+        <div className="bg-card p-3">
           <CodeBlock language="json" code={source} />
         </div>
-      )}
+      ) : (
       <div className="flex flex-col gap-5 bg-card p-3 sm:p-4">
         {parsed.components.map((c, i) => (
           <section key={i} className="min-w-0">
@@ -755,6 +763,7 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
