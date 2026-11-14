@@ -22,6 +22,8 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)$).*)",
+    // preview-runtime: static, public files the sandboxed live-preview frame
+    // loads without cookies (see lib/code-preview.ts) -- never redirect them.
+    "/((?!_next/static|_next/image|favicon.ico|preview-runtime/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp)$).*)",
   ],
 };

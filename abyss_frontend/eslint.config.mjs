@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored third-party builds for the live-preview sandbox, kept unmodified.
+    "public/preview-runtime/**",
   ]),
 ]);
 

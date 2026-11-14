@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 
 import { CopyButton } from "@/components/shared/copy-button";
+import { highlightCode } from "@/lib/highlight";
 
 const LANGUAGE_LABELS: Record<string, string> = {
   js: "JavaScript",
@@ -24,6 +25,27 @@ const LANGUAGE_LABELS: Record<string, string> = {
   css: "CSS",
   md: "Markdown",
   markdown: "Markdown",
+  java: "Java",
+  c: "C",
+  cpp: "C++",
+  "c++": "C++",
+  cs: "C#",
+  csharp: "C#",
+  go: "Go",
+  golang: "Go",
+  rs: "Rust",
+  rust: "Rust",
+  kt: "Kotlin",
+  kotlin: "Kotlin",
+  swift: "Swift",
+  php: "PHP",
+  rb: "Ruby",
+  ruby: "Ruby",
+  scss: "SCSS",
+  xml: "XML",
+  diff: "Diff",
+  graphql: "GraphQL",
+  dockerfile: "Dockerfile",
   "trench-ui": "Interactive view (JSON)",
 };
 
@@ -50,6 +72,8 @@ export function CodeBlock({ language, code, note }: CodeBlockProps) {
   const text = code.replace(/\n$/, "");
   const label = LANGUAGE_LABELS[language.toLowerCase()] ?? (language || "Code");
   const isJson = language === "json" || language === "trench-ui";
+  // Coloured tokens (keywords, strings, functions…); plain text if unknown.
+  const highlighted = useMemo(() => highlightCode(text, language), [text, language]);
   return (
     <div className="mb-3 overflow-hidden rounded-lg border border-border font-sans last:mb-0">
       <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1">
@@ -60,7 +84,15 @@ export function CodeBlock({ language, code, note }: CodeBlockProps) {
         <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">{note}</p>
       )}
       <pre className="overflow-x-auto bg-card p-3">
-        <code className="block font-mono text-[0.875em] leading-relaxed whitespace-pre">{text}</code>
+        {highlighted ? (
+          <code
+            className="hljs block font-mono text-[0.875em] leading-relaxed whitespace-pre"
+            // highlight.js output: the code HTML-escaped, wrapped in token spans.
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+        ) : (
+          <code className="block font-mono text-[0.875em] leading-relaxed whitespace-pre">{text}</code>
+        )}
       </pre>
     </div>
   );

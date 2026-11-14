@@ -29,6 +29,7 @@ import { CopyButton } from "./copy-button";
 import { MarkdownContent } from "./markdown-content";
 import { RelativeTime } from "./relative-time";
 import { ReasoningPanel } from "./reasoning-panel";
+import { COMPOSE_EVENT } from "./code-preview";
 import { ToolApprovalPanel } from "./tool-approval-panel";
 
 interface ChatPanelProps {
@@ -118,6 +119,16 @@ export function ChatPanel({
     const offset = nodeRect.top - containerRect.top;
     container.scrollTo({ top: container.scrollTop + offset - 5, behavior: "smooth" });
   }, [spacerHeight]);
+
+  // "Ask the agent to fix it" in a live preview prefills the message box (not sent).
+  useEffect(() => {
+    const onCompose = (event: Event) => {
+      const text = (event as CustomEvent<string>).detail;
+      if (typeof text === "string" && text) setDraft(text);
+    };
+    window.addEventListener(COMPOSE_EVENT, onCompose);
+    return () => window.removeEventListener(COMPOSE_EVENT, onCompose);
+  }, []);
 
   const handleSend = () => {
     const trimmed = draft.trim();
