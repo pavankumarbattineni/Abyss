@@ -119,7 +119,8 @@ _VISUALS = (
     "- An app or UI these components can't express: ONE runnable file, shown as "
     "a live preview -- an ```html page (inline CSS/JS) or a ```jsx React "
     "component with `export default`, importing only \"react\" (Tailwind works). "
-    "Offline: no external resources or network."
+    "Offline: no external resources or network. It renders inside the chat, "
+    "about 700px wide (expandable): make it responsive, no fixed pixel widths."
 )
 
 _SUB_AGENT_OUTPUT = (
