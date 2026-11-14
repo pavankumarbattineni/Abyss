@@ -53,6 +53,11 @@ interface ChatPanelProps {
   onResolveApproval?: (approvals: ToolApprovalPayload[]) => void;
 }
 
+// The reading column: 48rem, widening when the chat itself has room (the app
+// sidebar or thread panel closed, or a large screen). Container queries on the
+// panel, so it follows the space actually available, not the window.
+const CHAT_COLUMN = "max-w-3xl @5xl:max-w-4xl @7xl:max-w-5xl";
+
 export function ChatPanel({
   agent,
   isLoading,
@@ -145,7 +150,7 @@ export function ChatPanel({
   };
 
   const composer = (
-    <div className="w-full max-w-3xl rounded-3xl border border-border-soft bg-surface-raised p-3 shadow-sm transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50">
+    <div className={cn("w-full rounded-3xl border border-border-soft bg-surface-raised p-3 shadow-sm transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50", CHAT_COLUMN)}>
       <Textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -212,7 +217,7 @@ export function ChatPanel({
       </div>
       {composer}
       {sampleQuestions.length > 0 && (
-        <div className="w-full max-w-3xl text-left">
+        <div className={cn("w-full text-left", CHAT_COLUMN)}>
           <p className="mb-2 text-xs font-medium text-muted-foreground">Try asking</p>
           <ul className="flex flex-col gap-1.5">
             {sampleQuestions.map((question) => (
@@ -241,7 +246,7 @@ export function ChatPanel({
   ]);
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="@container flex min-w-0 flex-1 flex-col overflow-hidden">
       {showHeader && (
         <div className="flex items-center justify-end gap-2 px-4 py-2 sm:p-4">
           {onOpenThreads && (
@@ -293,7 +298,7 @@ export function ChatPanel({
       ) : hasThread ? (
         isMessagesLoading ? (
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+            <div className={cn("mx-auto flex w-full flex-col gap-6", CHAT_COLUMN)}>
               <Skeleton className="h-16 w-2/3" />
               <Skeleton className="ml-auto h-10 w-1/2" />
               <Skeleton className="h-20 w-3/4" />
@@ -309,7 +314,7 @@ export function ChatPanel({
               ref={scrollRef}
               className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6"
             >
-              <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 sm:gap-6">
+              <div className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CHAT_COLUMN)}>
                 {messages.map((message, index) => message.role === "summary" ? (
                   <ConversationSummary key={message.id} content={message.content} />
                 ) : (
