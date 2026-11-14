@@ -304,16 +304,18 @@ export function useChatStream({
       const resolvedThreadId = activeThreadId;
       activeThreadIdRef.current = resolvedThreadId;
 
-      const { stream_id } = await threadService.sendMessage(resolvedThreadId, {
+      const { stream_id, message_id } = await threadService.sendMessage(resolvedThreadId, {
         message: text,
       });
+      // From here on the question carries its saved id, so a refetch of the saved messages
+      // that already includes it doesn't show it twice (see mergeMessages).
+      const savedUserMessage: Message = { ...userMessage, id: message_id, thread_id: resolvedThreadId };
+      setPendingMessages((prev) => prev.map((m) => (m.id === userMessage.id ? savedUserMessage : m)));
 
       if (isNewThread && onThreadStarted) {
         // Hand the stream to the thread's own page. Seed its messages with this one so it shows
         // instantly (the page refetches the saved copy), and list the thread in the sidebar now.
-        queryClient.setQueryData<Message[]>(["thread-messages", resolvedThreadId], [
-          { ...userMessage, thread_id: resolvedThreadId },
-        ]);
+        queryClient.setQueryData<Message[]>(["thread-messages", resolvedThreadId], [savedUserMessage]);
         queryClient.invalidateQueries({ queryKey: ["threads", agentId] });
         onThreadStarted(resolvedThreadId, stream_id);
         return;
