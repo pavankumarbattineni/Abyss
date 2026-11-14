@@ -11,6 +11,7 @@ import {
   useMediaQuery,
   useResizablePanel,
 } from "@/hooks";
+import { mergeMessages } from "@/lib/chat-messages";
 import { cn } from "@/lib/utils";
 import { agentService, threadService } from "@/services";
 import type { Agent, Message } from "@/types";
@@ -74,7 +75,7 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
   const displayMessages = useMemo(
     () =>
       hasActiveConversation
-        ? [...(messages ?? []), ...pendingMessages]
+        ? mergeMessages(messages, pendingMessages)
         : undefined,
     [hasActiveConversation, messages, pendingMessages],
   );

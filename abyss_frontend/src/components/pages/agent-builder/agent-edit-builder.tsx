@@ -14,6 +14,7 @@ import { ChatPanel } from "@/components/shared/chat-panel";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Skeleton } from "@/components/ui";
 import { useChatStream, useResizablePanel } from "@/hooks";
+import { mergeMessages } from "@/lib/chat-messages";
 import { cn } from "@/lib/utils";
 import { agentService, threadService } from "@/services";
 import type { Agent, AgentToolRef, Message, SubAgent, Tool } from "@/types";
@@ -84,7 +85,7 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
   const hasChatActive =
     !!chatThreadId || chatMessages.length > 0 || isChatSending || isChatStreaming;
   const displayChatMessages = useMemo(
-    () => (hasChatActive ? [...(chatHistory ?? []), ...chatMessages] : undefined),
+    () => (hasChatActive ? mergeMessages(chatHistory, chatMessages) : undefined),
     [hasChatActive, chatHistory, chatMessages],
   );
 
