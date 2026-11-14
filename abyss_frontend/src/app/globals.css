@@ -207,3 +207,105 @@
   --xy-controls-button-border-color: var(--border);
   --xy-controls-box-shadow: none;
 }
+
+/* ── Syntax highlighting (lib/highlight.ts, highlight.js token classes) ───── */
+:root {
+  --code-keyword: #b3305e;
+  --code-string: #3b7a34;
+  --code-number: #a85a12;
+  --code-comment: #6f6b5f;
+  --code-function: #2d5fa6;
+  --code-type: #7646ad;
+  --code-attr: #94560d;
+  --code-tag: #23736e;
+  --code-builtin: #23736e;
+  --code-variable: #8a3b2c;
+  --code-addition-bg: rgba(59, 122, 52, 0.12);
+  --code-deletion-bg: rgba(194, 50, 31, 0.12);
+}
+
+.dark {
+  --code-keyword: #ff8db3;
+  --code-string: #a7d68e;
+  --code-number: #f5b97c;
+  --code-comment: #8d8a80;
+  --code-function: #8fb8f7;
+  --code-type: #c9a6f5;
+  --code-attr: #e8c27e;
+  --code-tag: #79d1c7;
+  --code-builtin: #79d1c7;
+  --code-variable: #f0a58f;
+  --code-addition-bg: rgba(167, 214, 142, 0.14);
+  --code-deletion-bg: rgba(255, 141, 141, 0.14);
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: var(--code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-meta .hljs-string,
+.hljs-char\.escape_ {
+  color: var(--code-string);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: var(--code-number);
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--code-function);
+}
+.hljs-type,
+.hljs-title.class_,
+.hljs-title.class_.inherited__ {
+  color: var(--code-type);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--code-attr);
+}
+.hljs-name,
+.hljs-tag,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: var(--code-tag);
+}
+.hljs-built_in,
+.hljs-meta {
+  color: var(--code-builtin);
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params,
+.hljs-variable.language_ {
+  color: var(--code-variable);
+}
+.hljs-section,
+.hljs-strong {
+  font-weight: 600;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-addition {
+  background: var(--code-addition-bg);
+}
+.hljs-deletion {
+  background: var(--code-deletion-bg);
+}
