@@ -127,7 +127,9 @@ export function ThreadSidebar({
                         <RelativeTime value={thread.created_at} className="text-background/75" />
                       </TooltipContent>
                     </Tooltip>
-                    <div className="shrink-0 opacity-0 group-hover:opacity-100">
+                    {/* Revealed on hover; always shown on touch screens (no hover there),
+                        on keyboard focus and while its menu is open. */}
+                    <div className="shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100">
                       <ThreadActions thread={thread} agentId={agentId} isActive={isActive} />
                     </div>
                   </div>
