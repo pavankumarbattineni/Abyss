@@ -80,8 +80,9 @@ export const AgentCreatePage = () => {
         llm_model_id: selectedModelId,
       }),
     onSuccess: (createdAgent) => {
+      // Newest first, the order the server lists agents in, so it doesn't move on refresh.
       queryClient.setQueryData<Agent[]>(["agents"], (prev) =>
-        prev ? [...prev, createdAgent] : [createdAgent],
+        prev ? [createdAgent, ...prev.filter((item) => item.id !== createdAgent.id)] : [createdAgent],
       );
       queryClient.setQueryData(["agent", createdAgent.id], createdAgent);
       toast.success("Agent created");

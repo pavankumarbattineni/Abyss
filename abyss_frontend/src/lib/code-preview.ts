@@ -149,10 +149,25 @@ function bridge(channel: string): string {
     var a = e.target && e.target.closest && e.target.closest("a[href]");
     if (a && (a.getAttribute("href") || "").charAt(0) !== "#") e.preventDefault();
   }, true);
-  var last = 0;
+  var last = "";
+  // A page built to fill the screen (height: 100vh / h-screen) is exactly as
+  // tall as the frame, whatever the frame is, so its height says nothing about
+  // the room it needs. Report "fill" instead and let the parent pick a height.
+  function fillsViewport() {
+    var vh = window.innerHeight;
+    if (!vh || !document.body) return false;
+    var root = document.getElementById("root");
+    var el = (root && root.firstElementChild) || document.body.firstElementChild;
+    if (!el) return false;
+    var h = el.getBoundingClientRect().height;
+    return Math.abs(h - vh) < 2 && document.documentElement.scrollHeight <= vh + 1;
+  }
   function size() {
     var h = Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0));
-    if (h !== last) { last = h; post("height", h); }
+    var report = fillsViewport() ? "fill" : String(h);
+    if (report === last) return;
+    last = report;
+    if (report === "fill") post("fill", true); else post("height", h);
   }
   window.addEventListener("load", function () {
     size(); post("ready");

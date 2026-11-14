@@ -20,6 +20,10 @@ export const COMPOSE_EVENT = "abyss:compose";
 
 const MIN_HEIGHT = 160;
 const COLLAPSED_MAX_HEIGHT = 640;
+/** Height for a page built to fill the screen: it has no height of its own. */
+const FILL_HEIGHT = 600;
+/** Expanded, a full-screen page gets most of the window. */
+const FILL_EXPANDED_VH = 0.85;
 const READY_TIMEOUT_MS = 10_000;
 const MAX_ERRORS = 3;
 
@@ -34,10 +38,12 @@ interface FrameState {
   ready: boolean;
   timedOut: boolean;
   height: number;
+  /** The page fills whatever height it's given (100vh / h-screen layouts). */
+  fill: boolean;
   errors: string[];
 }
 
-const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, errors: [] });
+const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, fill: false, errors: [] });
 
 /**
  * A live preview of frontend code an agent wrote, run in a sandboxed iframe
@@ -94,7 +100,9 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
       if (!data || data.channel !== channel) return;
       if (data.type === "height" && typeof data.data === "number" && Number.isFinite(data.data)) {
         const height = Math.max(MIN_HEIGHT, Math.min(Math.round(data.data), 20_000));
-        updateFrame(() => ({ height }));
+        updateFrame(() => ({ height, fill: false }));
+      } else if (data.type === "fill") {
+        updateFrame(() => ({ fill: true }));
       } else if (data.type === "ready") {
         updateFrame(() => ({ ready: true }));
       } else if (data.type === "error") {
@@ -134,7 +142,15 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   };
 
   const label = kind === "react" ? "React" : "HTML";
-  const frameHeight = expanded ? height : Math.min(height, COLLAPSED_MAX_HEIGHT);
+  const fill = frame.fill;
+  const frameHeight = fill
+    ? expanded
+      ? Math.max(FILL_HEIGHT, Math.round((typeof window === "undefined" ? 0 : window.innerHeight) * FILL_EXPANDED_VH))
+      : FILL_HEIGHT
+    : expanded
+      ? height
+      : Math.min(height, COLLAPSED_MAX_HEIGHT);
+  const canExpand = fill || height > COLLAPSED_MAX_HEIGHT;
 
   return (
     <div className="mb-3 overflow-hidden rounded-lg border border-border font-sans text-sm leading-normal last:mb-0">
@@ -173,7 +189,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
               >
                 <RotateCw className="size-3.5" />
               </Button>
-              {height > COLLAPSED_MAX_HEIGHT && (
+              {canExpand && (
                 <Button
                   variant="ghost"
                   size="icon-xs"
