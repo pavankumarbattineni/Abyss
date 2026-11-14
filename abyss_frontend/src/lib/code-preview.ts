@@ -119,6 +119,21 @@ function bridge(channel: string): string {
   }
   // The sandbox has no storage (opaque origin): give apps an in-memory one so
   // history/favorites work for the session instead of throwing.
+  // Service workers need a real origin, which the sandbox doesn't have: reading
+  // navigator.serviceWorker throws. A stand-in keeps apps that register one
+  // (offline/PWA support) running; nothing is actually registered.
+  try { navigator.serviceWorker; } catch (e) {
+    var noWorker = {
+      register: function () { return Promise.resolve({ unregister: function () { return Promise.resolve(true); }, update: function () { return Promise.resolve(); } }); },
+      getRegistration: function () { return Promise.resolve(undefined); },
+      getRegistrations: function () { return Promise.resolve([]); },
+      ready: new Promise(function () {}),
+      controller: null,
+      addEventListener: function () {},
+      removeEventListener: function () {}
+    };
+    try { Object.defineProperty(navigator, "serviceWorker", { value: noWorker, configurable: true }); } catch (_) {}
+  }
   ["localStorage", "sessionStorage"].forEach(function (name) {
     try { window[name].getItem("__probe"); }
     catch (e) { try { Object.defineProperty(window, name, { value: memoryStorage(), configurable: true }); } catch (_) {} }
