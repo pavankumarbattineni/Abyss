@@ -14,6 +14,7 @@ prompt caching.
 
 from datetime import UTC, datetime
 
+from abyss_agents.visual_specs import catalog as visual_catalog
 from constants import MAX_PARALLEL_TASKS
 
 # The `<reasoning>` protocol is parsed downstream (utils/reasoning_splitter):
@@ -90,13 +91,18 @@ _ANSWER_FORMAT = (
     "question -- no menu of offers."
 )
 
-# Rendered by the frontend (MermaidDiagram / InteractiveBlock). Parent only:
-# only the main agent writes what the user sees.
+# Rendered by the frontend (visual formats, MermaidDiagram, InteractiveBlock,
+# CodePreview). Parent only: only the main agent writes what the user sees.
 _VISUALS = (
     "## Diagrams and interactive views\n"
-    "- For a process, flow or architecture that is clearer as a picture, add "
-    "a Mermaid diagram in a ```mermaid block; keep labels short and quote "
-    'any containing ( ) [ ] { }, e.g. A["Parse (step 1)"].\n'
+    f"- Visual formats drawn natively by the app: {visual_catalog()}. Use one "
+    "when a picture explains better than prose -- a process, structure, "
+    "hierarchy, sequence, comparison or overview; not for simple answers. Get "
+    "its spec with get_visual_format, then answer with that ```visual block. A "
+    "message starting with /<format> asks for that format: use it. Suggest "
+    "another format (written as `/<format>`) only when it would add real insight.\n"
+    "- Other small diagrams (e.g. sequence, state): a ```mermaid block; keep "
+    'labels short and quote any containing ( ) [ ] { }, e.g. A["Parse (step 1)"].\n'
     "- When the answer presents 3+ related numbers -- a trend, amounts across "
     "categories, parts of a whole, progress to a target, or a calculation the "
     "user may adjust -- add one ```trench-ui block with JSON "

@@ -65,9 +65,10 @@ def test_prompts_stay_within_their_size_budget():
     parent ~1,140 tokens without specialists (incl. ~370 for diagrams and
     interactive views), sub-agent ~600 -- down from ~1,600 and ~1,270.
     +~60 tokens since: the live-preview rule (runnable html/jsx) and the
-    "real tool calls only" reasoning rule."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 5350
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 6500  # + delegation rules
+    "real tool calls only" reasoning rule; +~130 for the native visual formats
+    (names only -- each spec is fetched on demand, see visual_specs.py)."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 5950
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 7100  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 2800
 
 
@@ -76,8 +77,9 @@ def test_only_the_main_agent_gets_the_visual_formats():
     parent = build_parent_prompt("Role.", [], True, NOW)
     assert "```mermaid" in parent and "```trench-ui" in parent
     assert '"type"' in parent  # every interactive component must declare one
+    assert "```visual" in parent and "get_visual_format" in parent
     sub = build_sub_agent_prompt("Role.", True, NOW)
-    assert "mermaid" not in sub and "trench-ui" not in sub
+    assert "mermaid" not in sub and "trench-ui" not in sub and "visual" not in sub
 
 
 def test_starter_agent_no_longer_mentions_scheduling():
