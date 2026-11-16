@@ -2,7 +2,7 @@
 # Abyss frontend: Next.js 16, standalone output. deps -> builder -> runner.
 
 # Node 24 LTS on Debian slim (Next 16 needs Node >= 20.9).
-FROM node:24-slim AS base
+FROM node:26-slim AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
