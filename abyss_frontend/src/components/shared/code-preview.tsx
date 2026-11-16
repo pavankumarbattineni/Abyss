@@ -9,6 +9,8 @@ import {
   buildReactPreview,
   compileReactComponent,
   downloadableHtml,
+  PREVIEW_SIZES,
+  previewFrameLayout,
   type PreviewKind,
 } from "@/lib/code-preview";
 import { cn } from "@/lib/utils";
@@ -18,12 +20,7 @@ import { CopyButton } from "./copy-button";
 /** Asks the chat composer to prefill a message (handled in chat-panel.tsx). */
 export const COMPOSE_EVENT = "abyss:compose";
 
-const MIN_HEIGHT = 160;
-const COLLAPSED_MAX_HEIGHT = 640;
-/** Height for a page built to fill the screen: it has no height of its own. */
-const FILL_HEIGHT = 600;
-/** Expanded, a full-screen page gets most of the window. */
-const FILL_EXPANDED_VH = 0.85;
+const MIN_HEIGHT = PREVIEW_SIZES.minHeight;
 const READY_TIMEOUT_MS = 10_000;
 const MAX_ERRORS = 3;
 
@@ -40,10 +37,12 @@ interface FrameState {
   height: number;
   /** The page fills whatever height it's given (100vh / h-screen layouts). */
   fill: boolean;
+  /** Width of content wider than the frame (fixed pixel widths); 0 when it fits. */
+  contentWidth: number;
   errors: string[];
 }
 
-const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, fill: false, errors: [] });
+const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, fill: false, contentWidth: 0, errors: [] });
 
 /**
  * A live preview of frontend code an agent wrote, run in a sandboxed iframe
@@ -55,6 +54,16 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const [expanded, setExpanded] = useState<boolean>(false);
   const [reloadKey, setReloadKey] = useState<number>(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  // The width available to the preview, to fit wide or full-screen pages into it.
+  // A callback ref: the stage only exists once the page is built (React previews compile first).
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
+  const [columnWidth, setColumnWidth] = useState(0);
+  useEffect(() => {
+    if (!stage) return;
+    const observer = new ResizeObserver(([entry]) => setColumnWidth(Math.round(entry.contentRect.width)));
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [stage]);
   // One channel per run (code + reload): messages from other frames or older
   // runs are ignored, and all run state below is keyed by it.
   const channel = useMemo(() => `preview-${crypto.randomUUID()}`, [code, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -103,6 +112,10 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
         updateFrame(() => ({ height, fill: false }));
       } else if (data.type === "fill") {
         updateFrame(() => ({ fill: true }));
+      } else if (data.type === "width" && typeof data.data === "number" && Number.isFinite(data.data)) {
+        // Keep the widest seen: once the frame is widened to fit, it no longer overflows.
+        const contentWidth = Math.round(data.data);
+        updateFrame((c) => ({ contentWidth: Math.max(c.contentWidth, contentWidth) }));
       } else if (data.type === "ready") {
         updateFrame(() => ({ ready: true }));
       } else if (data.type === "error") {
@@ -142,15 +155,15 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   };
 
   const label = kind === "react" ? "React" : "HTML";
-  const fill = frame.fill;
-  const frameHeight = fill
-    ? expanded
-      ? Math.max(FILL_HEIGHT, Math.round((typeof window === "undefined" ? 0 : window.innerHeight) * FILL_EXPANDED_VH))
-      : FILL_HEIGHT
-    : expanded
-      ? height
-      : Math.min(height, COLLAPSED_MAX_HEIGHT);
-  const canExpand = fill || height > COLLAPSED_MAX_HEIGHT;
+  const layout = previewFrameLayout({
+    columnWidth,
+    height,
+    fill: frame.fill,
+    contentWidth: frame.contentWidth,
+    expanded,
+    windowHeight: typeof window === "undefined" ? 0 : window.innerHeight,
+  });
+  const canExpand = frame.fill || layout.displayHeight < Math.round(height * layout.scale);
 
   return (
     <div className="mb-3 overflow-hidden rounded-lg border border-border font-sans text-sm leading-normal last:mb-0">
@@ -226,18 +239,27 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
       ) : (
         <div className="bg-card">
           {doc && (
-            <iframe
-              key={reloadKey}
-              ref={frameRef}
-              title={`Live preview (${label})`}
-              srcDoc={doc}
-              // Scripts run, but in an opaque origin: no access to the app, its
-              // cookies or storage, no popups and no navigation.
-              sandbox="allow-scripts allow-forms"
-              referrerPolicy="no-referrer"
-              className="block w-full border-0 bg-white"
-              style={{ height: frameHeight }}
-            />
+            // A wide or full-screen page is laid out at its own (desktop) size
+            // and scaled down to the column, so it shows whole, never clipped.
+            <div ref={setStage} className="overflow-hidden bg-white" style={{ height: layout.displayHeight }}>
+              <iframe
+                key={reloadKey}
+                ref={frameRef}
+                title={`Live preview (${label})`}
+                srcDoc={doc}
+                // Scripts run, but in an opaque origin: no access to the app, its
+                // cookies or storage, no popups and no navigation.
+                sandbox="allow-scripts allow-forms"
+                referrerPolicy="no-referrer"
+                className="block border-0 bg-white"
+                style={{
+                  width: layout.frameWidth ?? "100%",
+                  height: layout.frameHeight,
+                  transform: layout.scale !== 1 ? `scale(${layout.scale})` : undefined,
+                  transformOrigin: "0 0",
+                }}
+              />
+            </div>
           )}
           {building && (
             <div className="flex h-40 animate-pulse items-center justify-center gap-2 text-xs text-muted-foreground">
