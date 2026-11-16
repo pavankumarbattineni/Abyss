@@ -74,7 +74,8 @@ export interface StreamDoneEvent {
 
 export interface StreamErrorEvent {
   type: "error";
-  data: { message: string };
+  /** message: friendly text for the user; message_id: the saved "error" notice, if any. */
+  data: { message: string; code?: string; message_id?: string | null };
 }
 
 // One gated tool call awaiting a decision (the backend's HumanInTheLoopMiddleware action request).

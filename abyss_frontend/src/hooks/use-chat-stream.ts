@@ -168,7 +168,35 @@ export function useChatStream({
           setStreamIdParam(null);
         }
       } else if (event.type === "error") {
-        toast.error(event.data.message || "Something went wrong while streaming the response.");
+        // The run failed (e.g. the model provider was unreachable): keep any partial
+        // answer and show the backend's friendly notice in the conversation itself --
+        // it's saved, so it's still there after a reload. A user's own cancel isn't a failure.
+        if (event.data.code !== "cancelled") {
+          const partial = accumulatedRef.current;
+          const now = new Date().toISOString();
+          const additions: Message[] = [];
+          if (partial) {
+            additions.push({
+              id: `local-assistant-${crypto.randomUUID()}`,
+              thread_id: resolvedThreadId,
+              role: "assistant",
+              content: partial,
+              is_partial: true,
+              reasoning: null,
+              created_at: now,
+            });
+          }
+          additions.push({
+            id: event.data.message_id ?? `local-error-${crypto.randomUUID()}`,
+            thread_id: resolvedThreadId,
+            role: "error",
+            content: event.data.message || "**Something went wrong.** Please try again; your question is saved.",
+            is_partial: false,
+            reasoning: null,
+            created_at: now,
+          });
+          setPendingMessages((prev) => [...prev, ...additions]);
+        }
         streamIdRef.current = null;
         setIsStreaming(false);
         setStreamingContent("");
