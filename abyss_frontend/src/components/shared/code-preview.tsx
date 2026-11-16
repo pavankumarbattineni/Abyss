@@ -40,6 +40,8 @@ interface FrameState {
   fill: boolean;
   /** Width of content wider than the frame (fixed pixel widths); 0 when it fits. */
   contentWidth: number;
+  /** Sites the page tried to load files from, which the preview blocks. */
+  blocked: string[];
   errors: string[];
 }
 
@@ -47,7 +49,7 @@ const noSubscribe = () => () => {};
 const clientRuntimeBase = () => `${window.location.origin}/preview-runtime`;
 const serverRuntimeBase = () => "";
 
-const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, fill: false, contentWidth: 0, errors: [] });
+const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, fill: false, contentWidth: 0, blocked: [], errors: [] });
 
 /**
  * A live preview of frontend code an agent wrote, run in a sandboxed iframe
@@ -129,6 +131,9 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
         // Keep the widest seen: once the frame is widened to fit, it no longer overflows.
         const contentWidth = Math.round(data.data);
         updateFrame((c) => ({ contentWidth: Math.max(c.contentWidth, contentWidth) }));
+      } else if (data.type === "blocked") {
+        const host = String((data.data as { host?: unknown } | null)?.host ?? "").slice(0, 120);
+        if (host) updateFrame((c) => ({ blocked: c.blocked.includes(host) || c.blocked.length >= 8 ? c.blocked : [...c.blocked, host] }));
       } else if (data.type === "ready") {
         updateFrame(() => ({ ready: true }));
       } else if (data.type === "error") {
@@ -147,7 +152,16 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   }, [doc, channel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const building = kind === "react" && !reactResult;
-  const errors = [...(reactResult?.error ? [reactResult.error] : []), ...frame.errors];
+  // Blocked files usually explain a page that looks unstyled or does nothing:
+  // say so plainly, as one problem the agent can fix.
+  const blockedProblem = frame.blocked.length
+    ? `The page tries to load files from the internet (${frame.blocked.join(", ")}), which the preview blocks for security. Rebuild it as one self-contained file: no external scripts, stylesheets, fonts, icon libraries or images.`
+    : null;
+  const errors = [
+    ...(reactResult?.error ? [reactResult.error] : []),
+    ...(blockedProblem ? [blockedProblem] : []),
+    ...frame.errors,
+  ];
   const failed = Boolean(reactResult?.error) || (frame.timedOut && !frame.ready);
   const height = frame.height;
 

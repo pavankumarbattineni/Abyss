@@ -138,6 +138,18 @@ function bridge(channel: string): string {
     try { window[name].getItem("__probe"); }
     catch (e) { try { Object.defineProperty(window, name, { value: memoryStorage(), configurable: true }); } catch (_) {} }
   });
+  // Files the security policy blocked (CDN scripts, web fonts, remote images):
+  // report each site once, so the user sees why the page looks broken.
+  var blockedHosts = {};
+  document.addEventListener("securitypolicyviolation", function (e) {
+    var uri = String(e.blockedURI || "");
+    if (!/^https?:/i.test(uri)) return; // inline/eval are allowed; data: and blob: aren't network
+    var host;
+    try { host = new URL(uri).host; } catch (_) { return; }
+    if (blockedHosts[host]) return;
+    blockedHosts[host] = true;
+    post("blocked", { host: host, kind: String(e.effectiveDirective || e.violatedDirective || "") });
+  });
   window.addEventListener("error", function (e) {
     post("error", { message: String(e.message || (e.error && e.error.message) || "Script error"), line: e.lineno || null });
   });
@@ -194,12 +206,26 @@ function head(channel: string, runtimeBase: string): string {
   ].join("\n");
 }
 
+/**
+ * The Tailwind CDN script (Play CDN v3 or @tailwindcss/browser v4), which the
+ * preview can't load, swapped for the app's own pinned copy -- so Tailwind
+ * classes in an HTML page work offline, as they do in React previews.
+ */
+const TAILWIND_CDN_SCRIPT =
+  /<script\b[^>]*\bsrc\s*=\s*["']https?:\/\/(?:cdn\.tailwindcss\.com[^"']*|[^"']*@tailwindcss\/browser[^"']*)["'][^>]*>\s*<\/script>/gi;
+
+export function withLocalTailwind(code: string, runtimeBase: string): string {
+  const local = `<script src="${runtimeBase.replace(/\/$/, "")}/${RUNTIME.tailwind}"></script>`;
+  return code.replace(TAILWIND_CDN_SCRIPT, local);
+}
+
 /** The sandboxed document for a model-written HTML page. */
 export function buildHtmlPreview(code: string, channel: string, runtimeBase: string): string {
   const injected = head(channel, runtimeBase);
-  if (/<head[^>]*>/i.test(code)) return code.replace(/<head[^>]*>/i, (tag) => `${tag}\n${injected}`);
-  if (/<html[^>]*>/i.test(code)) return code.replace(/<html[^>]*>/i, (tag) => `${tag}\n<head>${injected}</head>`);
-  return `<!doctype html><html><head>${injected}</head><body>${code}</body></html>`;
+  const page = withLocalTailwind(code, runtimeBase);
+  if (/<head[^>]*>/i.test(page)) return page.replace(/<head[^>]*>/i, (tag) => `${tag}\n${injected}`);
+  if (/<html[^>]*>/i.test(page)) return page.replace(/<html[^>]*>/i, (tag) => `${tag}\n<head>${injected}</head>`);
+  return `<!doctype html><html><head>${injected}</head><body>${page}</body></html>`;
 }
 
 /** The sandboxed document for a compiled React component. */
