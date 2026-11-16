@@ -21,7 +21,8 @@ export interface ThreadUpdateRequest {
 }
 
 // "summary": earlier conversation condensed for the agent (shown collapsible).
-export type MessageRole = "user" | "assistant" | "summary";
+// "error": a friendly notice saved when a run failed (e.g. the model provider was down).
+export type MessageRole = "user" | "assistant" | "summary" | "error";
 
 export interface Message {
   id: string;

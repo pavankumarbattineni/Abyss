@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUp,
+  CloudOff,
   ChevronDown,
   History,
   ChevronUp,
@@ -13,6 +14,7 @@ import {
   MessageSquarePlus,
   Paperclip,
   Pencil,
+  RotateCcw,
   Square,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -322,6 +324,18 @@ export function ChatPanel({
               <div className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CHAT_COLUMN)}>
                 {messages.map((message, index) => message.role === "summary" ? (
                   <ConversationSummary key={message.id} content={message.content} />
+                ) : message.role === "error" ? (
+                  <FailureNotice
+                    key={message.id}
+                    content={message.content}
+                    // Only the latest failure offers a retry, and only when nothing is running.
+                    retryQuestion={
+                      index === messages.length - 1 && !isSending && !isStreaming
+                        ? [...messages.slice(0, index)].reverse().find((m) => m.role === "user")?.content
+                        : undefined
+                    }
+                    onRetry={onSendMessage}
+                  />
                 ) : (
                   <div
                     key={message.id}
@@ -447,6 +461,38 @@ export function ChatPanel({
  * "compacted" marker). Collapsed to a divider; opens to show the summary itself. The earlier
  * messages stay on screen -- only what the agent remembers of them changed.
  */
+/**
+ * A run that failed (the model provider was busy or unreachable, a key was
+ * rejected...): a calm notice in the conversation instead of a missing answer,
+ * with "Try again" resending the question.
+ */
+function FailureNotice({
+  content,
+  retryQuestion,
+  onRetry,
+}: {
+  content: string;
+  retryQuestion?: string;
+  onRetry?: (message: string) => void;
+}) {
+  return (
+    <div role="status" className="flex min-w-0 items-start gap-3">
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-warning-soft text-warning max-sm:hidden" aria-hidden="true">
+        <CloudOff className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1 rounded-2xl border border-warning/30 bg-warning-soft/40 px-4 py-3">
+        <MarkdownContent content={content} className="text-[15px]" />
+        {retryQuestion && onRetry && (
+          <Button variant="outline" size="sm" className="mt-3 gap-1.5 rounded-full" onClick={() => onRetry(retryQuestion)}>
+            <RotateCcw className="size-3.5" />
+            Try again
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ConversationSummary({ content }: { content: string }) {
   const [open, setOpen] = useState<boolean>(false);
   return (

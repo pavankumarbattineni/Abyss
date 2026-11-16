@@ -10,6 +10,7 @@ to a new model for an existing provider) still requires a code change here —
 a build()/validate() pair and the underlying SDK are integration logic that
 can't be expressed as a database row.
 """
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -128,40 +129,78 @@ def get_provider_spec(provider: str) -> ProviderSpec:
     return spec
 
 
-def classify_llm_error(exc: Exception) -> tuple[str, str] | tuple[None, None]:
-    """Map a raised provider-SDK exception to a stable error_code + clean message.
-
-    Chat-time errors (a call mid-conversation) are distinct from save-time key
-    validation: the SDK exceptions here are the same shape, but at chat time we
-    have no ValueError-catching caller to phrase a message — this is what
-    chat_service surfaces directly to the user instead of a raw exception dump.
-    Returns (None, None) for anything unrecognized so the caller can fall back
-    to its own generic handling.
-    """
+def _classify_one(exc: BaseException) -> tuple[str, str] | tuple[None, None]:
+    """Classify a single exception (no cause chain); see classify_llm_error."""
     import anthropic
+    import httpx
     import openai
     from google.genai.errors import ClientError, ServerError
 
-    if isinstance(exc, openai.AuthenticationError):
-        return "invalid_api_key", "Your OpenAI API key was rejected. Check it in Settings."
-    if isinstance(exc, openai.PermissionDeniedError):
-        return "permission_denied", "Your OpenAI API key doesn't have access to this model."
-    if isinstance(exc, openai.RateLimitError):
-        return "rate_limited", "OpenAI rate limit or quota exceeded. Wait a moment and try again, or check your plan/billing."
-
-    if isinstance(exc, anthropic.AuthenticationError):
-        return "invalid_api_key", "Your Anthropic API key was rejected. Check it in Settings."
-    if isinstance(exc, anthropic.PermissionDeniedError):
-        return "permission_denied", "Your Anthropic API key doesn't have access to this model."
-    if isinstance(exc, anthropic.RateLimitError):
-        return "rate_limited", "Anthropic rate limit or quota exceeded. Wait a moment and try again, or check your plan/billing."
+    for sdk, name in ((openai, "OpenAI"), (anthropic, "Anthropic")):
+        if isinstance(exc, sdk.AuthenticationError):
+            return "invalid_api_key", f"Your {name} API key was rejected. Check it in Settings."
+        if isinstance(exc, sdk.PermissionDeniedError):
+            return "permission_denied", f"Your {name} API key doesn't have access to this model."
+        if isinstance(exc, sdk.RateLimitError):
+            return "rate_limited", f"{name} rate limit or quota exceeded. Wait a moment and try again, or check your plan/billing."
+        if isinstance(exc, sdk.NotFoundError):
+            return "model_not_found", f"{name} doesn't recognise this agent's model. Pick another model for the agent."
+        if isinstance(exc, sdk.APITimeoutError):
+            return "provider_timeout", f"{name} took too long to respond. Please try again."
+        if isinstance(exc, sdk.APIConnectionError):
+            return "provider_unreachable", f"Abyss couldn't reach {name}. Please try again shortly."
+        if isinstance(exc, sdk.InternalServerError):
+            return "provider_unavailable", f"{name} is temporarily unavailable. Please try again shortly."
+    if isinstance(exc, anthropic.OverloadedError):
+        return "provider_unavailable", "Anthropic is overloaded right now. Please try again shortly."
+    if isinstance(exc, anthropic.RequestTooLargeError):
+        return "request_too_large", "This conversation is too long for the model. Start a new thread to continue."
 
     if isinstance(exc, ClientError):
         if exc.code in (401, 403):
             return "invalid_api_key", "Your Google Gemini API key was rejected or lacks access to this model."
         if exc.code == 429:
             return "rate_limited", "Google Gemini rate limit or quota exceeded. Wait a moment and try again, or check your plan/billing."
+        if exc.code == 404:
+            return "model_not_found", "Google Gemini doesn't recognise this agent's model. Pick another model for the agent."
     if isinstance(exc, ServerError):
         return "provider_unavailable", "Google Gemini is temporarily unavailable. Please try again shortly."
 
+    if isinstance(exc, (httpx.TimeoutException,)):
+        return "provider_timeout", "The model provider took too long to respond. Please try again."
+    if isinstance(exc, (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError, ConnectionError)):
+        return "provider_unreachable", "Abyss couldn't reach the model provider. Please try again shortly."
+    return None, None
+
+
+# Provider outages as they read when an SDK error has been wrapped or re-raised
+# as text (e.g. by a LangChain integration): "503 UNAVAILABLE", "overloaded"...
+_UNAVAILABLE_TEXT = re.compile(
+    r"(503|529)|UNAVAILABLE|overloaded|high demand|service unavailable|try again later",
+    re.IGNORECASE,
+)
+
+
+def classify_llm_error(exc: BaseException) -> tuple[str, str] | tuple[None, None]:
+    """Map a raised provider-SDK exception to a stable error_code + clean message.
+
+    Chat-time errors (a call mid-conversation) are distinct from save-time key
+    validation: the SDK exceptions here are the same shape, but at chat time we
+    have no ValueError-catching caller to phrase a message -- this is what
+    chat_service surfaces directly to the user instead of a raw exception dump.
+
+    Follows the cause chain (integrations often wrap the SDK error), then falls
+    back to recognising an outage from the error text. Returns (None, None) for
+    anything unrecognized so the caller can fall back to its own handling.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen and len(seen) < 6:
+        seen.add(id(current))
+        code, message = _classify_one(current)
+        if code:
+            return code, message
+        current = current.__cause__ or current.__context__
+    if _UNAVAILABLE_TEXT.search(str(exc)):
+        return "provider_unavailable", "The model provider is temporarily unavailable. Please try again shortly."
     return None, None

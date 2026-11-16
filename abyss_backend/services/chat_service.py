@@ -280,6 +280,36 @@ def _schedule_trace_sync(trace_ids: list[str], user_id: str | None) -> None:
     task.add_done_callback(_trace_tasks.discard)
 
 
+# Headline per failure kind, for the notice saved in the thread when a run fails.
+_FAILURE_TITLES = {
+    "provider_unavailable": "The model is busy right now",
+    "provider_unreachable": "Couldn't reach the model",
+    "provider_timeout": "The model took too long to answer",
+    "rate_limited": "Usage limit reached",
+    "invalid_api_key": "There's a problem with the API key",
+    "permission_denied": "No access to this model",
+    "model_not_found": "This model isn't available",
+    "request_too_large": "This conversation is too long",
+    "sub_agent_timeout": "A specialist took too long",
+}
+
+
+def _failure_notice(code: str, message: str) -> str:
+    """The friendly text shown in the chat when a run fails (role "error").
+
+    Known failures keep their specific, actionable message; anything else gets
+    a calm generic one -- the technical detail stays in the stream record and
+    the trace, not in the conversation.
+    """
+    title = _FAILURE_TITLES.get(code)
+    if title:
+        return f"**{title}.** {message} Your question is saved."
+    return (
+        "**Something went wrong.** I couldn't finish this answer because of an unexpected "
+        "problem. Please try again; your question is saved."
+    )
+
+
 async def _save_summary(
     session: AsyncSession,
     projector: StreamProjector,
@@ -657,8 +687,24 @@ async def _run_generation(
                     error_msg = repr(real_exc) if not str(real_exc) else str(real_exc)
                     error_code = "generation_failed"
             logger.exception("Stream %s failed: %s", stream_id, exc)
+            # What the user sees: a short, plain explanation saved in the thread
+            # (so it survives a reload), never a raw exception.
+            notice = _failure_notice(error_code, error_msg)
+            notice_id: str | None = None
             try:
                 await session.rollback()
+                failed_values: dict = {}
+                # Keep whatever answer had already streamed, as a cancel does.
+                partial_text = "".join(projector.content_tokens)
+                if partial_text:
+                    partial_msg = Message(thread_id=thread_id, role="assistant", content=partial_text, is_partial=True)
+                    session.add(partial_msg)
+                    await session.flush()
+                    failed_values["assistant_message_id"] = partial_msg.id
+                notice_msg = Message(thread_id=thread_id, role="error", content=notice)
+                session.add(notice_msg)
+                await session.flush()
+                notice_id = notice_msg.id
                 # A failed run still consumed real tokens up to the point of
                 # failure (e.g. the model answered but content assembly or
                 # title generation errored afterward) — record and cost them.
@@ -673,13 +719,14 @@ async def _run_generation(
                             projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
                         ),
                         updated_at=utcnow(),
+                        **failed_values,
                         **usage_values(),
                     )
                 )
                 await session.commit()
             except Exception:
-                pass
-            projector._emit("error", {"message": error_msg, "code": error_code})
+                logger.exception("Stream %s: could not record the failure", stream_id)
+            projector._emit("error", {"message": notice, "code": error_code, "message_id": notice_id})
             stream_manager.signal_done(stream_id)
 
         finally:
