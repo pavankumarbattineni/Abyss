@@ -162,12 +162,21 @@ function bridge(channel: string): string {
     var h = el.getBoundingClientRect().height;
     return Math.abs(h - vh) < 2 && document.documentElement.scrollHeight <= vh + 1;
   }
+  // Content wider than the frame (fixed widths): report its width so the
+  // parent can show the whole page scaled down instead of clipped.
+  function overflowWidth() {
+    var w = document.documentElement.scrollWidth;
+    return w > window.innerWidth + 1 ? w : 0;
+  }
   function size() {
     var h = Math.ceil(Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0));
-    var report = fillsViewport() ? "fill" : String(h);
+    var fill = fillsViewport();
+    var wide = overflowWidth();
+    var report = (fill ? "fill" : String(h)) + "|" + wide;
     if (report === last) return;
     last = report;
-    if (report === "fill") post("fill", true); else post("height", h);
+    if (wide) post("width", wide);
+    if (fill) post("fill", true); else post("height", h);
   }
   window.addEventListener("load", function () {
     size(); post("ready");
@@ -243,4 +252,72 @@ ${head(channel, runtimeBase)}
 /** A standalone file the user can download and open (the original page). */
 export function downloadableHtml(code: string): Blob {
   return new Blob([code], { type: "text/html;charset=utf-8" });
+}
+
+/** How a preview frame is sized and scaled for the space it has. */
+export interface FrameLayout {
+  /** The frame's own size (what the page inside sees as its viewport). */
+  frameWidth: number | null;
+  frameHeight: number;
+  /** Scale applied to the frame to fit the column (1 = none). */
+  scale: number;
+  /** Height the preview takes in the chat. */
+  displayHeight: number;
+}
+
+export const PREVIEW_SIZES = {
+  minHeight: 160,
+  collapsedMaxHeight: 640,
+  /** Height in the chat for a page built to fill the screen. */
+  fillHeight: 600,
+  fillExpandedVh: 0.85,
+  /** A full-screen page is laid out at (up to) this desktop width... */
+  desktopWidth: 1024,
+  /** ...but never scaled below this, so text stays readable. */
+  minScale: 0.6,
+  /** Wider fixed-width content is capped here before scaling. */
+  maxContentWidth: 1600,
+} as const;
+
+/**
+ * Sizing for a preview frame.
+ *
+ * - A page that fills the screen (100vh / h-screen) gets a desktop-sized
+ *   virtual viewport, scaled down to the column, so a layout designed for a
+ *   laptop screen shows whole instead of cramped or clipped.
+ * - Content wider than the column (fixed pixel widths) is laid out at its
+ *   own width and scaled down to fit.
+ * - Everything else is shown at its natural height, as before.
+ */
+export function previewFrameLayout({
+  columnWidth,
+  height,
+  fill,
+  contentWidth,
+  expanded,
+  windowHeight,
+}: {
+  columnWidth: number;
+  height: number;
+  fill: boolean;
+  contentWidth: number;
+  expanded: boolean;
+  windowHeight: number;
+}): FrameLayout {
+  const s = PREVIEW_SIZES;
+  if (fill && columnWidth > 0) {
+    const frameWidth = Math.max(columnWidth, Math.min(s.desktopWidth, columnWidth / s.minScale));
+    const scale = columnWidth / frameWidth;
+    const displayHeight = expanded ? Math.max(s.fillHeight, Math.round(windowHeight * s.fillExpandedVh)) : s.fillHeight;
+    return { frameWidth, frameHeight: Math.round(displayHeight / scale), scale, displayHeight };
+  }
+  if (contentWidth > columnWidth && columnWidth > 0) {
+    const frameWidth = Math.min(contentWidth, s.maxContentWidth);
+    const scale = columnWidth / frameWidth;
+    const full = Math.round(height * scale);
+    const displayHeight = expanded ? full : Math.min(full, s.collapsedMaxHeight);
+    return { frameWidth, frameHeight: Math.round(displayHeight / scale), scale, displayHeight };
+  }
+  const displayHeight = expanded ? height : Math.min(height, s.collapsedMaxHeight);
+  return { frameWidth: null, frameHeight: displayHeight, scale: 1, displayHeight };
 }
