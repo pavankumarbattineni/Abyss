@@ -35,6 +35,7 @@ from abyss_agents.middleware import (
 )
 from abyss_agents.naming import to_tool_name
 from abyss_agents.prompts import build_parent_prompt, build_sub_agent_prompt
+from abyss_agents.visual_formats import VisualFormatMiddleware, get_visual_format
 from abyss_agents.subagent import build_sub_agent_tool
 from constants import (
     LLM_CALL_MAX_RETRIES,
@@ -175,10 +176,13 @@ async def build_agent(
     ]
     if constants.TRIM_PAST_TURNS:
         middleware.append(PastTurnTrimMiddleware())
+    # A message starting with /<format> gets that visual format's spec for the turn.
+    middleware.append(VisualFormatMiddleware())
 
     graph = create_agent(
         llm,
-        parent_tools + sub_tools,
+        # get_visual_format: the spec of a native visual format, looked up on demand.
+        [*parent_tools, get_visual_format, *sub_tools],
         system_prompt=build_parent_prompt(
             agent_record.system_prompt, sub_options, include_reasoning=prompt_reasoning
         ),

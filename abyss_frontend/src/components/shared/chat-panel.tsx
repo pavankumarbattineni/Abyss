@@ -30,6 +30,7 @@ import { MarkdownContent } from "./markdown-content";
 import { RelativeTime } from "./relative-time";
 import { ReasoningPanel } from "./reasoning-panel";
 import { COMPOSE_EVENT } from "./code-preview";
+import { useFormatMenu } from "./format-menu";
 import { ToolApprovalPanel } from "./tool-approval-panel";
 
 interface ChatPanelProps {
@@ -142,7 +143,10 @@ export function ChatPanel({
     setDraft("");
   };
 
+  const formatMenu = useFormatMenu(draft, setDraft);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (formatMenu.onKeyDown(event)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       handleSend();
@@ -150,7 +154,8 @@ export function ChatPanel({
   };
 
   const composer = (
-    <div className={cn("w-full rounded-3xl border border-border-soft bg-surface-raised p-3 shadow-sm transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50", CHAT_COLUMN)}>
+    <div className={cn("relative w-full rounded-3xl border border-border-soft bg-surface-raised p-3 shadow-sm transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50", CHAT_COLUMN)}>
+      {formatMenu.menu}
       <Textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}

@@ -10,6 +10,7 @@ import "katex/dist/katex.min.css";
 
 import { previewKind } from "@/lib/code-preview";
 import { INTERACTIVE_LANGUAGE, looksLikeInteractiveJson } from "@/lib/interactive";
+import { looksLikeVisualJson, VISUAL_LANGUAGE } from "@/lib/visuals/parse";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
 import { cn } from "@/lib/utils";
 import { CodeBlock, CopyableTable } from "./code-block";
@@ -27,6 +28,19 @@ const InteractiveBlock = dynamic(
     ),
   },
 );
+// Native visual formats (dagre, rough.js, fonts): loaded only when an answer has one.
+const VisualBlock = dynamic(
+  () => import("@/components/visuals/visual-block").then((mod) => mod.VisualBlock),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="mb-3 flex h-40 items-center justify-center rounded-xl border border-border bg-card font-sans text-xs text-muted-foreground">
+        Loading visual…
+      </div>
+    ),
+  },
+);
+import { FormatChip, formatCommand } from "./format-chip";
 import { MermaidDiagram } from "./mermaid-diagram";
 
 // Same renderer as Trench (minus its document citations). singleTilde off:
@@ -106,6 +120,9 @@ function buildComponents(isStreaming: boolean): Components {
           </code>
         );
       }
+      // `/timeline` and friends in an answer (suggested follow-ups) are clickable.
+      const command = !isStreaming && typeof children === "string" ? formatCommand(children) : null;
+      if (command) return <FormatChip format={command} />;
       return (
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.875em]" {...props}>
           {children}
@@ -114,6 +131,12 @@ function buildComponents(isStreaming: boolean): Components {
     },
     pre: ({ node, ...props }) => {
       const block = fencedCode(node);
+      if (
+        block?.language === VISUAL_LANGUAGE ||
+        (block?.language === "json" && !isStreaming && looksLikeVisualJson(block.code))
+      ) {
+        return <VisualBlock source={block.code} isStreaming={isStreaming} />;
+      }
       if (block?.language === "mermaid") {
         return <MermaidDiagram code={block.code} isStreaming={isStreaming} />;
       }
