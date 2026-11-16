@@ -270,7 +270,6 @@ export const PREVIEW_SIZES = {
   collapsedMaxHeight: 640,
   /** Height in the chat for a page built to fill the screen. */
   fillHeight: 600,
-  fillExpandedVh: 0.85,
   /** A full-screen page is laid out at (up to) this desktop width... */
   desktopWidth: 1024,
   /** ...but never scaled below this, so text stays readable. */
@@ -285,39 +284,41 @@ export const PREVIEW_SIZES = {
  * - A page that fills the screen (100vh / h-screen) gets a desktop-sized
  *   virtual viewport, scaled down to the column, so a layout designed for a
  *   laptop screen shows whole instead of cramped or clipped.
- * - Content wider than the column (fixed pixel widths) is laid out at its
- *   own width and scaled down to fit.
- * - Everything else is shown at its natural height, as before.
+ * - Content wider than the column (fixed pixel widths) is laid out at its own
+ *   width and scaled down to fit.
+ * - Everything else is shown at its natural height (capped in the chat).
+ *
+ * Full screen (`fullscreenHeight` given): the preview gets that whole height
+ * and the page scrolls inside it; the width rules above still apply, so only
+ * pages wider than the screen are scaled.
  */
 export function previewFrameLayout({
   columnWidth,
   height,
   fill,
   contentWidth,
-  expanded,
-  windowHeight,
+  fullscreenHeight,
 }: {
   columnWidth: number;
   height: number;
   fill: boolean;
   contentWidth: number;
-  expanded: boolean;
-  windowHeight: number;
+  fullscreenHeight?: number;
 }): FrameLayout {
   const s = PREVIEW_SIZES;
+  const full = fullscreenHeight && fullscreenHeight > 0 ? fullscreenHeight : null;
   if (fill && columnWidth > 0) {
     const frameWidth = Math.max(columnWidth, Math.min(s.desktopWidth, columnWidth / s.minScale));
     const scale = columnWidth / frameWidth;
-    const displayHeight = expanded ? Math.max(s.fillHeight, Math.round(windowHeight * s.fillExpandedVh)) : s.fillHeight;
+    const displayHeight = full ?? s.fillHeight;
     return { frameWidth, frameHeight: Math.round(displayHeight / scale), scale, displayHeight };
   }
   if (contentWidth > columnWidth && columnWidth > 0) {
     const frameWidth = Math.min(contentWidth, s.maxContentWidth);
     const scale = columnWidth / frameWidth;
-    const full = Math.round(height * scale);
-    const displayHeight = expanded ? full : Math.min(full, s.collapsedMaxHeight);
+    const displayHeight = full ?? Math.min(Math.round(height * scale), s.collapsedMaxHeight);
     return { frameWidth, frameHeight: Math.round(displayHeight / scale), scale, displayHeight };
   }
-  const displayHeight = expanded ? height : Math.min(height, s.collapsedMaxHeight);
+  const displayHeight = full ?? Math.min(height, s.collapsedMaxHeight);
   return { frameWidth: null, frameHeight: displayHeight, scale: 1, displayHeight };
 }
