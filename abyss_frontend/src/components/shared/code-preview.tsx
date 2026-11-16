@@ -63,6 +63,11 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const [fullscreen, setFullscreen] = useFullscreen();
   const [reloadKey, setReloadKey] = useState<number>(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  // Safety net: a page that changes its own address (e.g. location.href = "...")
+  // would load the app inside the frame. A second load of the same run means it
+  // navigated: reload the preview and say why.
+  const loads = useRef<{ key: number; count: number }>({ key: -1, count: 0 });
+  const [navigatedAway, setNavigatedAway] = useState(false);
   // The width available to the preview, to fit wide or full-screen pages into it.
   // A callback ref: the stage only exists once the page is built (React previews compile first).
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
@@ -160,6 +165,11 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const errors = [
     ...(reactResult?.error ? [reactResult.error] : []),
     ...(blockedProblem ? [blockedProblem] : []),
+    ...(navigatedAway
+      ? [
+          "The page tried to open another address (a link or script changing the page location), so the preview was reloaded. Buttons and links should update the page in place instead of navigating.",
+        ]
+      : []),
     ...frame.errors,
   ];
   const failed = Boolean(reactResult?.error) || (frame.timedOut && !frame.ready);
@@ -288,6 +298,14 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
                 // cookies or storage, no popups and no navigation.
                 sandbox="allow-scripts allow-forms"
                 referrerPolicy="no-referrer"
+                onLoad={() => {
+                  const seen = loads.current.key === reloadKey ? loads.current.count + 1 : 1;
+                  loads.current = { key: reloadKey, count: seen };
+                  if (seen > 1) {
+                    setNavigatedAway(true);
+                    setReloadKey((k) => k + 1);
+                  }
+                }}
                 className="block border-0 bg-white"
                 style={{
                   width: layout.frameWidth ?? "100%",
