@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AppWindow, CodeXml, Download, Maximize2, Minimize2, Play, RotateCw, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui";
@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CodeBlock } from "./code-block";
 import { CopyButton } from "./copy-button";
+import { FULLSCREEN_CLASS, useFullscreen } from "./use-fullscreen";
 
 /** Asks the chat composer to prefill a message (handled in chat-panel.tsx). */
 export const COMPOSE_EVENT = "abyss:compose";
@@ -42,6 +43,10 @@ interface FrameState {
   errors: string[];
 }
 
+const noSubscribe = () => () => {};
+const clientRuntimeBase = () => `${window.location.origin}/preview-runtime`;
+const serverRuntimeBase = () => "";
+
 const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, fill: false, contentWidth: 0, errors: [] });
 
 /**
@@ -51,23 +56,31 @@ const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: 
  */
 export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const [mode, setMode] = useState<"preview" | "code">("preview");
-  const [expanded, setExpanded] = useState<boolean>(false);
+  // Full screen: the card itself becomes a fixed full-viewport layer. The
+  // iframe is never moved or re-created, so the running page keeps its state.
+  const [fullscreen, setFullscreen] = useFullscreen();
   const [reloadKey, setReloadKey] = useState<number>(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
   // The width available to the preview, to fit wide or full-screen pages into it.
   // A callback ref: the stage only exists once the page is built (React previews compile first).
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const [columnWidth, setColumnWidth] = useState(0);
+  const [stageHeight, setStageHeight] = useState(0);
   useEffect(() => {
     if (!stage) return;
-    const observer = new ResizeObserver(([entry]) => setColumnWidth(Math.round(entry.contentRect.width)));
+    const observer = new ResizeObserver(([entry]) => {
+      setColumnWidth(Math.round(entry.contentRect.width));
+      setStageHeight(Math.round(entry.contentRect.height));
+    });
     observer.observe(stage);
     return () => observer.disconnect();
   }, [stage]);
+
   // One channel per run (code + reload): messages from other frames or older
   // runs are ignored, and all run state below is keyed by it.
   const channel = useMemo(() => `preview-${crypto.randomUUID()}`, [code, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const runtimeBase = typeof window === "undefined" ? "" : `${window.location.origin}/preview-runtime`;
+  // "" during server render and hydration, the real origin right after: no hydration mismatch.
+  const runtimeBase = useSyncExternalStore(noSubscribe, clientRuntimeBase, serverRuntimeBase);
 
   const htmlDoc = useMemo(
     () => (kind === "html" && runtimeBase ? buildHtmlPreview(code, channel, runtimeBase) : null),
@@ -160,14 +173,22 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
     height,
     fill: frame.fill,
     contentWidth: frame.contentWidth,
-    expanded,
-    windowHeight: typeof window === "undefined" ? 0 : window.innerHeight,
+    fullscreenHeight: fullscreen ? stageHeight : undefined,
   });
-  const canExpand = frame.fill || layout.displayHeight < Math.round(height * layout.scale);
 
   return (
-    <div className="mb-3 overflow-hidden rounded-lg border border-border font-sans text-sm leading-normal last:mb-0">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1">
+    <div
+      role={fullscreen ? "dialog" : undefined}
+      aria-modal={fullscreen || undefined}
+      aria-label={fullscreen ? `Live preview (${label}), full screen` : undefined}
+      className={cn(
+        "overflow-hidden font-sans text-sm leading-normal",
+        fullscreen
+          ? FULLSCREEN_CLASS
+          : "mb-3 rounded-lg border border-border last:mb-0",
+      )}
+    >
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1">
         <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <AppWindow className="size-3.5 shrink-0" />
           <span className="truncate">Live preview · {label}</span>
@@ -202,18 +223,16 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
               >
                 <RotateCw className="size-3.5" />
               </Button>
-              {canExpand && (
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={expanded ? "Collapse preview" : "Expand preview"}
-                  title={expanded ? "Collapse preview" : "Expand preview"}
-                  onClick={() => setExpanded((v) => !v)}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  {expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={fullscreen ? "Exit full screen" : "Open full screen"}
+                title={fullscreen ? "Exit full screen (Esc)" : "Open full screen"}
+                onClick={() => setFullscreen((v) => !v)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+              </Button>
             </>
           )}
           {kind === "html" && (
@@ -233,15 +252,19 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
       </div>
 
       {mode === "code" ? (
-        <div className="bg-card p-3">
+        <div className={cn("bg-card p-3", fullscreen && "min-h-0 flex-1 overflow-auto")}>
           <CodeBlock language={language} code={code} />
         </div>
       ) : (
-        <div className="bg-card">
+        <div className={cn("bg-card", fullscreen && "flex min-h-0 flex-1 flex-col")}>
           {doc && (
             // A wide or full-screen page is laid out at its own (desktop) size
             // and scaled down to the column, so it shows whole, never clipped.
-            <div ref={setStage} className="overflow-hidden bg-white" style={{ height: layout.displayHeight }}>
+            <div
+              ref={setStage}
+              className={cn("overflow-hidden bg-white", fullscreen && "min-h-0 flex-1")}
+              style={fullscreen ? undefined : { height: layout.displayHeight }}
+            >
               <iframe
                 key={reloadKey}
                 ref={frameRef}
