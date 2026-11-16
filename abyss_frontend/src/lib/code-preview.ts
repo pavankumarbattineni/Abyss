@@ -156,11 +156,85 @@ function bridge(channel: string): string {
   window.addEventListener("unhandledrejection", function (e) {
     var r = e.reason; post("error", { message: "Unhandled promise rejection: " + String((r && r.message) || r) });
   });
-  // No navigation away from the preview.
+  // No navigation away from the preview. A srcdoc page has no address of its
+  // own -- relative URLs resolve against the app's page -- so even "#pricing"
+  // or a plain form submit would load the app inside the frame. In-page
+  // links scroll here instead; every other link does nothing.
+  function scrollToHash(hash) {
+    var id = "";
+    try { id = decodeURIComponent(hash.slice(1)); } catch (_) { id = hash.slice(1); }
+    if (!id || id === "top") { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    var target = document.getElementById(id) || document.getElementsByName(id)[0];
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest && e.target.closest("a[href]");
-    if (a && (a.getAttribute("href") || "").charAt(0) !== "#") e.preventDefault();
+    if (!a) return;
+    var href = a.getAttribute("href") || "";
+    // Cancels only the browser's navigation: the page's own click handlers still run.
+    e.preventDefault();
+    if (href.charAt(0) === "#") scrollToHash(href);
+    else if (/^(https?:|mailto:|tel:)/i.test(href)) notice("Links to other sites don't open in the preview.");
   }, true);
+
+  // A small in-page message, standing in for browser dialogs the sandbox blocks.
+  var noticeTimer = 0;
+  function notice(text) {
+    if (!document.body) return;
+    var el = document.getElementById("__preview_notice");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "__preview_notice";
+      el.setAttribute("role", "status");
+      el.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483647;max-width:min(90vw,420px);padding:10px 14px;border-radius:10px;background:#1f2937;color:#fff;font:14px/1.4 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.25);white-space:pre-wrap;transition:opacity .2s";
+      document.body.appendChild(el);
+    }
+    el.textContent = String(text);
+    el.style.opacity = "1";
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () { el.style.opacity = "0"; }, 3200);
+  }
+  // The sandbox blocks pop-up dialogs, so alert() & co. would silently do nothing.
+  window.alert = function (message) { notice(message == null ? "" : message); };
+  window.confirm = function (message) { notice((message ? message + "\\n" : "") + "(The preview answers OK.)"); return true; };
+  window.prompt = function (message, value) { notice((message ? message + "\\n" : "") + "(The preview uses the default answer.)"); return value == null ? "" : String(value); };
+  // pushState/replaceState with a URL throw here (the page has no address of
+  // its own): keep the state change, drop the address change.
+  ["pushState", "replaceState"].forEach(function (name) {
+    var original = history[name];
+    history[name] = function (state, title) {
+      try { return original.apply(history, arguments); }
+      catch (e) { try { return original.call(history, state, title); } catch (_) {} }
+    };
+  });
+  // The clipboard API is denied in the sandbox: fall back to the older copy
+  // command, which works inside a click.
+  function legacyCopy(text) {
+    var area = document.createElement("textarea");
+    area.value = String(text);
+    area.setAttribute("readonly", "");
+    area.style.cssText = "position:fixed;opacity:0;left:-9999px";
+    document.body.appendChild(area);
+    area.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (_) {}
+    area.remove();
+    return ok;
+  }
+  try {
+    var clip = navigator.clipboard;
+    var originalWrite = clip && clip.writeText ? clip.writeText.bind(clip) : null;
+    var writeText = function (text) {
+      var fallback = function () { return legacyCopy(text) ? Promise.resolve() : Promise.reject(new Error("Copy isn't available in the preview")); };
+      return originalWrite ? originalWrite(text).catch(fallback) : fallback();
+    };
+    if (clip) Object.defineProperty(clip, "writeText", { value: writeText, configurable: true });
+    else Object.defineProperty(navigator, "clipboard", { value: { writeText: writeText }, configurable: true });
+  } catch (_) {}
+  // A form the page doesn't handle itself would submit to the app's address.
+  window.addEventListener("submit", function (e) {
+    if (!e.defaultPrevented) e.preventDefault();
+  });
   var last = "";
   // A page built to fill the screen (height: 100vh / h-screen) is exactly as
   // tall as the frame, whatever the frame is, so its height says nothing about
