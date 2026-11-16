@@ -5,7 +5,7 @@
 # ============================================================================
 # Stage 1: builder (dependencies into /app/.venv)
 # ============================================================================
-FROM python:3.13-slim AS builder
+FROM python:3.15-slim AS builder
 
 # uv from its official image (same version as local development).
 COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /uvx /bin/
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ============================================================================
 # Stage 2: runtime
 # ============================================================================
-FROM python:3.13-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 # Venv first on PATH; unbuffered logs (live `docker logs`); no .pyc writes
 # (the code is read-only for the app user). Render overrides PORT.
