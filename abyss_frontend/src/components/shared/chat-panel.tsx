@@ -12,13 +12,11 @@ import {
   CircleSlash,
   MessageCircle,
   MessageSquarePlus,
-  Paperclip,
   Pencil,
   RotateCcw,
   Square,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
 
 import { AgentAvatar } from "@/components/layout";
 import { Button, Heading, Skeleton, Textarea } from "@/components/ui";
@@ -27,6 +25,7 @@ import { cn } from "@/lib/utils";
 import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalPayload } from "@/types";
 import { contentForCopy } from "@/lib/interactive";
 import { agentService } from "@/services";
+import { AttachMenu } from "./attach-menu";
 import { CopyButton } from "./copy-button";
 import { MarkdownContent } from "./markdown-content";
 import { RelativeTime } from "./relative-time";
@@ -166,16 +165,7 @@ export function ChatPanel({
         className="field-sizing-content max-h-40 min-h-9 w-full sm:max-h-52 sm:min-h-16 resize-none overflow-y-auto border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
       <div className="flex items-center justify-between gap-2 pt-2 sm:pt-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-full text-muted-foreground hover:text-foreground"
-          aria-label="Attach file"
-          onClick={() => toast("Attachments coming soon")}
-        >
-          <Paperclip className="size-4" />
-        </Button>
+        <AttachMenu />
         {isStreaming ? (
           <Button
             type="button"
