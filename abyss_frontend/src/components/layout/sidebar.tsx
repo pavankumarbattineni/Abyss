@@ -23,6 +23,9 @@ import {
   PopoverContent,
   PopoverTrigger,
   Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@/components/ui";
 import { MOBILE_QUERY, useMediaQuery } from "@/hooks";
 import { useAuth } from "@/providers";
@@ -42,6 +45,29 @@ function getEmailInitials(email?: string): string {
     .join("")
     .toUpperCase();
   return initials || "NA";
+}
+
+/** Names an icon-only item while the sidebar is collapsed, styled like the
+ *  thread-title tooltip (themed Radix tooltip instead of the browser's native
+ *  `title`). Expanded, the label is visible, so no tooltip is rendered. */
+function NavTooltip({
+  label,
+  show,
+  children,
+}: {
+  label: string;
+  show: boolean;
+  children: React.ReactElement;
+}) {
+  if (!show) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8} className="max-w-64 break-words">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function Sidebar() {
@@ -159,18 +185,19 @@ export function Sidebar() {
               const Icon = item.icon;
               const active = isActive(item.href);
               return (
-                <Link
-                  key={item.id}
-                  href={item.href}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                    active && "bg-accent font-medium text-foreground",
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  {!collapsed && <span>{item.label}</span>}
-                </Link>
+                <NavTooltip key={item.id} label={item.label} show={collapsed}>
+                  <Link
+                    href={item.href}
+                    aria-label={collapsed ? item.label : undefined}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                      active && "bg-accent font-medium text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    {!collapsed && <span>{item.label}</span>}
+                  </Link>
+                </NavTooltip>
               );
             })}
           </nav>
@@ -181,18 +208,20 @@ export function Sidebar() {
                 Agents
               </Heading>
             )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="ml-auto text-muted-foreground hover:text-foreground"
-              aria-label="New agent"
-              asChild
-            >
-              <Link href="/agents/create">
-                <Plus className="size-3.5" />
-              </Link>
-            </Button>
+            <NavTooltip label="New agent" show={collapsed}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="ml-auto text-muted-foreground hover:text-foreground"
+                aria-label="New agent"
+                asChild
+              >
+                <Link href="/agents/create">
+                  <Plus className="size-3.5" />
+                </Link>
+              </Button>
+            </NavTooltip>
           </div>
           <nav className="flex flex-col gap-0.5">
             {isLoading
@@ -206,37 +235,40 @@ export function Sidebar() {
                   </div>
                 ))
               : agents.map((agent) => (
-                  <Link
-                    key={agent.id}
-                    href={`/agents/${agent.id}`}
-                    title={collapsed ? agent.name : undefined}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                      isActive(`/agents/${agent.id}`) &&
-                        "bg-accent font-medium text-foreground",
-                    )}
-                  >
-                    <AgentAvatar name={agent.name} className="size-6 text-xs" />
-                    {!collapsed && (
-                      <span className="truncate">{agent.name}</span>
-                    )}
-                  </Link>
+                  <NavTooltip key={agent.id} label={agent.name} show={collapsed}>
+                    <Link
+                      href={`/agents/${agent.id}`}
+                      aria-label={collapsed ? agent.name : undefined}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                        isActive(`/agents/${agent.id}`) &&
+                          "bg-accent font-medium text-foreground",
+                      )}
+                    >
+                      <AgentAvatar name={agent.name} className="size-6 text-xs" />
+                      {!collapsed && (
+                        <span className="truncate">{agent.name}</span>
+                      )}
+                    </Link>
+                  </NavTooltip>
                 ))}
           </nav>
         </div>
 
         <div className="flex flex-col gap-1 border-t border-border-soft pt-3">
-          <Link
-            href="/settings"
-            title={collapsed ? "Settings" : undefined}
-            className={cn(
-              "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-              isActive("/settings") && "bg-accent font-medium text-foreground",
-            )}
-          >
-            <Settings className="size-4 shrink-0" />
-            {!collapsed && <span>Settings</span>}
-          </Link>
+          <NavTooltip label="Settings" show={collapsed}>
+            <Link
+              href="/settings"
+              aria-label={collapsed ? "Settings" : undefined}
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                isActive("/settings") && "bg-accent font-medium text-foreground",
+              )}
+            >
+              <Settings className="size-4 shrink-0" />
+              {!collapsed && <span>Settings</span>}
+            </Link>
+          </NavTooltip>
 
           <Popover>
             <PopoverTrigger asChild>
