@@ -31,6 +31,18 @@ function buildColumns(onEdit: (skill: Skill) => void): ColumnDef<Skill>[] {
       ),
     },
     {
+      accessorKey: "agent_count",
+      header: "Agents",
+      cell: ({ getValue }) => {
+        const count = getValue<number>();
+        return (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs whitespace-nowrap text-muted-foreground">
+            {count === 0 ? "Not added" : `${count} agent${count === 1 ? "" : "s"}`}
+          </span>
+        );
+      },
+    },
+    {
       accessorKey: "updated_at",
       header: "Updated",
       cell: ({ getValue }) => (
@@ -61,7 +73,7 @@ export const SkillsPage = () => {
     <div className="flex flex-col gap-5 p-6">
       <PageHeader
         title="Skills"
-        description="Reusable instructions for your agents. Every agent sees each skill's description and loads its instructions only when the skill fits the task."
+        description="Your library of reusable instructions. Add a skill to an agent in the Agent Builder; the agent loads it only when the task fits."
         actions={
           <Button
             type="button"
@@ -89,7 +101,7 @@ export const SkillsPage = () => {
           emptyMessage={
             isError
               ? "Failed to load skills."
-              : "No skills yet. Add one to give all your agents a reusable way to handle a kind of task."
+              : "No skills yet. Create one here, then add it to any agent in the Agent Builder."
           }
         />
       </Card>

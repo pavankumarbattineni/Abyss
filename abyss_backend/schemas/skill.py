@@ -4,6 +4,7 @@ from typing import Annotated, Optional
 from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from constants import (
+    MAX_SKILLS_PER_USER,
     SKILL_DESCRIPTION_MAX_LENGTH,
     SKILL_INSTRUCTIONS_MAX_LENGTH,
     SKILL_INSTRUCTIONS_MIN_LENGTH,
@@ -16,9 +17,14 @@ SKILL_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _-]*$"
 
 
 class SkillUpsert(BaseModel):
-    """Create a skill (no id) or update the caller's skill with this id."""
+    """Create a skill (no id) or update the caller's skill with this id.
+
+    With agent_id (the Agent Builder), the skill is also assigned to that one
+    agent. Without it (the Skills screen), it only goes into the library.
+    """
 
     id: Optional[str] = Field(default=None, max_length=36)
+    agent_id: Optional[str] = Field(default=None, max_length=36)
     name: Annotated[
         str,
         StringConstraints(
@@ -50,5 +56,13 @@ class SkillResponse(BaseModel):
     instructions: str
     created_at: datetime
     updated_at: datetime
+    # How many of the user's agents the skill is assigned to.
+    agent_count: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class AgentSkillsAssign(BaseModel):
+    """Skills from the user's library to assign to an agent (already assigned ones are skipped)."""
+
+    skill_ids: list[str] = Field(min_length=1, max_length=MAX_SKILLS_PER_USER)

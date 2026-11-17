@@ -50,7 +50,11 @@ export function SkillActions({ skill, onEdit }: SkillActionsProps) {
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete skill"
-        description={`Delete "${skill.name}"? Your agents stop using it from their next message. This cannot be undone.`}
+        description={
+          skill.agent_count > 0
+            ? `Delete "${skill.name}" from your skills? It is also removed from ${skill.agent_count} agent${skill.agent_count === 1 ? "" : "s"}. To take it off one agent only, remove it in the Agent Builder. This cannot be undone.`
+            : `Delete "${skill.name}" from your skills? This cannot be undone.`
+        }
         confirmLabel="Delete"
         variant="destructive"
         loading={isPending}

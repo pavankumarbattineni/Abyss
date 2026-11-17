@@ -55,10 +55,17 @@ interface SkillDrawerProps {
   onOpenChange: (open: boolean) => void;
   /** The skill to edit; omit to create one. */
   skill?: Skill | null;
+  /** Agent Builder: a new skill is also assigned to this agent (and no other). */
+  agentId?: string;
+  /** Called after a save, e.g. to add a new skill to an agent that isn't saved yet. */
+  onSaved?: (skill: Skill, created: boolean) => void;
 }
 
-/** Create or edit a skill. Saving updates every agent from its next message. */
-export function SkillDrawer({ open, onOpenChange, skill }: SkillDrawerProps) {
+/**
+ * Create or edit a skill in the library. Edits reach every agent the skill is
+ * assigned to from their next message.
+ */
+export function SkillDrawer({ open, onOpenChange, skill, agentId, onSaved }: SkillDrawerProps) {
   const queryClient = useQueryClient();
   const {
     register,
@@ -91,10 +98,21 @@ export function SkillDrawer({ open, onOpenChange, skill }: SkillDrawerProps) {
   }
 
   const { mutate: save, isPending } = useMutation({
-    mutationFn: (values: SkillFormValues) => skillService.saveSkill({ id: skill?.id, ...values }),
+    mutationFn: (values: SkillFormValues) =>
+      skillService.saveSkill({ id: skill?.id, agent_id: skill ? undefined : agentId, ...values }),
     onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: SKILLS_QUERY_KEY });
-      toast.success(skill ? `Saved "${saved.name}"` : `Added "${saved.name}"`);
+      // Assigned agents show the skill's name and description.
+      void queryClient.invalidateQueries({ queryKey: ["agent"] });
+      void queryClient.invalidateQueries({ queryKey: ["agents"], exact: true });
+      toast.success(
+        skill
+          ? `Saved "${saved.name}"`
+          : agentId
+            ? `Added "${saved.name}" to this agent`
+            : `Added "${saved.name}" to your skills`,
+      );
+      onSaved?.(saved, !skill);
       onOpenChange(false);
     },
     onError: (error) => {

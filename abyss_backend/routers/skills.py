@@ -19,12 +19,14 @@ async def upsert_skill(
 ):
     """Create a skill, or update one when `id` is given.
 
-    Skills are shared by all of the user's agents: each agent sees every
-    skill's name and description and loads the instructions only when a
-    skill fits the task.
+    Skills live in the user's library. With `agent_id` (the Agent Builder) the
+    skill is also assigned to that agent only; without it (the Skills screen)
+    it is not assigned to any agent. An update reaches every agent the skill
+    is assigned to from their next message.
 
     Args:
-        request: id (omit to create), name, description and instructions.
+        request: id (omit to create), agent_id (optional), name, description
+            and instructions.
         response: Set to 200 when an existing skill is updated.
         user_id: JWT-authenticated user ID (injected by dependency).
         db: Async database session (injected by dependency).
@@ -33,13 +35,14 @@ async def upsert_skill(
         The saved skill. 201 when created, 200 when updated.
 
     Raises:
-        HTTPException 422: Invalid fields, unknown id, a name already used by
-            this user, or the per-user skill limit reached.
+        HTTPException 422: Invalid fields, unknown skill or agent, a name
+            already used by this user, or the per-user skill limit reached.
     """
     skill, created = await skill_service.upsert_skill(db, user_id, request)
     if not created:
         response.status_code = status.HTTP_200_OK
-    return skill
+    count = await skill_service.agent_count(db, skill.id)
+    return SkillResponse.model_validate(skill).model_copy(update={"agent_count": count})
 
 
 @router.get("", response_model=list[SkillResponse])
@@ -47,16 +50,19 @@ async def list_skills(
     user_id: str = Depends(get_current_user_flexible),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """List the authenticated user's skills, most recently updated first.
+    """List the user's skills library, most recently updated first.
 
     Args:
         user_id: JWT or API-key authenticated user ID (injected by dependency).
         db: Async database session (injected by dependency).
 
     Returns:
-        List of SkillResponse objects.
+        List of SkillResponse objects, each with the number of agents it is assigned to.
     """
-    return await skill_service.list_skills(db, user_id)
+    return [
+        SkillResponse.model_validate(skill).model_copy(update={"agent_count": count})
+        for skill, count in await skill_service.list_skills(db, user_id)
+    ]
 
 
 @router.delete("/{skill_id}")
@@ -65,7 +71,9 @@ async def delete_skill(
     user_id: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """Delete one of the user's skills. Agents stop seeing it from their next message.
+    """Delete a skill from the library and unassign it from every agent.
+
+    To remove a skill from one agent only, use DELETE /agents/{agent_id}/skills/{skill_id}.
 
     Args:
         skill_id: The skill's unique identifier.

@@ -3,13 +3,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_async_session
 from schemas.agent import AgentCreate, AgentResponse, AgentSampleQuestionsResponse, AgentUpdate, SubAgentCreate
+from schemas.skill import AgentSkillsAssign
 from schemas.thread import ThreadResponse
 from services.agent_service import AgentService
+from services.skill_service import SkillService
 from services.thread_service import ThreadService
 from utils.auth import get_current_user, get_current_user_flexible
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 agent_service = AgentService()
+skill_service = SkillService()
 thread_service = ThreadService()
 
 
@@ -188,6 +191,59 @@ async def remove_sub_agent(
         HTTPException 422: If the sub-agent is not found or does not belong to the user.
     """
     return await agent_service.remove_sub_agent(session, sub_agent_id, user_id)
+
+
+@router.post("/{agent_id}/skills", response_model=AgentResponse)
+async def assign_skills(
+    agent_id: str,
+    request: AgentSkillsAssign,
+    user_id: str = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Assign skills from the user's library to this agent.
+
+    Skills already assigned are skipped, so a skill is never assigned twice.
+    Other agents are not affected.
+
+    Args:
+        agent_id: The agent's unique identifier.
+        request: The library skill IDs to assign.
+        user_id: JWT-authenticated user ID (injected by dependency).
+        session: Async database session (injected by dependency).
+
+    Returns:
+        The updated AgentResponse, including its assigned skills.
+
+    Raises:
+        HTTPException 422: If the agent isn't the user's, or a skill isn't in their library.
+    """
+    await skill_service.assign(session, user_id, agent_id, request.skill_ids)
+    return await agent_service.get_by_id(session, agent_id, user_id)
+
+
+@router.delete("/{agent_id}/skills/{skill_id}", response_model=AgentResponse)
+async def unassign_skill(
+    agent_id: str,
+    skill_id: str,
+    user_id: str = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Remove a skill from this agent. The skill stays in the library and on other agents.
+
+    Args:
+        agent_id: The agent's unique identifier.
+        skill_id: The skill to remove from the agent.
+        user_id: JWT-authenticated user ID (injected by dependency).
+        session: Async database session (injected by dependency).
+
+    Returns:
+        The updated AgentResponse, including its remaining skills.
+
+    Raises:
+        HTTPException 422: If the agent isn't the user's, or the skill isn't assigned to it.
+    """
+    await skill_service.unassign(session, user_id, agent_id, skill_id)
+    return await agent_service.get_by_id(session, agent_id, user_id)
 
 
 @router.get("/{agent_id}/threads", response_model=list[ThreadResponse])

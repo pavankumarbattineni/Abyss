@@ -9,9 +9,13 @@ from constants import MAX_SUB_AGENTS_PER_AGENT, MCP_CONNECTION_STATUS_CONNECTED
 from database.models import (
     Agent, AgentTool, LlmCredential, MCPConnection, MCPTool, Provider, ProviderModel,
 )
-from schemas.agent import AgentCreate, AgentResponse, AgentToolInfo, AgentUpdate, SubAgentCreate, SubAgentInfo
+from schemas.agent import (
+    AgentCreate, AgentResponse, AgentSkillInfo, AgentToolInfo, AgentUpdate, SubAgentCreate, SubAgentInfo,
+)
+from services.skill_service import SkillService, link_skills
 
 logger = logging.getLogger(__name__)
+_skill_service = SkillService()
 
 
 # Helpers
@@ -176,6 +180,7 @@ async def _build_agent_response(session: AsyncSession, agent: Agent) -> AgentRes
         session, {agent.llm_model_id} if agent.llm_model_id else set()
     )
     provider_name, model_name, display_name = llm_map.get(agent.llm_model_id, (None, None, None))
+    skills = (await _skill_service.assigned_skills(session, agent.user_id, [agent.id])).get(agent.id, [])
 
     return AgentResponse(
         id=agent.id,
@@ -183,6 +188,7 @@ async def _build_agent_response(session: AsyncSession, agent: Agent) -> AgentRes
         description=agent.description,
         system_prompt=agent.system_prompt,
         tools=tools_by_agent.get(agent.id, []),
+        skills=[AgentSkillInfo(id=s.id, name=s.name, description=s.description) for s in skills],
         sub_agents=[
             SubAgentInfo(
                 id=sub.id,
@@ -347,6 +353,7 @@ class AgentService:
         await session.flush()
 
         await _set_agent_tools(session, agent.id, data.tools, user_id)
+        await link_skills(session, user_id, agent.id, data.skills)
 
         sub_registrations: list[tuple[str, list[str]]] = []
         for sub_data in data.sub_agents:
@@ -467,6 +474,8 @@ class AgentService:
         llm_map = await _resolve_llm_model_map(
             session, {a.llm_model_id for a in agents if a.llm_model_id}
         )
+        # Query 5: every parent's assigned skills
+        skills_by_agent = await _skill_service.assigned_skills(session, user_id, parent_ids)
 
         return [
             AgentResponse(
@@ -475,6 +484,10 @@ class AgentService:
                 description=a.description,
                 system_prompt=a.system_prompt,
                 tools=tools_by_agent.get(a.id, []),
+                skills=[
+                    AgentSkillInfo(id=s.id, name=s.name, description=s.description)
+                    for s in skills_by_agent.get(a.id, [])
+                ],
                 sub_agents=[
                     SubAgentInfo(
                         id=sub.id,

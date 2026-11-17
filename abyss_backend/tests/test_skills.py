@@ -11,6 +11,7 @@ from abyss_agents.prompts import SKILLS_RULE, build_parent_prompt, build_sub_age
 from abyss_agents.skills import LOAD_SKILL_TOOL_NAME, build_skill_tool, skill_tool_description, wrap_skill
 from constants import MAX_SKILLS_PER_USER, SKILL_INSTRUCTIONS_MIN_LENGTH
 from schemas.skill import SkillUpsert
+from database.models import AgentSkill
 from services.skill_service import SkillService, SkillSummary
 
 NOW = datetime(2026, 11, 17, 9, 30, tzinfo=UTC)
@@ -46,15 +47,35 @@ def test_description_and_name_limits():
 # -- Service rules (create / update / delete) -----------------------------------
 
 
-class _Session:
-    """Answers scalar() calls in order; records adds, deletes and commits."""
+class _Rows:
+    def __init__(self, values, rowcount=0):
+        self.values, self.rowcount = values, rowcount
 
-    def __init__(self, *scalars):
+    def scalars(self):
+        return iter(self.values)
+
+
+class _Session:
+    """Answers scalar() calls in order and execute() calls from `executes` in
+    order; records adds, deletes, flushes and commits."""
+
+    def __init__(self, *scalars, executes=()):
         self.scalars = list(scalars)
+        self.executes = list(executes)
+        self.statements = []
         self.added, self.deleted, self.commits = [], [], 0
 
     async def scalar(self, _statement):
         return self.scalars.pop(0)
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return self.executes.pop(0)
+
+    async def flush(self):
+        for obj in self.added:
+            if getattr(obj, "id", None) is None:
+                obj.id = "new-skill"
 
     def add(self, obj):
         self.added.append(obj)
@@ -98,6 +119,47 @@ async def test_update_changes_the_users_own_skill():
     assert not db.added and db.commits == 1
 
 
+async def test_created_in_the_agent_builder_it_is_assigned_to_that_agent_only():
+    db = _Session("agent-1", 0, None, executes=[_Rows([])])  # agent ok, count, name free; no links yet
+    skill, created = await SkillService().upsert_skill(db, "user-1", _upsert(agent_id="agent-1"))
+    links = [o for o in db.added if isinstance(o, AgentSkill)]
+    assert created and [(l.agent_id, l.skill_id) for l in links] == [("agent-1", skill.id)]
+    assert db.commits == 1  # skill and assignment saved together
+
+
+async def test_creating_for_someone_elses_agent_writes_nothing():
+    db = _Session(None)  # the agent lookup (scoped to the user) finds nothing
+    with pytest.raises(ValueError, match="Agent not found"):
+        await SkillService().upsert_skill(db, "user-1", _upsert(agent_id="their-agent"))
+    assert not db.added and db.commits == 0
+
+
+async def test_assigning_skips_skills_the_agent_already_has():
+    # agent ok; owned skills s1, s2; s1 already assigned -> only s2 is linked.
+    db = _Session("agent-1", executes=[_Rows(["s1", "s2"]), _Rows(["s1"])])
+    await SkillService().assign(db, "user-1", "agent-1", ["s1", "s2", "s2"])
+    assert [(l.agent_id, l.skill_id) for l in db.added] == [("agent-1", "s2")] and db.commits == 1
+
+
+async def test_only_skills_from_the_users_library_can_be_assigned():
+    db = _Session("agent-1", executes=[_Rows(["s1"])])  # "theirs" isn't owned by user-1
+    with pytest.raises(ValueError, match="aren't in your library"):
+        await SkillService().assign(db, "user-1", "agent-1", ["s1", "theirs"])
+    assert not db.added and db.commits == 0
+
+
+async def test_unassigning_removes_the_link_not_the_skill():
+    db = _Session("agent-1", executes=[_Rows([], rowcount=1)])
+    await SkillService().unassign(db, "user-1", "agent-1", "s1")
+    (statement,) = db.statements
+    assert statement.table.name == "agent_skills" and not db.deleted and db.commits == 1
+
+    db = _Session("agent-1", executes=[_Rows([], rowcount=0)])
+    with pytest.raises(ValueError, match="isn't assigned"):
+        await SkillService().unassign(db, "user-1", "agent-1", "s9")
+    assert db.commits == 0
+
+
 async def test_update_or_delete_of_an_unknown_or_foreign_skill_is_not_found():
     with pytest.raises(ValueError, match="Skill not found"):
         await SkillService().upsert_skill(_Session(None), "user-1", _upsert(id="someone-elses"))
@@ -132,14 +194,14 @@ class _Reads:
             async def scalar(self, statement):
                 outer.reads += 1
                 values = list(statement.compile().params.values())
-                assert "user-1" in values  # every read is scoped to the user
+                assert "user-1" in values and "agent-1" in values  # scoped to the user and the agent
                 return next((outer.rows[v] for v in values if v in outer.rows), None)
 
         self.factory = _S
 
 
 def test_no_skills_means_no_tool():
-    assert build_skill_tool("user-1", [], _Reads({}).factory) is None
+    assert build_skill_tool("user-1", "agent-1", [], _Reads({}).factory) is None
 
 
 def test_the_tool_lists_names_and_descriptions_only():
@@ -151,7 +213,7 @@ def test_the_tool_lists_names_and_descriptions_only():
 
 async def test_load_skill_returns_the_instructions_once_per_run():
     reads = _Reads({"s1": "1. Group by area.\n2. Link each PR."})
-    tool = build_skill_tool("user-1", CATALOG, reads.factory)
+    tool = build_skill_tool("user-1", "agent-1", CATALOG, reads.factory)
 
     first = await tool.ainvoke({"name": "release_NOTES"})  # case/underscore-insensitive
     again = await tool.ainvoke({"name": "Release notes"})
@@ -167,16 +229,17 @@ def test_a_skill_cannot_close_its_own_fence():
 
 
 async def test_unknown_and_deleted_skills_are_reported_not_raised():
-    tool = build_skill_tool("user-1", CATALOG, _Reads({}).factory)
+    tool = build_skill_tool("user-1", "agent-1", CATALOG, _Reads({}).factory)
     unknown = await tool.ainvoke({"name": "tax filing"})
     assert "no skill named 'tax filing'" in unknown and "Release notes, incident-review" in unknown
-    assert "was deleted" in await tool.ainvoke({"name": "incident-review"})
+    # Deleted, or unassigned from this agent, since the run started.
+    assert "no longer available" in await tool.ainvoke({"name": "incident-review"})
 
 
 def test_a_tool_or_sub_agent_named_load_skill_is_not_shadowed():
-    assert _skill_tools("user-1", CATALOG, taken={LOAD_SKILL_TOOL_NAME}) == []
-    assert [t.name for t in _skill_tools("user-1", CATALOG, taken={"search"})] == [LOAD_SKILL_TOOL_NAME]
-    assert _skill_tools("user-1", [], taken=set()) == []
+    assert _skill_tools("user-1", "agent-1", CATALOG, taken={LOAD_SKILL_TOOL_NAME}) == []
+    assert [t.name for t in _skill_tools("user-1", "agent-1", CATALOG, taken={"search"})] == [LOAD_SKILL_TOOL_NAME]
+    assert _skill_tools("user-1", "agent-1", [], taken=set()) == []
 
 
 # -- Prompt rules -------------------------------------------------------------------

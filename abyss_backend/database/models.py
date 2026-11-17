@@ -167,12 +167,14 @@ class AgentTool(BasicModel):
 
 
 class Skill(BasicModel):
-    """A user-written playbook, shared by all of the user's agents and sub-agents.
+    """A user-written playbook in the user's skills library.
 
-    Each model call lists only the name and description; the instructions are
-    loaded when the agent decides to use the skill (abyss_agents/skills.py).
-    Nothing references a skill, so deleting removes the row (no soft delete)
-    and a name can be reused right away.
+    A skill reaches an agent only through an AgentSkill link, which the user
+    adds explicitly; one skill can be linked to many agents. Each model call
+    lists only the linked skills' names and descriptions; the instructions are
+    loaded when the agent decides to use one (abyss_agents/skills.py).
+    Deleting a skill removes the row and, by cascade, its links, so a name can
+    be reused right away.
     """
     __tablename__ = "skills"
 
@@ -189,6 +191,21 @@ class Skill(BasicModel):
 # One name per user, ignoring case (the agent loads a skill by name). Leading
 # with user_id, it also serves "this user's skills" lookups.
 Index("uq_skills_user_name", Skill.user_id, func.lower(Skill.name), unique=True)
+
+
+class AgentSkill(BasicModel):
+    """A skill assigned to an agent. Removing the link unassigns the skill;
+    the skill itself stays in the library (deleting a skill removes its links)."""
+    __tablename__ = "agent_skills"
+
+    agent_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    skill_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("skills.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    __table_args__ = (UniqueConstraint("agent_id", "skill_id", name="uq_agent_skill"),)
 
 
 class Thread(BasicModel):

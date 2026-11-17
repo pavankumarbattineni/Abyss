@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from constants import MAX_SUB_AGENTS_PER_AGENT
+from constants import MAX_SKILLS_PER_USER, MAX_SUB_AGENTS_PER_AGENT
 
 
 class SubAgentCreate(BaseModel):
@@ -17,6 +17,14 @@ class AgentToolInfo(BaseModel):
     name: str
     display_name: str
     permission_state: str = "allowed"
+
+
+class AgentSkillInfo(BaseModel):
+    """A skill assigned to the agent (the library's name and description)."""
+
+    id: str
+    name: str
+    description: str
 
 
 class SubAgentInfo(BaseModel):
@@ -55,6 +63,9 @@ class AgentCreate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=2000)
     system_prompt: str = Field(min_length=1, max_length=32_000)
     tools: list[str] = Field(default=[], max_length=50, description="MCPTool IDs to assign")
+    skills: list[str] = Field(
+        default=[], max_length=MAX_SKILLS_PER_USER, description="Skill IDs from the user's library to assign"
+    )
     sub_agents: list[SubAgentCreate] = Field(default=[], max_length=MAX_SUB_AGENTS_PER_AGENT)
     llm_model_id: Optional[str] = Field(
         default="default", description="provider_models.id, or 'default'/null = platform Default"
@@ -92,6 +103,7 @@ class AgentResponse(BaseModel):
     description: Optional[str] = None
     system_prompt: str
     tools: list[AgentToolInfo]
+    skills: list[AgentSkillInfo] = []
     sub_agents: list[SubAgentInfo]
     llm_model_id: Optional[str] = None
     llm_provider: Optional[str] = None
