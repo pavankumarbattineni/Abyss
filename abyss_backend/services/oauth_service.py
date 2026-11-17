@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User
 from schemas.auth import TokenPairResponse, UpdateSettingsRequest, UserResponse
+from services.llm_credential_service import validate_model_selection
 from utils.jwt import REFRESH, create_access_token, create_refresh_token, decode_token
 
 
@@ -57,38 +58,36 @@ class OAuthService:
             Public user profile data.
         """
         user = await self._get_active_user(session, user_id)
-        return UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            thinking_enabled=user.thinking_enabled,
-            created_at=user.created_at,
-        )
+        return _user_response(user)
 
     async def update_settings(
         self, session: AsyncSession, user_id: str, request: UpdateSettingsRequest
     ) -> UserResponse:
-        """Update settings for an active application user.
+        """Update the user's settings (thinking toggle and/or selected model).
 
         Args:
             session: Database session used for the update.
             user_id: Abyss user identifier.
-            request: New application setting values.
+            request: The settings to change; fields left out stay as they are.
 
         Returns:
             The updated public user profile.
+
+        Raises:
+            ValueError: an unknown/inactive model, or no saved key for its provider.
         """
         user = await self._get_active_user(session, user_id)
-        user.thinking_enabled = request.thinking_enabled
+        if request.thinking_enabled is not None:
+            user.thinking_enabled = request.thinking_enabled
+        if request.llm_model_id is not None:
+            # "default" is always allowed; any other model must be active and
+            # its provider's key must be saved by the user.
+            model_id = None if request.llm_model_id == "default" else request.llm_model_id
+            await validate_model_selection(session, user_id, model_id)
+            user.llm_model_id = model_id
         await session.commit()
         await session.refresh(user)
-        return UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            thinking_enabled=user.thinking_enabled,
-            created_at=user.created_at,
-        )
+        return _user_response(user)
 
     async def refresh(self, session: AsyncSession, refresh_token: str) -> TokenPairResponse:
         """Validate a refresh token and issue a replacement token pair.
@@ -106,3 +105,14 @@ class OAuthService:
         user_id = decode_token(refresh_token, REFRESH)
         await self._get_active_user(session, user_id)
         return self._issue_token_pair(user_id)
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        thinking_enabled=user.thinking_enabled,
+        llm_model_id=user.llm_model_id,
+        created_at=user.created_at,
+    )

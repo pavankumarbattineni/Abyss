@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { ChatPanel } from "@/components/shared/chat-panel";
 import {
-  MOBILE_QUERY,
+  COMPACT_QUERY,
   useChatStream,
   useMediaQuery,
   useResizablePanel,
@@ -34,8 +34,9 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
     enabled: !!threadId,
   });
   const [collapsed, setCollapsed] = useState<boolean>(false);
-  // Phones: the thread list starts closed and opens over the chat.
-  const isMobile = useMediaQuery(MOBILE_QUERY);
+  // Phones and tablets: the thread list starts closed and opens over the
+  // chat, so it never squeezes the chat next to the main sidebar.
+  const isMobile = useMediaQuery(COMPACT_QUERY);
   // Remembers which thread the list was opened on, so moving to another
   // thread closes it without an effect.
   const threadKey = threadId ?? "new";

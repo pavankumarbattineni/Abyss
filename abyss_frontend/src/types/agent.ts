@@ -27,7 +27,6 @@ export interface Agent {
   /** null when the agent was saved without one. */
   description: string | null;
   system_prompt: string | null;
-  llm_model_id: string;
   tools: AgentToolRef[];
   skills: AgentSkillRef[];
   sub_agents: SubAgent[];
@@ -48,7 +47,6 @@ export interface AgentRequest {
   /** Library skill IDs to assign to the new agent. */
   skills?: string[];
   sub_agents: SubAgentRequest[];
-  llm_model_id: string;
 }
 
 export interface SubAgentUpdateRequest {
@@ -65,7 +63,6 @@ export interface AgentUpdateRequest {
   system_prompt?: string;
   tools?: string[];
   sub_agents?: SubAgentUpdateRequest[];
-  llm_model_id?: string;
 }
 
 export interface Tool {

@@ -1,9 +1,10 @@
 import logging
+from typing import Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import Agent, LlmCredential, Provider, ProviderModel
+from database.models import LlmCredential, Provider, ProviderModel, User
 from schemas.llm_credential import (
     CatalogModelEntry,
     LlmCredentialResponse,
@@ -21,6 +22,42 @@ def _mask_key(raw_key: str) -> str:
     if len(raw_key) <= 8:
         return "*" * len(raw_key)
     return f"{raw_key[:4]}...{raw_key[-4:]}"
+
+
+async def validate_model_selection(
+    session: AsyncSession, user_id: str, llm_model_id: Optional[str]
+) -> None:
+    """Allow a non-Default model only if it is a real, active model whose
+    provider the user has added a key for.
+
+    llm_model_id=None means "Default" (platform key) — no checks needed.
+    """
+    if llm_model_id is None:
+        return
+
+    result = await session.execute(
+        select(Provider.id, Provider.display_name)
+        .join(ProviderModel, ProviderModel.provider_id == Provider.id)
+        .where(
+            ProviderModel.id == llm_model_id,
+            ProviderModel.is_active == True,
+            Provider.is_active == True,
+        )
+    )
+    row = result.first()
+    if not row:
+        raise ValueError(f"Unknown or inactive model: {llm_model_id}")
+    provider_id, provider_name = row
+
+    cred_result = await session.execute(
+        select(LlmCredential.id).where(
+            LlmCredential.user_id == user_id,
+            LlmCredential.provider_id == provider_id,
+            LlmCredential.is_active == True,
+        )
+    )
+    if not cred_result.scalar_one_or_none():
+        raise ValueError(f"Add your {provider_name} API key in Settings before selecting this model")
 
 
 class LlmCredentialService:
@@ -141,12 +178,11 @@ class LlmCredentialService:
             updated_at=credential.updated_at,
         )
 
-    async def delete_credential(self, session: AsyncSession, user_id: str, provider_id: str) -> int:
-        """Remove the user's key for a provider and switch every agent of theirs
-        that uses one of the provider's models back to Default (NULL, the
-        platform default model), in the same transaction -- without the key
-        those agents could only fail at chat time. Returns how many agents
-        (including sub-agents) were switched.
+    async def delete_credential(self, session: AsyncSession, user_id: str, provider_id: str) -> bool:
+        """Remove the user's key for a provider. If their selected model is one
+        of that provider's models, it is reset to Default (NULL) in the same
+        transaction -- without the key every chat would fail. Returns whether
+        the model was reset.
         """
         provider = await self._get_active_provider(session, provider_id)
 
@@ -163,14 +199,14 @@ class LlmCredentialService:
 
         credential.is_active = False
         provider_models = select(ProviderModel.id).where(ProviderModel.provider_id == provider_id)
+        # The user's selected model needs this key: fall back to Default.
         reset = await session.execute(
-            update(Agent)
-            .where(Agent.user_id == user_id, Agent.llm_model_id.in_(provider_models))
+            update(User)
+            .where(User.id == user_id, User.llm_model_id.in_(provider_models))
             .values(llm_model_id=None)
         )
         await session.commit()
         if reset.rowcount:
-            logger.info("Reset %d agent(s) of user %s to the default model after removing a %s key",
-                        reset.rowcount, user_id, provider.name)
-        return reset.rowcount or 0
+            logger.info("Reset user %s to the default model after removing a %s key", user_id, provider.name)
+        return bool(reset.rowcount)
 

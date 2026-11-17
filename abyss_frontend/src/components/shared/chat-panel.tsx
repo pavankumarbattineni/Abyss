@@ -26,6 +26,7 @@ import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalP
 import { contentForCopy } from "@/lib/interactive";
 import { agentService } from "@/services";
 import { AttachMenu } from "./attach-menu";
+import { ModelPicker } from "./model-picker";
 import { CopyButton } from "./copy-button";
 import { FixRequestContext } from "./fix-request";
 import { MarkdownContent } from "./markdown-content";
@@ -168,7 +169,11 @@ export function ChatPanel({
         className="field-sizing-content max-h-40 min-h-9 w-full sm:max-h-52 sm:min-h-16 resize-none overflow-y-auto border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
       <div className="flex items-center justify-between gap-2 pt-2 sm:pt-3">
-        <AttachMenu />
+        {/* The model applies to every agent and chat of the user. */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <AttachMenu />
+          <ModelPicker />
+        </div>
         {isStreaming ? (
           <Button
             type="button"
@@ -312,7 +317,7 @@ export function ChatPanel({
           <>
             <div
               ref={scrollRef}
-              className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 sm:px-6"
+              className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 @lg:px-6"
             >
               <div className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CHAT_COLUMN)}>
                 {messages.map((message, index) => message.role === "summary" ? (
@@ -347,7 +352,7 @@ export function ChatPanel({
                     {message.role === "assistant" && (
                       <AgentAvatar
                         name={agent?.name ?? "Agent"}
-                        className="size-8 shrink-0 text-xs max-sm:hidden"
+                        className="size-8 shrink-0 text-xs @max-md:hidden"
                       />
                     )}
                     <div
@@ -412,7 +417,7 @@ export function ChatPanel({
                   <div className="flex min-w-0 items-start gap-3">
                     <AgentAvatar
                       name={agent?.name ?? "Agent"}
-                      className="size-8 shrink-0 text-xs max-sm:hidden"
+                      className="size-8 shrink-0 text-xs @max-md:hidden"
                     />
                     <div className="min-w-0 w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground wrap-break-word">
                       <ReasoningPanel trace={reasoningTrace} isStreaming={true} agentNames={agentNames} />

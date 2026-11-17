@@ -154,8 +154,9 @@ This keeps every route file mechanically identical and puts the actual page logi
 
 ### 5.5 Model Providers & API Keys
 - Each provider shows connection status and a masked key (first 4 / last 4 chars) once set; "Add key" becomes "Update key" once connected.
-- The default-model list only offers models from `connected` providers, as a single-select.
-- Changing the default model is instantaneous (no separate save step) and confirmed via toast.
+- The model is a **user-level** setting (`users.llm_model_id`, `null` = Default), not part of an agent: agents have no model fields. It is chosen with the `ModelPicker` in every chat box (`components/shared/model-picker.tsx`) and applies to all agents and chats, including the builder's chat.
+- The picker lists Default first, then every other model with a light blurred background and a **BYOK** badge; BYOK models are selectable only once their provider's key is saved (usable ones listed first). A change is saved immediately via `PATCH /auth/setting` (`{ llm_model_id }`, partial update shared with `thinking_enabled`) and updates the `["me"]` cache optimistically.
+- Removing a provider key resets the user's model to Default if it belonged to that provider (the API message says so).
 
 ### 5.6 Approvals
 - Any agent action flagged as sensitive by the backend renders as a pending approval card with the target tool, recipient/destination, and payload summary (e.g., attachment).

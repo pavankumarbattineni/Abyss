@@ -105,7 +105,7 @@ async def delete_credential(
 ):
     """Remove the authenticated user's saved credential for a provider.
 
-    Every agent of the user's that used one of this provider's models is
+    If the user's selected model is one of this provider's models, it is
     switched back to the Default model at the same time.
 
     Args:
@@ -119,8 +119,7 @@ async def delete_credential(
     Raises:
         HTTPException: 422 if the provider is unknown/inactive or no credential exists.
     """
-    reset = await llm_credential_service.delete_credential(session, user_id, provider_id)
-    if not reset:
+    model_reset = await llm_credential_service.delete_credential(session, user_id, provider_id)
+    if not model_reset:
         return MessageResponse(message="Credential removed")
-    agents = "agent now uses" if reset == 1 else "agents now use"
-    return MessageResponse(message=f"Credential removed. {reset} {agents} the Default model.")
+    return MessageResponse(message="Credential removed. Your model was switched to Default.")

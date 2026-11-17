@@ -54,7 +54,6 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
 
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
   const [selectedTools, setSelectedTools] = useState<AgentToolRef[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string>("default");
   
   const [chatThreadId, setChatThreadId] = useState<string | undefined>(undefined);
   const hasSeeded = useRef<boolean>(false);
@@ -112,7 +111,6 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
       });
       setSubAgents(agent.sub_agents);
       setSelectedTools(agent.tools);
-      setSelectedModelId(agent.llm_model_id);
       hasSeeded.current = true;
     }
   }, [agent, form]);
@@ -139,8 +137,7 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
     ? JSON.stringify(toolIds) !==
       JSON.stringify(agent.tools.map((tool) => tool.id).sort())
     : false;
-  const isModelDirty = agent ? selectedModelId !== agent.llm_model_id : false;
-  const hasChanges = isIdentityDirty || isToolsDirty || isModelDirty;
+  const hasChanges = isIdentityDirty || isToolsDirty;
 
   const { mutate: saveChanges, isPending: isSaving } = useMutation({
     mutationFn: () =>
@@ -149,7 +146,6 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
         description: values.description ?? "",
         system_prompt: values.system_prompt,
         tools: selectedTools.map((tool) => tool.id),
-        llm_model_id: selectedModelId,
       }),
     onSuccess: (updatedAgent) => {
       queryClient.setQueryData(["agent", agentId], updatedAgent);
@@ -165,7 +161,6 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
       });
       setSubAgents(updatedAgent.sub_agents);
       setSelectedTools(updatedAgent.tools);
-      setSelectedModelId(updatedAgent.llm_model_id);
       toast.success("Changes saved");
     },
     onError: () => {
@@ -444,7 +439,6 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
         nameValue={values.name}
         descriptionValue={values.description ?? ""}
         instructionsValue={values.system_prompt}
-        modelValue={selectedModelId}
         onNameChange={(value) =>
           form.setValue("name", value, { shouldValidate: true })
         }
@@ -454,7 +448,6 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
         onInstructionsChange={(value) =>
           form.setValue("system_prompt", value, { shouldValidate: true })
         }
-        onModelChange={setSelectedModelId}
       />
 
       <SubAgentDrawer

@@ -1,13 +1,12 @@
 import logging
 from collections import defaultdict
-from typing import Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from constants import MAX_SUB_AGENTS_PER_AGENT, MCP_CONNECTION_STATUS_CONNECTED
 from database.models import (
-    Agent, AgentTool, LlmCredential, MCPConnection, MCPTool, Provider, ProviderModel,
+    Agent, AgentTool, MCPConnection, MCPTool,
 )
 from schemas.agent import (
     AgentCreate, AgentResponse, AgentSkillInfo, AgentToolInfo, AgentUpdate, SubAgentCreate, SubAgentInfo,
@@ -19,56 +18,6 @@ _skill_service = SkillService()
 
 
 # Helpers
-
-
-async def _validate_llm_model_selection(
-    session: AsyncSession, user_id: str, llm_model_id: Optional[str]
-) -> None:
-    """Block saving a non-Default model selection unless it's a real, active
-    model with a valid credential already configured for its provider.
-
-    llm_model_id=None means "Default" (platform key) — no checks needed.
-    """
-    if llm_model_id is None:
-        return
-
-    result = await session.execute(
-        select(Provider.id, Provider.name)
-        .join(ProviderModel, ProviderModel.provider_id == Provider.id)
-        .where(
-            ProviderModel.id == llm_model_id,
-            ProviderModel.is_active == True,
-            Provider.is_active == True,
-        )
-    )
-    row = result.first()
-    if not row:
-        raise ValueError(f"Unknown or inactive model: {llm_model_id}")
-    provider_id, provider_name = row
-
-    cred_result = await session.execute(
-        select(LlmCredential.id).where(
-            LlmCredential.user_id == user_id,
-            LlmCredential.provider_id == provider_id,
-            LlmCredential.is_active == True,
-        )
-    )
-    if not cred_result.scalar_one_or_none():
-        raise ValueError(f"Add your {provider_name} API key in Settings before selecting this model")
-
-
-async def _resolve_llm_model_map(
-    session: AsyncSession, llm_model_ids: set[str]
-) -> dict[str, tuple[str, str, str]]:
-    """Batch-resolve llm_model_id -> (provider_name, model_name, display_name)."""
-    if not llm_model_ids:
-        return {}
-    result = await session.execute(
-        select(ProviderModel.id, Provider.name, ProviderModel.model_name, ProviderModel.display_name)
-        .join(Provider, Provider.id == ProviderModel.provider_id)
-        .where(ProviderModel.id.in_(llm_model_ids))
-    )
-    return {row[0]: (row[1], row[2], row[3]) for row in result.all()}
 
 
 async def _set_agent_tools(
@@ -176,10 +125,6 @@ async def _build_agent_response(session: AsyncSession, agent: Agent) -> AgentRes
             )
         )
 
-    llm_map = await _resolve_llm_model_map(
-        session, {agent.llm_model_id} if agent.llm_model_id else set()
-    )
-    provider_name, model_name, display_name = llm_map.get(agent.llm_model_id, (None, None, None))
     skills = (await _skill_service.assigned_skills(session, agent.user_id, [agent.id])).get(agent.id, [])
 
     return AgentResponse(
@@ -199,10 +144,6 @@ async def _build_agent_response(session: AsyncSession, agent: Agent) -> AgentRes
             )
             for sub in sub_agents_orm
         ],
-        llm_model_id=agent.llm_model_id,
-        llm_provider=provider_name,
-        llm_model_name=model_name,
-        llm_display_name=display_name,
     )
 
 
@@ -339,15 +280,12 @@ class AgentService:
                     "(e.g. 'Web Agent' and 'Web-Agent' both map to 'web_agent')"
                 )
 
-        await _validate_llm_model_selection(session, user_id, data.llm_model_id)
-
         agent = Agent(
             user_id=user_id,
             name=data.name,
             description=data.description,
             system_prompt=data.system_prompt,
             parent_id=None,
-            llm_model_id=data.llm_model_id,
         )
         session.add(agent)
         await session.flush()
@@ -422,7 +360,8 @@ class AgentService:
                 Agent.user_id == user_id,
                 Agent.is_active == True,
                 Agent.parent_id.is_(None),
-            ).order_by(Agent.created_at.desc())
+            # Most recently used (or edited) first; see ChatService.send_message.
+            ).order_by(Agent.updated_at.desc(), Agent.created_at.desc())
         )
         agents = result.scalars().all()
         if not agents:
@@ -470,11 +409,7 @@ class AgentService:
         for sub in sub_agents:
             subs_by_parent[sub.parent_id].append(sub)
 
-        # Query 4: batch-resolve every parent's llm_model_id -> provider/model info
-        llm_map = await _resolve_llm_model_map(
-            session, {a.llm_model_id for a in agents if a.llm_model_id}
-        )
-        # Query 5: every parent's assigned skills
+        # Query 4: every parent's assigned skills
         skills_by_agent = await _skill_service.assigned_skills(session, user_id, parent_ids)
 
         return [
@@ -498,10 +433,6 @@ class AgentService:
                     )
                     for sub in subs_by_parent.get(a.id, [])
                 ],
-                llm_model_id=a.llm_model_id,
-                llm_provider=llm_map.get(a.llm_model_id, (None, None, None))[0],
-                llm_model_name=llm_map.get(a.llm_model_id, (None, None, None))[1],
-                llm_display_name=llm_map.get(a.llm_model_id, (None, None, None))[2],
             )
             for a in agents
         ]
@@ -549,8 +480,6 @@ class AgentService:
         """
         from utils.mcp_client import register_tools_for_id, remove_agent_from_registry
 
-        llm_fields_set = "llm_model_id" in data.model_fields_set
-
         # Early return if there is literally nothing to do
         if (
             data.name is None
@@ -558,7 +487,6 @@ class AgentService:
             and data.system_prompt is None
             and data.tools is None
             and not data.sub_agents
-            and not llm_fields_set
         ):
             agent = await self._get_agent_orm(session, agent_id, user_id)
             return await _build_agent_response(session, agent)
@@ -586,9 +514,6 @@ class AgentService:
             agent.system_prompt = data.system_prompt
         if data.tools is not None:
             await _set_agent_tools(session, agent.id, data.tools, user_id)
-        if llm_fields_set:
-            await _validate_llm_model_selection(session, user_id, data.llm_model_id)
-            agent.llm_model_id = data.llm_model_id
 
         updated_sub_tools: list[tuple[str, list[str]]] = []
         if data.sub_agents:

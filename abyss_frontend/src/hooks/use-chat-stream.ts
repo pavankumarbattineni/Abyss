@@ -79,6 +79,7 @@ export function useChatStream({
   // since re-dispatching a historical tool_start/tool_end into the reasoning trace would
   // duplicate it there even though the ids themselves are otherwise harmless to see twice.
   const lastEventIdRef = useRef<string | null>(null);
+  const sendInFlightRef = useRef<boolean>(false);
 
   const [conversationThreadId, setConversationThreadId] = useState<string | undefined>(threadId);
   if (threadId !== conversationThreadId) {
@@ -266,6 +267,13 @@ export function useChatStream({
 
       streamIdRef.current = targetStreamId;
       accumulatedRef.current = status.partial_content ?? "";
+      // The status is a snapshot: partial_content and reasoning already hold every event up
+      // to index total_chunks - 1 (the backend saves them together). Resume the live stream
+      // right after it. Without this, a resume after a refresh (or the new-chat hand-off, or
+      // an approval after a refresh) had no Last-Event-ID, so the backend replayed the whole
+      // buffer from the first token and the answer's opening -- and its reasoning steps --
+      // were appended a second time to what the snapshot had already shown.
+      lastEventIdRef.current = status.total_chunks > 0 ? String(status.total_chunks - 1) : null;
       activeThreadIdRef.current = resolvedThreadId;
       setStreamIdParam(targetStreamId);
       setStreamingContent(accumulatedRef.current);
@@ -273,6 +281,8 @@ export function useChatStream({
       setPendingApprovals([]);
       if (status.reasoning) reasoningRef.current.hydrate(status.reasoning.steps);
 
+      // Never keep two live connections: both would feed the same answer.
+      streamControllerRef.current?.abort();
       streamControllerRef.current = streamService.openStream(
         targetStreamId,
         createStreamHandlerRef.current(resolvedThreadId, isNewThread),
@@ -307,6 +317,9 @@ export function useChatStream({
   }, [threadId]);
 
   const sendMessage = async (text: string) => {
+    // Sample questions, retry and "fix it" can call this too: one send at a time.
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     const isNewThread = !threadId;
     isNewThreadRef.current = isNewThread;
     setPendingApprovals([]);
@@ -339,6 +352,9 @@ export function useChatStream({
       // that already includes it doesn't show it twice (see mergeMessages).
       const savedUserMessage: Message = { ...userMessage, id: message_id, thread_id: resolvedThreadId };
       setPendingMessages((prev) => prev.map((m) => (m.id === userMessage.id ? savedUserMessage : m)));
+      // Lists are ordered by last use: this thread and agent now move to the top.
+      void queryClient.invalidateQueries({ queryKey: ["threads", agentId] });
+      void queryClient.invalidateQueries({ queryKey: ["agents"], exact: true });
 
       if (isNewThread && onThreadStarted) {
         // Hand the stream to the thread's own page. Seed its messages with this one so it shows
@@ -358,6 +374,7 @@ export function useChatStream({
       setStreamingContent("");
       setStreamIdParam(stream_id);
 
+      streamControllerRef.current?.abort();
       streamControllerRef.current = streamService.openStream(
         stream_id,
         createStreamHandler(resolvedThreadId, isNewThread),
@@ -365,6 +382,8 @@ export function useChatStream({
     } catch {
       toast.error("Failed to send message. Please try again.");
       setIsSending(false);
+    } finally {
+      sendInFlightRef.current = false;
     }
   };
 

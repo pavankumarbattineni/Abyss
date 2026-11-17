@@ -64,7 +64,8 @@ class ThreadService:
                 Thread.user_id == user_id,
                 Thread.is_active == True,
             )
-            .order_by(desc(Thread.created_at))
+            # Most recently used first (a new message updates updated_at).
+            .order_by(desc(Thread.updated_at), desc(Thread.created_at))
         )
         return list(result.scalars().all())
 

@@ -310,8 +310,50 @@
   background: var(--code-deletion-bg);
 }
 
-/* A subtle, theme-colored scrollbar; pair with `scrollbar-thin` (from the
-   imported utilities) for small scrolling panels like the sidebar's agent list. */
-@utility scrollbar-muted {
-  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
+/* One scrollbar style for the whole app (page, sidebar lists, chat, tables,
+   code blocks, equations): a slim, rounded thumb in the theme's muted color --
+   no arrows, no track -- that darkens on hover. Chromium ignores these
+   ::-webkit-scrollbar rules on any element that sets scrollbar-width or
+   scrollbar-color, so those are set only where ::-webkit-scrollbar is
+   unsupported (Firefox). An element can still hide its scrollbar with
+   [scrollbar-width:none]. */
+@layer base {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+    background-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--muted-foreground) 60%, transparent);
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
+    }
+  }
+}
+
+/* A display equation wider than the message (common on phones) scrolls inside
+   its own box instead of pushing past the screen edge, like tables do. The
+   vertical padding keeps tall symbols from being clipped by overflow-y. */
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25em;
 }
