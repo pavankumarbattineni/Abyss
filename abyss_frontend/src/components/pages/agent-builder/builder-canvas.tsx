@@ -65,7 +65,7 @@ const INITIAL_NODES: BuilderNode[] = [
     id: BuilderNodeId.Skills,
     type: "skillsNode",
     position: { x: 740, y: 300 },
-    data: {},
+    data: { skills: [], onAdd: () => {}, onRemove: () => {}, onSaved: () => {} },
   },
 ];
 
@@ -105,6 +105,8 @@ interface BuilderCanvasProps {
   selectedTools: AgentToolRef[];
   onToggleTool: (tool: Tool) => void;
   onRemoveTool: (id: string) => void;
+  /** The agent's skills and how to change them (see SkillsNode). */
+  skills: SkillsNodeType["data"];
 }
 
 export function BuilderCanvas({
@@ -119,6 +121,7 @@ export function BuilderCanvas({
   selectedTools,
   onToggleTool,
   onRemoveTool,
+  skills,
 }: BuilderCanvasProps) {
   const [nodes, setNodes, onNodesChange] =
     useNodesState<BuilderNode>(INITIAL_NODES);
@@ -139,6 +142,9 @@ export function BuilderCanvas({
               onRemoveTool,
             },
           } as ToolboxNodeType;
+        }
+        if (node.id === BuilderNodeId.Skills) {
+          return { ...node, data: skills } as SkillsNodeType;
         }
         if (node.id === BuilderNodeId.SubAgents) {
           return {
@@ -163,6 +169,7 @@ export function BuilderCanvas({
     selectedTools,
     onToggleTool,
     onRemoveTool,
+    skills,
     setNodes,
   ]);
 

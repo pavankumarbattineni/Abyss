@@ -37,6 +37,18 @@ class AgentService {
     return data;
   }
 
+  /** Assign library skills to the agent (already assigned ones are skipped). */
+  async assignSkills(agentId: string, skillIds: string[]): Promise<Agent> {
+    const { data } = await api.post<Agent>(`/agents/${agentId}/skills`, { skill_ids: skillIds });
+    return data;
+  }
+
+  /** Remove a skill from the agent; it stays in the library. */
+  async unassignSkill(agentId: string, skillId: string): Promise<Agent> {
+    const { data } = await api.delete<Agent>(`/agents/${agentId}/skills/${skillId}`);
+    return data;
+  }
+
   async deleteSubAgent(subAgentId: string): Promise<void> {
     await api.delete(`/agents/sub-agents/${subAgentId}`);
   }

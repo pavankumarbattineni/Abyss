@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui";
 import { useResizablePanel } from "@/hooks";
 import { cn } from "@/lib/utils";
 import { agentService } from "@/services";
-import type { Agent, AgentToolRef, SubAgent, Tool } from "@/types";
+import type { Agent, AgentSkillRef, AgentToolRef, Skill, SubAgent, Tool } from "@/types";
 import { AGENT_TEXT_LIMITS } from "@/lib/agent-limits";
 import { AgentIdentityDrawer } from "../agent-builder/agent-identity-drawer";
 import { BuilderCanvas } from "../agent-builder/builder-canvas";
@@ -43,6 +43,8 @@ export const AgentCreatePage = () => {
   const [editingSubAgent, setEditingSubAgent] = useState<SubAgent | null>(null);
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
   const [selectedTools, setSelectedTools] = useState<AgentToolRef[]>([]);
+  // The agent doesn't exist yet, so its skills are kept here and saved with it.
+  const [selectedSkills, setSelectedSkills] = useState<AgentSkillRef[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>("default");
   const { width, isDragging, handlePointerDown } = useResizablePanel({
     initialWidth: 380,
@@ -66,8 +68,27 @@ export const AgentCreatePage = () => {
     system_prompt: values.system_prompt ?? "",
     llm_model_id: selectedModelId,
     tools: selectedTools,
+    skills: selectedSkills,
     sub_agents: subAgents,
   };
+
+  const addSkills = useCallback((skills: AgentSkillRef[]) => {
+    setSelectedSkills((prev) => [...prev, ...skills.filter((skill) => !prev.some((item) => item.id === skill.id))]);
+  }, []);
+  const removeSkill = useCallback((skill: AgentSkillRef) => {
+    setSelectedSkills((prev) => prev.filter((item) => item.id !== skill.id));
+  }, []);
+  // A skill created here goes into the library; it is assigned when the agent is created.
+  const onSkillSaved = useCallback((skill: Skill, created: boolean) => {
+    const ref = { id: skill.id, name: skill.name, description: skill.description };
+    setSelectedSkills((prev) =>
+      created ? [...prev, ref] : prev.map((item) => (item.id === skill.id ? ref : item)),
+    );
+  }, []);
+  const skillsNodeData = useMemo(
+    () => ({ skills: selectedSkills, onAdd: addSkills, onRemove: removeSkill, onSaved: onSkillSaved }),
+    [selectedSkills, addSkills, removeSkill, onSkillSaved],
+  );
 
   const { mutate: createAgent, isPending: isCreating } = useMutation({
     mutationFn: () =>
@@ -76,6 +97,7 @@ export const AgentCreatePage = () => {
         description: draftAgent.description ?? "",
         system_prompt: draftAgent.system_prompt ?? "",
         tools: selectedTools.map((tool) => tool.id),
+        skills: selectedSkills.map((skill) => skill.id),
         sub_agents: subAgents.map((subAgent) => ({
           name: subAgent.name,
           description: subAgent.description,
@@ -90,6 +112,7 @@ export const AgentCreatePage = () => {
         prev ? [createdAgent, ...prev.filter((item) => item.id !== createdAgent.id)] : [createdAgent],
       );
       queryClient.setQueryData(["agent", createdAgent.id], createdAgent);
+      if (createdAgent.skills.length > 0) void queryClient.invalidateQueries({ queryKey: ["skills"] });
       toast.success("Agent created");
       router.push(`/agents/${createdAgent.id}/builder`);
     },
@@ -229,6 +252,7 @@ export const AgentCreatePage = () => {
             selectedTools={selectedTools}
             onToggleTool={handleToggleTool}
             onRemoveTool={handleRemoveTool}
+            skills={skillsNodeData}
           />
         </div>
       </div>

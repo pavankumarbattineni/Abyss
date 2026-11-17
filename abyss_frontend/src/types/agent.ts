@@ -6,6 +6,13 @@ export interface AgentToolRef {
   display_name: string;
 }
 
+/** A skill assigned to an agent (from the user's skills library). */
+export interface AgentSkillRef {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface SubAgent {
   id: string;
   name: string;
@@ -22,6 +29,7 @@ export interface Agent {
   system_prompt: string | null;
   llm_model_id: string;
   tools: AgentToolRef[];
+  skills: AgentSkillRef[];
   sub_agents: SubAgent[];
 }
 
@@ -37,6 +45,8 @@ export interface AgentRequest {
   description: string;
   system_prompt: string;
   tools: string[];
+  /** Library skill IDs to assign to the new agent. */
+  skills?: string[];
   sub_agents: SubAgentRequest[];
   llm_model_id: string;
 }

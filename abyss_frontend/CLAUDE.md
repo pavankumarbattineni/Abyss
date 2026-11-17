@@ -147,9 +147,10 @@ This keeps every route file mechanically identical and puts the actual page logi
 - Users can register a custom MCP server by name, URL, and optional bearer token.
 
 ### 5.4a Skills
-- `/skills` (sidebar) lists the user's skills; a right drawer creates and edits them (name, description, instructions), with delete behind a confirm dialog. The Agent Builder's Skills node shows the same list and opens the same drawer.
-- Skills belong to the user, not to an agent: every agent and sub-agent can use every skill, so there is nothing to attach. The agent sees each skill's name and description and loads the instructions (`load_skill` tool) only when a skill fits the task.
-- Limits live in `lib/skill-limits.ts` and mirror the backend: name 64 (letters, digits, spaces, `-`, `_`), description 1–1,024, instructions 1,024–32,000, 20 skills per user. `POST /skills` creates (no `id`) or updates (with `id`).
+- Skills live in a user-level library: `/skills` (sidebar) lists them with how many agents use each; a right drawer creates and edits them, and delete (confirm dialog) removes the skill from the library and from every agent.
+- An agent uses only the skills assigned to it. In the Agent Builder's Skills node, **Add** creates a new skill (on an existing agent `POST /skills` gets `agent_id`, so it is assigned to that agent only) and the library icon beside it adds existing skills (multi-select; already-assigned ones are shown as Added). The X on a skill removes it from the agent only (`DELETE /agents/{id}/skills/{skill_id}`); the skill stays in the library.
+- On an existing agent, adding/removing skills is saved immediately (like sub-agents), not with Save Changes. On the create page there is no agent yet, so picked skills are kept locally and sent as `skills` in the create request.
+- Editing a skill changes it for every agent it is assigned to. Limits live in `lib/skill-limits.ts` and mirror the backend: name 64 (letters, digits, spaces, `-`, `_`), description 1–1,024, instructions 1,024–32,000, 20 skills per user.
 
 ### 5.5 Model Providers & API Keys
 - Each provider shows connection status and a masked key (first 4 / last 4 chars) once set; "Add key" becomes "Update key" once connected.

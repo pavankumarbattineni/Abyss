@@ -4,7 +4,7 @@ Everything is a LangChain `create_agent` graph:
 
     parent  = create_agent(model ⇄ tools)
               tools = the agent's MCP tools + one tool per sub-agent
-                      (+ load_skill when the user has skills)
+                      (+ load_skill when skills are assigned to the agent)
     sub-agent = create_agent(model ⇄ tools), wrapped as a tool of the parent
 
 The graph is built per request: compiling is cheap, and building it fresh means
@@ -38,7 +38,7 @@ from abyss_agents.middleware import (
 from abyss_agents.naming import to_tool_name
 from abyss_agents.prompts import build_parent_prompt, build_sub_agent_prompt
 from abyss_agents.visual_formats import VisualFormatMiddleware, get_visual_format
-from abyss_agents.skills import LOAD_SKILL_TOOL_NAME, build_skill_tool, load_skill_catalog
+from abyss_agents.skills import LOAD_SKILL_TOOL_NAME, build_skill_tool, load_skill_catalogs
 from abyss_agents.subagent import build_sub_agent_tool
 from constants import (
     LLM_CALL_MAX_RETRIES,
@@ -101,10 +101,11 @@ def _tool_policy(label: str, permissions: dict[str, bool], tools: list) -> list:
     ]
 
 
-def _skill_tools(user_id: str, catalog: list, taken: set[str]) -> list:
-    """[load_skill] for a user with skills, else []. Skipped (with a warning) if
-    an MCP tool or sub-agent already uses the name, so neither is shadowed."""
-    tool = build_skill_tool(user_id, catalog, async_session_maker)
+def _skill_tools(user_id: str, agent_id: str, catalog: list, taken: set[str]) -> list:
+    """[load_skill] for an agent with assigned skills, else []. Skipped (with a
+    warning) if an MCP tool or sub-agent already uses the name, so neither is
+    shadowed."""
+    tool = build_skill_tool(user_id, agent_id, catalog, async_session_maker)
     if tool is None:
         return []
     if LOAD_SKILL_TOOL_NAME in taken:
@@ -147,14 +148,18 @@ async def build_agent(
     parent_tools = list(get_tools_for_agent(str(agent_record.id)))
     parent_permissions = get_tool_permissions_for_agent(str(agent_record.id))
 
-    # Skills: one catalog query per run (names + descriptions only). The same
-    # load_skill tool goes to the parent and every sub-agent.
+    # Skills: each agent gets only the skills assigned to it. One query covers
+    # the parent and every sub-agent (names + descriptions only).
+    user_id = str(agent_record.user_id)
+    catalogs = await load_skill_catalogs(
+        session, user_id, [str(agent_record.id), *(str(sub.id) for sub in sub_agents)]
+    )
     skill_tools = _skill_tools(
-        str(agent_record.user_id),
-        await load_skill_catalog(session, str(agent_record.user_id)),
+        user_id,
+        str(agent_record.id),
+        catalogs.get(str(agent_record.id), []),
         taken={t.name for t in parent_tools} | {to_tool_name(sub.name) for sub in sub_agents},
     )
-    has_skills = bool(skill_tools)
 
     sub_options: list[dict] = []
     sub_tools = []
@@ -166,11 +171,14 @@ async def build_agent(
                 "Sub-agent '%s' (id=%s) has no tools registered — it will run without MCP tools",
                 tool_name, sub.id,
             )
+        child_skill_tools = _skill_tools(
+            user_id, str(sub.id), catalogs.get(str(sub.id), []), taken={t.name for t in child_tools}
+        )
         child_agent = create_agent(
             llm,
-            [*child_tools, *skill_tools],
+            [*child_tools, *child_skill_tools],
             system_prompt=build_sub_agent_prompt(
-                sub.system_prompt, include_reasoning=prompt_reasoning, has_skills=has_skills
+                sub.system_prompt, include_reasoning=prompt_reasoning, has_skills=bool(child_skill_tools)
             ),
             middleware=[
                 ToolResultMiddleware(),
@@ -217,7 +225,7 @@ async def build_agent(
         [*parent_tools, get_visual_format, *skill_tools, *sub_tools],
         system_prompt=build_parent_prompt(
             agent_record.system_prompt, sub_options, include_reasoning=prompt_reasoning,
-            has_skills=has_skills,
+            has_skills=bool(skill_tools),
         ),
         middleware=middleware,
         checkpointer=checkpointer,

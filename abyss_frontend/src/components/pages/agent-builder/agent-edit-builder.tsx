@@ -15,9 +15,9 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Skeleton } from "@/components/ui";
 import { useChatStream, useResizablePanel } from "@/hooks";
 import { mergeMessages } from "@/lib/chat-messages";
-import { cn } from "@/lib/utils";
+import { cn, getApiErrorMessage } from "@/lib/utils";
 import { agentService, threadService } from "@/services";
-import type { Agent, AgentToolRef, Message, SubAgent, Tool } from "@/types";
+import type { Agent, AgentSkillRef, AgentToolRef, Message, SubAgent, Tool } from "@/types";
 import { AGENT_TEXT_LIMITS } from "@/lib/agent-limits";
 import { AgentIdentityDrawer } from "./agent-identity-drawer";
 import { BuilderCanvas } from "./builder-canvas";
@@ -187,6 +187,51 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
   const handleRemoveTool = (id: string) => {
     setSelectedTools((prev) => prev.filter((tool) => tool.id !== id));
   };
+
+  // Skills are assigned and removed right away (like sub-agents), not on Save Changes.
+  const syncSkills = (updated: Agent) => {
+    queryClient.setQueryData<Agent>(["agent", agentId], (prev) =>
+      prev ? { ...prev, skills: updated.skills } : updated,
+    );
+    void queryClient.invalidateQueries({ queryKey: ["skills"] });
+    void queryClient.invalidateQueries({ queryKey: ["agents"], exact: true });
+  };
+
+  const { mutate: addSkills, isPending: isAddingSkills } = useMutation({
+    mutationFn: (skills: AgentSkillRef[]) =>
+      agentService.assignSkills(agentId, skills.map((skill) => skill.id)),
+    onSuccess: (updated, skills) => {
+      syncSkills(updated);
+      toast.success(skills.length > 1 ? `Added ${skills.length} skills` : `Added "${skills[0]?.name}"`);
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Couldn't add the skills. Please try again."));
+    },
+  });
+
+  const { mutate: removeSkill, isPending: isRemovingSkill } = useMutation({
+    mutationFn: (skill: AgentSkillRef) => agentService.unassignSkill(agentId, skill.id),
+    onSuccess: (updated, skill) => {
+      syncSkills(updated);
+      toast.success(`Removed "${skill.name}" from this agent`);
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, "Couldn't remove the skill. Please try again."));
+    },
+  });
+
+  const skillsNodeData = useMemo(
+    () => ({
+      skills: agent?.skills ?? [],
+      agentId,
+      onAdd: addSkills,
+      onRemove: removeSkill,
+      // A skill created here is assigned by the API; the drawer refreshes the agent.
+      onSaved: () => {},
+      isUpdating: isAddingSkills || isRemovingSkill,
+    }),
+    [agent?.skills, agentId, addSkills, removeSkill, isAddingSkills, isRemovingSkill],
+  );
 
   const handleAddSubAgentClick = () => {
     setEditingSubAgent(null);
@@ -386,6 +431,7 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
             selectedTools={selectedTools}
             onToggleTool={handleToggleTool}
             onRemoveTool={handleRemoveTool}
+            skills={skillsNodeData}
           />
         </div>
       </div>

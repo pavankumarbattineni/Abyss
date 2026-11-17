@@ -1,13 +1,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Library, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { Button, Heading, Skeleton } from "@/components/ui";
 import { AddServerDialog } from "@/components/pages/mcp/add-server-dialog";
 import { SkillDrawer, useSkills } from "@/components/pages/skills";
 import { SKILL_LIMITS } from "@/lib/skill-limits";
-import type { Agent, AgentToolRef, Skill, SubAgent, Tool } from "@/types";
+import type { Agent, AgentSkillRef, AgentToolRef, Skill, SubAgent, Tool } from "@/types";
+import { SkillsPickerPopover } from "./skills-picker-popover";
 import { ToolboxToolsPopover } from "./toolbox-tools-popover";
 
 export enum BuilderNodeId {
@@ -39,7 +40,19 @@ export type SubAgentsNodeType = Node<
   },
   "subAgentsNode"
 >;
-export type SkillsNodeType = Node<Record<string, never>, "skillsNode">;
+export type SkillsNodeType = Node<
+  {
+    /** The skills assigned to this agent. */
+    skills: AgentSkillRef[];
+    /** Set once the agent exists: a skill created here is assigned to it by the API. */
+    agentId?: string;
+    onAdd: (skills: AgentSkillRef[]) => void;
+    onRemove: (skill: AgentSkillRef) => void;
+    onSaved: (skill: Skill, created: boolean) => void;
+    isUpdating?: boolean;
+  },
+  "skillsNode"
+>;
 
 function NodeHeader({ label, action }: { label: string; action?: React.ReactNode }) {
   return (
@@ -223,14 +236,16 @@ export function SubAgentsNode({ data }: NodeProps<SubAgentsNodeType>) {
 }
 
 /**
- * The user's skills. They are shared by every agent (nothing to attach): the
- * agent loads a skill's instructions only when its description fits the task.
+ * The skills assigned to this agent. "Add" creates a new skill (assigned to
+ * this agent only); the library icon adds existing skills. Removing a skill
+ * here only unassigns it -- it stays in the Skills library.
  */
-export function SkillsNode() {
-  const { data: skills = [], isLoading, isError } = useSkills();
+export function SkillsNode({ data }: NodeProps<SkillsNodeType>) {
+  const { data: library = [] } = useSkills();
   // undefined = closed, null = new skill, Skill = editing that skill.
   const [editing, setEditing] = useState<Skill | null | undefined>(undefined);
-  const atLimit = skills.length >= SKILL_LIMITS.perUser;
+  const assignedIds = new Set(data.skills.map((skill) => skill.id));
+  const atLimit = library.length >= SKILL_LIMITS.perUser;
 
   return (
     <div className="w-60 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-sm">
@@ -238,56 +253,85 @@ export function SkillsNode() {
       <NodeHeader
         label="Skills"
         action={
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            disabled={isLoading || atLimit}
-            title={atLimit ? `You can have up to ${SKILL_LIMITS.perUser} skills` : undefined}
-            onClick={(event) => {
-              event.stopPropagation();
-              setEditing(null);
-            }}
-          >
-            <Plus className="size-3.5" />
-            Add
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={atLimit}
+              title={atLimit ? `You can have up to ${SKILL_LIMITS.perUser} skills` : "Create a new skill"}
+              onClick={(event) => {
+                event.stopPropagation();
+                setEditing(null);
+              }}
+            >
+              <Plus className="size-3.5" />
+              Add
+            </Button>
+            <SkillsPickerPopover
+              assignedIds={assignedIds}
+              onAdd={data.onAdd}
+              isAdding={data.isUpdating}
+              trigger={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Add existing skills"
+                  title="Add existing skills"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <Library className="size-3.5" />
+                </Button>
+              }
+            />
+          </div>
         }
       />
       <div className="nowheel flex max-h-48 flex-col gap-1 overflow-y-auto p-3">
-        {isLoading ? (
-          <Skeleton className="h-4 w-32" />
-        ) : skills.length > 0 ? (
-          skills.map((skill) => (
+        {data.skills.length > 0 ? (
+          data.skills.map((skill) => (
             <div
               key={skill.id}
               title={skill.description}
               className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 hover:bg-muted"
             >
               <span className="truncate text-xs text-foreground">{skill.name}</span>
-              <button
-                type="button"
-                aria-label={`Edit skill ${skill.name}`}
-                className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setEditing(skill);
-                }}
-              >
-                <Pencil className="size-3" />
-              </button>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  aria-label={`Edit skill ${skill.name}`}
+                  className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setEditing(library.find((item) => item.id === skill.id) ?? null);
+                  }}
+                >
+                  <Pencil className="size-3" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove ${skill.name} from this agent`}
+                  title="Remove from this agent (stays in your skills)"
+                  disabled={data.isUpdating}
+                  className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    data.onRemove(skill);
+                  }}
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
             </div>
           ))
         ) : (
-          <p className="px-1.5 text-xs text-muted-foreground">
-            {isError ? "Failed to load skills." : "No skills yet"}
-          </p>
+          <p className="px-1.5 text-xs text-muted-foreground">No skills added</p>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2 border-t border-border-soft px-3 py-2 text-xs text-muted-foreground">
-        <span>Shared by all your agents</span>
-        <Link href="/skills" className="shrink-0 hover:text-foreground hover:underline">
-          Manage
+      <div className="flex items-center justify-end border-t border-border-soft px-3 py-2 text-xs text-muted-foreground">
+        <Link href="/skills" className="hover:text-foreground hover:underline">
+          Manage skills
         </Link>
       </div>
       <SkillDrawer
@@ -296,6 +340,8 @@ export function SkillsNode() {
           if (!open) setEditing(undefined);
         }}
         skill={editing}
+        agentId={data.agentId}
+        onSaved={data.onSaved}
       />
     </div>
   );

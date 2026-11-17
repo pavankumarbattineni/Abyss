@@ -7,11 +7,17 @@ export interface Skill {
   instructions: string;
   created_at: string;
   updated_at: string;
+  /** How many agents the skill is assigned to. */
+  agent_count: number;
 }
 
-/** Create (no id) or update (with id) -- the backend's POST /skills. */
+/**
+ * Create (no id) or update (with id) -- the backend's POST /skills. With
+ * agent_id (Agent Builder) the skill is also assigned to that agent only.
+ */
 export interface SkillUpsertRequest {
   id?: string;
+  agent_id?: string;
   name: string;
   description: string;
   instructions: string;

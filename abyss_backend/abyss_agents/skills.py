@@ -1,9 +1,10 @@
-"""Skills: user-written playbooks any of the user's agents can use on demand.
+"""Skills: user-written playbooks an agent can use on demand once the user assigns them.
 
 Progressive disclosure, as with Claude's and OpenAI's agent skills:
 
-- Every model call carries only each skill's name and description, inside
-  the `load_skill` tool's description (one catalog query per run).
+- Every model call carries only the names and descriptions of the skills
+  assigned to that agent, inside the `load_skill` tool's description (one
+  query per run covers the agent and its sub-agents).
 - When a description matches the task, the model calls `load_skill(name)` and
   only then are that skill's instructions read from the database and returned
   as the tool result. Unused skills never enter the context.
@@ -72,13 +73,13 @@ def wrap_skill(name: str, instructions: str) -> str:
 
 def build_skill_tool(
     user_id: str,
+    agent_id: str,
     catalog: list[SkillSummary],
     session_factory: Callable[[], AsyncSession],
 ) -> BaseTool | None:
-    """The `load_skill` tool for this run, or None when the user has no skills.
+    """The `load_skill` tool for one agent in this run, or None when it has no skills.
 
-    One instance is shared by the parent and its sub-agents, so a skill read
-    once in a run is not read from the database again.
+    A skill read once in a run is not read from the database again.
     """
     if not catalog:
         return None
@@ -92,9 +93,9 @@ def build_skill_tool(
             return f"There is no skill named '{name}'. Available skills: {names}."
         if skill.id not in loaded:
             async with session_factory() as session:
-                instructions = await _skill_service.instructions(session, user_id, skill.id)
+                instructions = await _skill_service.instructions(session, user_id, agent_id, skill.id)
             if instructions is None:
-                return f"The skill '{skill.name}' was deleted. Continue without it."
+                return f"The skill '{skill.name}' is no longer available. Continue without it."
             loaded[skill.id] = wrap_skill(skill.name, instructions)
         return loaded[skill.id]
 
@@ -106,5 +107,8 @@ def build_skill_tool(
     )
 
 
-async def load_skill_catalog(session: AsyncSession, user_id: str) -> list[SkillSummary]:
-    return await _skill_service.catalog(session, user_id)
+async def load_skill_catalogs(
+    session: AsyncSession, user_id: str, agent_ids: list[str]
+) -> dict[str, list[SkillSummary]]:
+    """Each agent's assigned skills (names and descriptions only), in one query."""
+    return await _skill_service.assigned_skills(session, user_id, agent_ids)
