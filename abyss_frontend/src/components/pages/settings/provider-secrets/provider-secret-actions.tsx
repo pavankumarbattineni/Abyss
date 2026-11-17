@@ -25,6 +25,8 @@ export function ProviderSecretActions({ providerId, providerName }: ProviderSecr
       queryClient.setQueryData<LlmCredential[]>(["llm-credentials"], (prev) =>
         prev?.filter((item) => item.provider_id !== providerId),
       );
+      // Agents that used this provider's models were switched to Default.
+      void queryClient.invalidateQueries({ queryKey: ["agents"] });
       toast.success(response.message);
       setRemoveOpen(false);
     },

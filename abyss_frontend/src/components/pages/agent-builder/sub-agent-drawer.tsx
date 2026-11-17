@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { Check, Plus, X } from "lucide-react";
 import { z } from "zod";
 
@@ -19,12 +19,18 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { AgentToolRef, SubAgent, Tool } from "@/types";
+import { AGENT_TEXT_LIMITS } from "@/lib/agent-limits";
+import { CharacterCount } from "@/components/shared/character-count";
 import { ToolboxToolsPopover } from "./toolbox-tools-popover";
 
 const subAgentSchema = z.object({
-  name: z.string().trim().min(1, "Name is required"),
-  description: z.string().trim().optional(),
-  system_prompt: z.string().trim().min(1, "Instructions are required"),
+  name: z.string().trim().min(1, "Name is required").max(AGENT_TEXT_LIMITS.name, "Name is too long"),
+  description: z.string().trim().max(AGENT_TEXT_LIMITS.description, "Description is too long").optional(),
+  system_prompt: z
+    .string()
+    .trim()
+    .min(1, "Instructions are required")
+    .max(AGENT_TEXT_LIMITS.instructions, "Instructions are too long"),
 });
 
 type SubAgentFieldValues = z.infer<typeof subAgentSchema>;
@@ -50,11 +56,16 @@ export function SubAgentDrawer({
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors, isValid },
   } = useForm<SubAgentFieldValues>({
     resolver: zodResolver(subAgentSchema),
     defaultValues: { name: "", description: "", system_prompt: "" },
     mode: "onChange",
+  });
+  const [nameValue, descriptionValue, instructionsValue] = useWatch({
+    control,
+    name: ["name", "description", "system_prompt"],
   });
   const [selectedTools, setSelectedTools] = useState<AgentToolRef[]>([]);
   const [seededKey, setSeededKey] = useState<string | null>(null);
@@ -123,8 +134,10 @@ export function SubAgentDrawer({
                 id="sub-agent-name"
                 autoFocus
                 placeholder="Untitled Sub-agent"
+                aria-describedby="sub-agent-name-count"
                 {...register("name")}
               />
+              <CharacterCount id="sub-agent-name-count" value={nameValue} max={AGENT_TEXT_LIMITS.name} />
               <FormError message={errors.name?.message} />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -132,8 +145,15 @@ export function SubAgentDrawer({
               <Input
                 id="sub-agent-description"
                 placeholder="What does this sub-agent do?"
+                aria-describedby="sub-agent-description-count"
                 {...register("description")}
               />
+              <CharacterCount
+                id="sub-agent-description-count"
+                value={descriptionValue}
+                max={AGENT_TEXT_LIMITS.description}
+              />
+              <FormError message={errors.description?.message} />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="sub-agent-instructions">
@@ -143,7 +163,13 @@ export function SubAgentDrawer({
                 id="sub-agent-instructions"
                 placeholder="How should this sub-agent behave?"
                 className="min-h-48"
+                aria-describedby="sub-agent-instructions-count"
                 {...register("system_prompt")}
+              />
+              <CharacterCount
+                id="sub-agent-instructions-count"
+                value={instructionsValue}
+                max={AGENT_TEXT_LIMITS.instructions}
               />
               <FormError message={errors.system_prompt?.message} />
             </div>

@@ -20,6 +20,8 @@ import {
   Textarea,
 } from "@/components/ui";
 import type { Agent } from "@/types";
+import { CharacterCount } from "@/components/shared/character-count";
+import { AGENT_TEXT_LIMITS } from "@/lib/agent-limits";
 import { ModelSection } from "./model-section";
 
 interface AgentIdentityDrawerProps {
@@ -118,7 +120,9 @@ export function AgentIdentityDrawer({
                       value={nameValue}
                       onChange={(event) => onNameChange?.(event.target.value)}
                       placeholder="Untitled Agent"
+                      aria-describedby="agent-name-count"
                     />
+                    <CharacterCount id="agent-name-count" value={nameValue} max={AGENT_TEXT_LIMITS.name} />
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="agent-description">Description</Label>
@@ -127,6 +131,12 @@ export function AgentIdentityDrawer({
                       value={descriptionValue}
                       onChange={(event) => onDescriptionChange?.(event.target.value)}
                       placeholder="What does this agent do?"
+                      aria-describedby="agent-description-count"
+                    />
+                    <CharacterCount
+                      id="agent-description-count"
+                      value={descriptionValue}
+                      max={AGENT_TEXT_LIMITS.description}
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -139,6 +149,12 @@ export function AgentIdentityDrawer({
                       onChange={(event) => onInstructionsChange?.(event.target.value)}
                       placeholder="How should this agent behave?"
                       className="min-h-40"
+                      aria-describedby="agent-instructions-count"
+                    />
+                    <CharacterCount
+                      id="agent-instructions-count"
+                      value={instructionsValue}
+                      max={AGENT_TEXT_LIMITS.instructions}
                     />
                   </div>
                 </CollapsibleContent>

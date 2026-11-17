@@ -1,9 +1,9 @@
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import LlmCredential, Provider, ProviderModel
+from database.models import Agent, LlmCredential, Provider, ProviderModel
 from schemas.llm_credential import (
     CatalogModelEntry,
     LlmCredentialResponse,
@@ -141,7 +141,13 @@ class LlmCredentialService:
             updated_at=credential.updated_at,
         )
 
-    async def delete_credential(self, session: AsyncSession, user_id: str, provider_id: str) -> None:
+    async def delete_credential(self, session: AsyncSession, user_id: str, provider_id: str) -> int:
+        """Remove the user's key for a provider and switch every agent of theirs
+        that uses one of the provider's models back to Default (NULL, the
+        platform default model), in the same transaction -- without the key
+        those agents could only fail at chat time. Returns how many agents
+        (including sub-agents) were switched.
+        """
         provider = await self._get_active_provider(session, provider_id)
 
         result = await session.execute(
@@ -156,5 +162,15 @@ class LlmCredentialService:
             raise ValueError(f"No {provider.name} credential found")
 
         credential.is_active = False
+        provider_models = select(ProviderModel.id).where(ProviderModel.provider_id == provider_id)
+        reset = await session.execute(
+            update(Agent)
+            .where(Agent.user_id == user_id, Agent.llm_model_id.in_(provider_models))
+            .values(llm_model_id=None)
+        )
         await session.commit()
+        if reset.rowcount:
+            logger.info("Reset %d agent(s) of user %s to the default model after removing a %s key",
+                        reset.rowcount, user_id, provider.name)
+        return reset.rowcount or 0
 
