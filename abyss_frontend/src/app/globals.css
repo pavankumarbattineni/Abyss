@@ -309,3 +309,9 @@
 .hljs-deletion {
   background: var(--code-deletion-bg);
 }
+
+/* A subtle, theme-colored scrollbar; pair with `scrollbar-thin` (from the
+   imported utilities) for small scrolling panels like the sidebar's agent list. */
+@utility scrollbar-muted {
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
+}
