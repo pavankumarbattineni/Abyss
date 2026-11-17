@@ -82,6 +82,14 @@ def test_only_the_main_agent_gets_the_visual_formats():
     assert "mermaid" not in sub and "trench-ui" not in sub and "visual" not in sub
 
 
+def test_live_previews_switch_pages_in_place():
+    """A preview runs in a sandboxed srcdoc frame: changing location to a URL
+    would load another document, so multi-page previews must route in place."""
+    parent = build_parent_prompt("Role.", [], True, NOW)
+    assert "#/page links" in parent and "location.hash" in parent
+    assert "never location = URL" in parent
+
+
 def test_starter_agent_no_longer_mentions_scheduling():
     texts = [STARTER_AGENT_SYSTEM_PROMPT] + [
         s["system_prompt"] + s["description"] for s in STARTER_AGENT_SUB_AGENTS
