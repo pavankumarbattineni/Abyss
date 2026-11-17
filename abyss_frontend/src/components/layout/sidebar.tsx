@@ -179,7 +179,7 @@ export function Sidebar() {
           </Button>
         </div>
 
-        <div className="flex flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col">
           {!collapsed && (
             <Heading as="div" size="xs" className="px-2 pb-1.5 pt-3">
               Platform
@@ -228,7 +228,8 @@ export function Sidebar() {
               </Button>
             </NavTooltip>
           </div>
-          <nav className="flex flex-col gap-0.5">
+          {/* Only the agent list scrolls; the navigation above and the footer stay put. */}
+          <nav aria-label="Agents" className="scrollbar-thin scrollbar-muted -mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1">
             {isLoading
               ? Array.from({ length: 3 }).map((_, index) => (
                   <div
