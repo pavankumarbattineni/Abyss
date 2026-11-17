@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Cpu, Key, Sparkles, SunMoon, UserRound } from "lucide-react";
+import { BarChart3, Brain, Cpu, Key, Sparkles, SunMoon, UserRound } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/settings/profile", label: "Profile", icon: UserRound },
   { href: "/settings", label: "Appearance", icon: SunMoon },
   { href: "/settings/preferences", label: "Preferences", icon: Sparkles },
+  { href: "/settings/memory", label: "Memory", icon: Brain },
   { href: "/settings/provider-secrets", label: "Provider Secrets", icon: Cpu },
   { href: "/settings/api-keys", label: "API Keys", icon: Key },
   { href: "/settings/usage", label: "Usage", icon: BarChart3 },
