@@ -42,6 +42,15 @@ MAX_PARALLEL_TASKS = 5
 MAX_SUB_AGENTS_PER_AGENT = 5
 MAX_AGENT_ITERATIONS = 15
 
+# Skills (abyss_agents/skills.py): user-written playbooks that every agent of
+# the user can load on demand. Only names + descriptions are in each model
+# call; instructions are fetched when a skill is used.
+MAX_SKILLS_PER_USER = 20
+SKILL_NAME_MAX_LENGTH = 64
+SKILL_DESCRIPTION_MAX_LENGTH = 1024
+SKILL_INSTRUCTIONS_MIN_LENGTH = 1024
+SKILL_INSTRUCTIONS_MAX_LENGTH = 32_000
+
 # Context management for the main agent (abyss_agents/history.py).
 # Earlier turns reach the model as question + final answer only (no tool calls,
 # specialist results or reasoning); the full history stays saved.

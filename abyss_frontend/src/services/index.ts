@@ -8,3 +8,4 @@ export * from "./thread-service";
 export * from "./usage-service";
 export * from "./profile-service";
 export * from "./trace-service";
+export * from "./skill-service";

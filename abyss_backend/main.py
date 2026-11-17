@@ -30,6 +30,7 @@ from routers.traces import router as traces_router
 from routers.mcp import router as mcp_router
 from routers.usage import router as usage_router
 from routers.profile import router as profile_router
+from routers.skills import router as skills_router
 from utils.mcp_client import build_agent_tool_registry
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,7 @@ app.include_router(mcp_router, prefix=prefix)
 app.include_router(usage_router, prefix=prefix)
 app.include_router(profile_router, prefix=prefix)
 app.include_router(traces_router, prefix=prefix)
+app.include_router(skills_router, prefix=prefix)
 
 
 @app.get("/health", include_in_schema=False)

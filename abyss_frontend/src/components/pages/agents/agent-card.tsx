@@ -2,14 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 
 import { AgentAvatar } from "@/components/layout";
-import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { DeleteAgentDialog } from "@/components/shared/delete-agent-dialog";
 import { Button, Card, Heading, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { agentService } from "@/services";
 import type { Agent } from "@/types";
 
 interface AgentCardProps {
@@ -18,19 +15,6 @@ interface AgentCardProps {
 
 export function AgentCard({ agent }: AgentCardProps) {
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
-  const queryClient = useQueryClient();
-
-  const { mutate: deleteAgent, isPending: isDeleting } = useMutation({
-    mutationFn: () => agentService.deleteAgent(agent.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agents"] });
-      toast.success("Agent deleted");
-      setDeleteOpen(false);
-    },
-    onError: () => {
-      toast.error("The agent wasn't deleted. Try again.");
-    },
-  });
 
   const summary = agentSummary(agent);
   const specialists = agent.sub_agents.length;
@@ -80,16 +64,7 @@ export function AgentCard({ agent }: AgentCardProps) {
         </div>
       </div>
 
-      <ConfirmDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete agent"
-        description={`Delete "${agent.name}" with its specialists and chat history? This can't be undone.`}
-        confirmLabel="Delete agent"
-        variant="destructive"
-        loading={isDeleting}
-        onConfirm={() => deleteAgent()}
-      />
+      <DeleteAgentDialog agent={agent} open={deleteOpen} onOpenChange={setDeleteOpen} />
     </Card>
   );
 }
