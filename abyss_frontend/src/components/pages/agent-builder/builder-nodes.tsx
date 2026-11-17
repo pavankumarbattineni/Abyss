@@ -1,9 +1,13 @@
+import { useState } from "react";
+import Link from "next/link";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import { Button, Heading, Skeleton } from "@/components/ui";
 import { AddServerDialog } from "@/components/pages/mcp/add-server-dialog";
-import type { Agent, AgentToolRef, SubAgent, Tool } from "@/types";
+import { SkillDrawer, useSkills } from "@/components/pages/skills";
+import { SKILL_LIMITS } from "@/lib/skill-limits";
+import type { Agent, AgentToolRef, Skill, SubAgent, Tool } from "@/types";
 import { ToolboxToolsPopover } from "./toolbox-tools-popover";
 
 export enum BuilderNodeId {
@@ -218,29 +222,81 @@ export function SubAgentsNode({ data }: NodeProps<SubAgentsNodeType>) {
   );
 }
 
+/**
+ * The user's skills. They are shared by every agent (nothing to attach): the
+ * agent loads a skill's instructions only when its description fits the task.
+ */
 export function SkillsNode() {
+  const { data: skills = [], isLoading, isError } = useSkills();
+  // undefined = closed, null = new skill, Skill = editing that skill.
+  const [editing, setEditing] = useState<Skill | null | undefined>(undefined);
+  const atLimit = skills.length >= SKILL_LIMITS.perUser;
+
   return (
-    <div className="w-60 overflow-hidden rounded-xl border border-dashed border-border bg-surface-raised/60 opacity-80 shadow-sm">
-      <Handle type="target" position={Position.Top} className="bg-muted-foreground!" />
+    <div className="w-60 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-sm">
+      <Handle type="target" position={Position.Top} className="bg-primary!" />
       <NodeHeader
         label="Skills"
         action={
           <Button
             type="button"
             variant="ghost"
-            size="icon-xs"
-            aria-label="Add skill"
-            disabled
+            size="xs"
+            disabled={isLoading || atLimit}
+            title={atLimit ? `You can have up to ${SKILL_LIMITS.perUser} skills` : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              setEditing(null);
+            }}
           >
             <Plus className="size-3.5" />
+            Add
           </Button>
         }
       />
-      <div className="p-3">
-        <p className="text-xs text-muted-foreground">
-          Coming soon — reusable capabilities you can attach to any agent.
-        </p>
+      <div className="nowheel flex max-h-48 flex-col gap-1 overflow-y-auto p-3">
+        {isLoading ? (
+          <Skeleton className="h-4 w-32" />
+        ) : skills.length > 0 ? (
+          skills.map((skill) => (
+            <div
+              key={skill.id}
+              title={skill.description}
+              className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 hover:bg-muted"
+            >
+              <span className="truncate text-xs text-foreground">{skill.name}</span>
+              <button
+                type="button"
+                aria-label={`Edit skill ${skill.name}`}
+                className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setEditing(skill);
+                }}
+              >
+                <Pencil className="size-3" />
+              </button>
+            </div>
+          ))
+        ) : (
+          <p className="px-1.5 text-xs text-muted-foreground">
+            {isError ? "Failed to load skills." : "No skills yet"}
+          </p>
+        )}
       </div>
+      <div className="flex items-center justify-between gap-2 border-t border-border-soft px-3 py-2 text-xs text-muted-foreground">
+        <span>Shared by all your agents</span>
+        <Link href="/skills" className="shrink-0 hover:text-foreground hover:underline">
+          Manage
+        </Link>
+      </div>
+      <SkillDrawer
+        open={editing !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setEditing(undefined);
+        }}
+        skill={editing}
+      />
     </div>
   );
 }

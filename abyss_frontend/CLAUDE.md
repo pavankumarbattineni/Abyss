@@ -146,6 +146,11 @@ This keeps every route file mechanically identical and puts the actual page logi
 - Connected tools expose an enable/disable switch and a "Reconfigure" action; disabled tools remain connected but are excluded from agent tool-attachment lists.
 - Users can register a custom MCP server by name, URL, and optional bearer token.
 
+### 5.4a Skills
+- `/skills` (sidebar) lists the user's skills; a right drawer creates and edits them (name, description, instructions), with delete behind a confirm dialog. The Agent Builder's Skills node shows the same list and opens the same drawer.
+- Skills belong to the user, not to an agent: every agent and sub-agent can use every skill, so there is nothing to attach. The agent sees each skill's name and description and loads the instructions (`load_skill` tool) only when a skill fits the task.
+- Limits live in `lib/skill-limits.ts` and mirror the backend: name 64 (letters, digits, spaces, `-`, `_`), description 1–1,024, instructions 1,024–32,000, 20 skills per user. `POST /skills` creates (no `id`) or updates (with `id`).
+
 ### 5.5 Model Providers & API Keys
 - Each provider shows connection status and a masked key (first 4 / last 4 chars) once set; "Add key" becomes "Update key" once connected.
 - The default-model list only offers models from `connected` providers, as a single-select.
@@ -433,5 +438,4 @@ The prototype is a static, client-only mock (in-memory state, `setTimeout`-simul
 
 The prototype marks these as future work — do not build them speculatively ahead of a dedicated spec:
 
-- **Skills** — the builder canvas shows a "Coming soon — reusable capabilities you can attach to any agent" placeholder node. Treat as a future first-class entity (likely similar shape to a Tool but user-authored); do not shoehorn it into the Tools domain now.
 - **Chat file attachments** — the composer's "Attach" pill is a placeholder ("coming soon") in the prototype; implement only when the backend defines upload/storage semantics.

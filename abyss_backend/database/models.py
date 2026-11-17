@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.session import Base
-from constants import MCP_CONNECTION_STATUS_CONNECTED, MCP_DEFAULT_TRANSPORT, STREAM_STATUS_PENDING
+from constants import (
+    MCP_CONNECTION_STATUS_CONNECTED, MCP_DEFAULT_TRANSPORT, SKILL_NAME_MAX_LENGTH, STREAM_STATUS_PENDING,
+)
 
 def utcnow() -> datetime:
     """The current time in UTC, timezone-naive -- how every timestamp column
@@ -162,6 +164,31 @@ class AgentTool(BasicModel):
     )
 
     __table_args__ = (UniqueConstraint("agent_id", "tool_id", name="uq_agent_tool"),)
+
+
+class Skill(BasicModel):
+    """A user-written playbook, shared by all of the user's agents and sub-agents.
+
+    Each model call lists only the name and description; the instructions are
+    loaded when the agent decides to use the skill (abyss_agents/skills.py).
+    Nothing references a skill, so deleting removes the row (no soft delete)
+    and a name can be reused right away.
+    """
+    __tablename__ = "skills"
+
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(SKILL_NAME_MAX_LENGTH), nullable=False)
+    # When to use the skill -- the agent chooses by this text.
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    # What to do -- sent to the model only when the skill is loaded.
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+# One name per user, ignoring case (the agent loads a skill by name). Leading
+# with user_id, it also serves "this user's skills" lookups.
+Index("uq_skills_user_name", Skill.user_id, func.lower(Skill.name), unique=True)
 
 
 class Thread(BasicModel):
