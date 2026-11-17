@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_async_session
-from schemas.auth import FirebaseTokenRequest, RefreshRequest, TokenPairResponse, UpdateSettingsRequest, UserResponse
+from schemas.auth import (
+    FirebaseTokenRequest, RefreshRequest, TokenPairResponse, UpdateSettingsRequest, UserResponse,
+)
 from services.firebase_auth_service import authenticate_firebase_user
 from services.oauth_service import OAuthService
 from utils.auth import get_current_user
@@ -75,10 +77,13 @@ async def update_setting(
     user_id: str = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Update the authenticated user's application settings.
+    """Update the authenticated user's application settings (partial update).
+
+    llm_model_id selects the model for all of the user's agents and chats
+    ("default", or a model whose provider key the user has saved).
 
     Args:
-        request: Settings values to persist.
+        request: thinking_enabled and/or llm_model_id; fields left out are unchanged.
         user_id: User ID extracted from the Abyss access token.
         session: Database session used to update the user.
 
@@ -87,6 +92,7 @@ async def update_setting(
 
     Raises:
         HTTPException: If the access token is missing or invalid.
+        HTTPException 422: Empty request, unknown/inactive model, or no saved key for its provider.
     """
     return await oauth_service.update_settings(session, user_id, request)
 

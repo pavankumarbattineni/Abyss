@@ -31,6 +31,15 @@ class User(BasicModel):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     thinking_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # The model all of this user's agents and chats use. NULL means "Default":
+    # resolved per request to the provider_models row with is_platform_default,
+    # on the platform's key, so the platform default can change without
+    # migrating users. Any other model needs the user's key for its provider.
+    llm_model_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("provider_models.id", ondelete="SET NULL", name="fk_users_llm_model_id_provider_models"),
+        nullable=True,
+    )
 
 
 class Provider(BasicModel):
@@ -84,13 +93,6 @@ class Agent(BasicModel):
     # NULL for top-level agents; set to parent Agent.id for sub-agents.
     parent_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("agents.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-    # NULL means "Default" — resolved at request time to whichever ProviderModel
-    # row has is_platform_default=true, using the platform's own OpenAI key.
-    # Never resolved to a concrete model at save time, so the platform default
-    # can change (by flipping is_platform_default) without migrating agent rows.
-    llm_model_id: Mapped[Optional[str]] = mapped_column(
-        String(36), ForeignKey("provider_models.id"), nullable=True
     )
 
 

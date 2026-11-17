@@ -229,7 +229,7 @@ export function Sidebar() {
             </NavTooltip>
           </div>
           {/* Only the agent list scrolls; the navigation above and the footer stay put. */}
-          <nav aria-label="Agents" className="scrollbar-thin scrollbar-muted -mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 pb-1">
+          <nav aria-label="Agents" className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-1 pb-1">
             {isLoading
               ? Array.from({ length: 3 }).map((_, index) => (
                   <div

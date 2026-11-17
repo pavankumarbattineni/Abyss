@@ -87,15 +87,14 @@ class LlmResolution:
 async def resolve_llm_for_agent(
     session: AsyncSession, agent_record: Agent, enable_thinking: bool = True
 ) -> LlmResolution:
-    """Build the LLM this agent should use for the current turn.
+    """Build the LLM for the current turn: the model the agent's owner selected
+    (users.llm_model_id), which every agent and chat of theirs uses.
 
-    agent_record.llm_model_id NULL means "Default": whichever provider_models
-    row is flagged is_platform_default, on the platform's own key for that
-    provider (utils/platform_llm.py), fully isolated from whatever credential the
-    user may have added for a different, explicitly-configured agent. Any
-    other (explicit) selection requires the owning user to have a valid
-    LlmCredential for that model's provider; there is no platform fallback
-    for non-default selections.
+    NULL means "Default": whichever provider_models row is flagged
+    is_platform_default, on the platform's own key for that provider
+    (utils/platform_llm.py). Any other selection requires the user to have a
+    valid LlmCredential for that model's provider; there is no platform
+    fallback for non-default selections.
 
     Returns provider/model/llm_source alongside the built LLM — callers that
     need to attribute token usage/cost (see _run_generation) would otherwise
@@ -105,7 +104,8 @@ async def resolve_llm_for_agent(
     output enabled when the user's thinking toggle is on; otherwise (and for
     every 'prompt' model) it is built plain.
     """
-    if agent_record.llm_model_id is None:
+    llm_model_id = await session.scalar(select(User.llm_model_id).where(User.id == agent_record.user_id))
+    if llm_model_id is None:
         result = await session.execute(
             select(Provider.name, ProviderModel.model_name, ProviderModel.reasoning_mode)
             .join(ProviderModel, ProviderModel.provider_id == Provider.id)
@@ -122,11 +122,11 @@ async def resolve_llm_for_agent(
     result = await session.execute(
         select(Provider.id, Provider.name, ProviderModel.model_name, ProviderModel.reasoning_mode)
         .join(ProviderModel, ProviderModel.provider_id == Provider.id)
-        .where(ProviderModel.id == agent_record.llm_model_id, ProviderModel.is_active == True)
+        .where(ProviderModel.id == llm_model_id, ProviderModel.is_active == True)
     )
     row = result.first()
     if not row:
-        raise ValueError("This agent's selected model is no longer available — please choose another.")
+        raise ValueError("Your selected model is no longer available — choose another in the chat.")
     provider_id, provider, model, mode = row
     native = enable_thinking and mode == REASONING_MODE_NATIVE
 
@@ -455,7 +455,7 @@ async def _run_generation(
 
             llm_resolution = await resolve_llm_for_agent(session, agent_record, enable_thinking)
             # Unlike tokens/reasoning, provider/model/source don't need
-            # resume-seeding — agent_record.llm_model_id can't change mid-run,
+            # resume-seeding — the selected model is resolved again here,
             # so every invocation (initial or resumed) re-derives the identical
             # value independently; nothing to carry across the pause boundary.
             llm_provider_value = llm_resolution.provider
@@ -810,6 +810,11 @@ class ChatService:
 
         user_msg = Message(thread_id=thread_id, role="user", content=user_message)
         session.add(user_msg)
+        # Sending a message is "using" the thread and its agent: both lists are
+        # ordered by updated_at, so they move to the top. created_at is unchanged.
+        used_at = utcnow()
+        thread.updated_at = used_at
+        await session.execute(update(Agent).where(Agent.id == thread.agent_id).values(updated_at=used_at))
         await session.flush()
 
         stream_record = StreamRecord(

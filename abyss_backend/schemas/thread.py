@@ -14,6 +14,8 @@ class ThreadResponse(BaseModel):
     agent_id: str
     title: Optional[str] = None
     created_at: datetime
+    # Last use (a new message) -- thread lists are ordered by it.
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 

@@ -339,6 +339,9 @@ export function useChatStream({
       // that already includes it doesn't show it twice (see mergeMessages).
       const savedUserMessage: Message = { ...userMessage, id: message_id, thread_id: resolvedThreadId };
       setPendingMessages((prev) => prev.map((m) => (m.id === userMessage.id ? savedUserMessage : m)));
+      // Lists are ordered by last use: this thread and agent now move to the top.
+      void queryClient.invalidateQueries({ queryKey: ["threads", agentId] });
+      void queryClient.invalidateQueries({ queryKey: ["agents"], exact: true });
 
       if (isNewThread && onThreadStarted) {
         // Hand the stream to the thread's own page. Seed its messages with this one so it shows

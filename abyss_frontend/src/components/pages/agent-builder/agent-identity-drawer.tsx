@@ -1,8 +1,6 @@
 "use client";
 
-import { useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
-import { toast } from "sonner";
 
 import {
   Button,
@@ -22,7 +20,6 @@ import {
 import type { Agent } from "@/types";
 import { CharacterCount } from "@/components/shared/character-count";
 import { AGENT_TEXT_LIMITS } from "@/lib/agent-limits";
-import { ModelSection } from "./model-section";
 
 interface AgentIdentityDrawerProps {
   open: boolean;
@@ -32,11 +29,9 @@ interface AgentIdentityDrawerProps {
   nameValue?: string;
   descriptionValue?: string;
   instructionsValue?: string;
-  modelValue?: string;
   onNameChange?: (value: string) => void;
   onDescriptionChange?: (value: string) => void;
   onInstructionsChange?: (value: string) => void;
-  onModelChange?: (value: string) => void;
 }
 
 function SectionHeader({ title }: { title: string }) {
@@ -58,21 +53,11 @@ export function AgentIdentityDrawer({
   nameValue,
   descriptionValue,
   instructionsValue,
-  modelValue,
   onNameChange,
   onDescriptionChange,
   onInstructionsChange,
-  onModelChange,
 }: AgentIdentityDrawerProps) {
-  const [modelNeedsApiKey, setModelNeedsApiKey] = useState<boolean>(false);
-
-  const requestClose = () => {
-    if (modelNeedsApiKey) {
-      toast.error("Add an API key for the selected model before closing.");
-      return;
-    }
-    onOpenChange(false);
-  };
+  const requestClose = () => onOpenChange(false);
 
   return (
     <Drawer
@@ -157,17 +142,6 @@ export function AgentIdentityDrawer({
                       max={AGENT_TEXT_LIMITS.instructions}
                     />
                   </div>
-                </CollapsibleContent>
-              </Collapsible>
-
-              <Collapsible defaultOpen className="flex flex-col gap-3 border-t border-border-soft pt-4">
-                <SectionHeader title="Advanced settings" />
-                <CollapsibleContent>
-                  <ModelSection
-                    value={modelValue}
-                    onChange={(value) => onModelChange?.(value)}
-                    onNeedsApiKeyChange={setModelNeedsApiKey}
-                  />
                 </CollapsibleContent>
               </Collapsible>
             </>

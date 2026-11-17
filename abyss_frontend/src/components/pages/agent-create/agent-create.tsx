@@ -45,7 +45,6 @@ export const AgentCreatePage = () => {
   const [selectedTools, setSelectedTools] = useState<AgentToolRef[]>([]);
   // The agent doesn't exist yet, so its skills are kept here and saved with it.
   const [selectedSkills, setSelectedSkills] = useState<AgentSkillRef[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState<string>("default");
   const { width, isDragging, handlePointerDown } = useResizablePanel({
     initialWidth: 380,
     minWidth: 300,
@@ -66,7 +65,6 @@ export const AgentCreatePage = () => {
     name: values.name || "Untitled Agent",
     description: values.description ?? "",
     system_prompt: values.system_prompt ?? "",
-    llm_model_id: selectedModelId,
     tools: selectedTools,
     skills: selectedSkills,
     sub_agents: subAgents,
@@ -104,7 +102,6 @@ export const AgentCreatePage = () => {
           system_prompt: subAgent.system_prompt,
           tools: subAgent.tools.map((tool) => tool.id),
         })),
-        llm_model_id: selectedModelId,
       }),
     onSuccess: (createdAgent) => {
       // Newest first, the order the server lists agents in, so it doesn't move on refresh.
@@ -265,7 +262,6 @@ export const AgentCreatePage = () => {
         nameValue={values.name}
         descriptionValue={values.description ?? ""}
         instructionsValue={values.system_prompt}
-        modelValue={selectedModelId}
         onNameChange={(value) =>
           form.setValue("name", value, { shouldValidate: true })
         }
@@ -275,7 +271,6 @@ export const AgentCreatePage = () => {
         onInstructionsChange={(value) =>
           form.setValue("system_prompt", value, { shouldValidate: true })
         }
-        onModelChange={setSelectedModelId}
       />
 
       <SubAgentDrawer

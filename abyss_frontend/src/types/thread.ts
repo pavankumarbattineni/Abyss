@@ -6,6 +6,8 @@ export interface Thread {
   agent_id: string;
   title: string;
   created_at: string;
+  /** Last use (a new message); thread lists are ordered by it. */
+  updated_at: string;
 }
 
 export interface ThreadCreateRequest {
