@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MoreVertical } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui";
+import { cn } from "@/lib/utils";
 
 export interface ActionMenuItem {
   label: string;
@@ -14,28 +15,50 @@ export interface ActionMenuItem {
 
 interface ActionMenuProps {
   items: ActionMenuItem[];
+  /** Accessible name of the trigger button. */
+  label?: string;
+  triggerClassName?: string;
+  /** Where the menu opens relative to the trigger (default: below, right-aligned). */
+  side?: "top" | "right" | "bottom" | "left";
+  align?: "start" | "center" | "end";
 }
 
-export const ActionMenu = ({ items }: ActionMenuProps) => {
+export const ActionMenu = ({
+  items,
+  label = "More actions",
+  triggerClassName,
+  side = "bottom",
+  align = "end",
+}: ActionMenuProps) => {
   const [open, setOpen] = useState<boolean>(false);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+        <button
+          type="button"
+          aria-label={label}
+          className={cn(
+            "flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            triggerClassName,
+          )}
+        >
           <MoreVertical className="size-3.5" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={6} className="w-40 gap-0 p-1">
+      <PopoverContent side={side} align={align} sideOffset={6} collisionPadding={8} className="w-40 gap-0 p-1">
         {items.map((item) => {
           const Icon = item.icon;
           return (
             <button
+              type="button"
               key={item.label}
               disabled={item.disabled}
               onClick={async () => {
-                await item.onClick();
+                // Close first: an item that opens a dialog then keeps focus,
+                // instead of the closing popover moving it back to the trigger.
                 setOpen(false);
+                await item.onClick();
               }}
               className={
                 item.variant === "destructive"

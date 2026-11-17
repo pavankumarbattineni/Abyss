@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -8,8 +8,10 @@ import {
   ChevronsLeft,
   ChevronsRight,
   LogOut,
+  Pencil,
   Plus,
   Settings,
+  Trash2,
   User,
   X,
 } from "lucide-react";
@@ -27,6 +29,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui";
+import { ActionMenu } from "@/components/shared/action-menu";
+import { DeleteAgentDialog } from "@/components/shared/delete-agent-dialog";
 import { MOBILE_QUERY, useMediaQuery } from "@/hooks";
 import { useAuth } from "@/providers";
 import { agentService, authService } from "@/services";
@@ -85,6 +89,7 @@ export function Sidebar() {
     queryFn: () => agentService.getAgents(),
   });
   const { user, isUserLoading, refreshAuthState } = useAuth();
+  const [deletingAgent, setDeletingAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
     useSidebarStore.persist.rehydrate();
@@ -235,24 +240,61 @@ export function Sidebar() {
                   </div>
                 ))
               : agents.map((agent) => (
-                  <NavTooltip key={agent.id} label={agent.name} show={collapsed}>
-                    <Link
-                      href={`/agents/${agent.id}`}
-                      aria-label={collapsed ? agent.name : undefined}
-                      className={cn(
-                        "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                        isActive(`/agents/${agent.id}`) &&
-                          "bg-accent font-medium text-foreground",
-                      )}
-                    >
-                      <AgentAvatar name={agent.name} className="size-6 text-xs" />
-                      {!collapsed && (
-                        <span className="truncate">{agent.name}</span>
-                      )}
-                    </Link>
-                  </NavTooltip>
+                  <div key={agent.id} className="group/agent relative">
+                    <NavTooltip label={agent.name} show={collapsed}>
+                      <Link
+                        href={`/agents/${agent.id}`}
+                        aria-label={collapsed ? agent.name : undefined}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                          !collapsed && "pr-9",
+                          isActive(`/agents/${agent.id}`) &&
+                            "bg-accent font-medium text-foreground",
+                        )}
+                      >
+                        <AgentAvatar name={agent.name} className="size-6 text-xs" />
+                        {!collapsed && (
+                          <span className="truncate">{agent.name}</span>
+                        )}
+                      </Link>
+                    </NavTooltip>
+                    {!collapsed && (
+                      <div className="absolute top-1/2 right-1 -translate-y-1/2">
+                        <ActionMenu
+                          label={`Actions for ${agent.name}`}
+                          // Opens beside the row, over the page, not over the agent list.
+                          side="right"
+                          align="start"
+                          // Phones have no hover, so the button stays visible there.
+                          triggerClassName="hover:bg-surface-hover md:opacity-0 md:group-hover/agent:opacity-100 md:focus-visible:opacity-100 md:data-[state=open]:opacity-100"
+                          items={[
+                            {
+                              label: "Edit",
+                              icon: Pencil,
+                              onClick: () => router.push(`/agents/${agent.id}/builder`),
+                            },
+                            {
+                              label: "Delete",
+                              icon: Trash2,
+                              variant: "destructive",
+                              onClick: () => setDeletingAgent(agent),
+                            },
+                          ]}
+                        />
+                      </div>
+                    )}
+                  </div>
                 ))}
           </nav>
+          {deletingAgent && (
+            <DeleteAgentDialog
+              agent={deletingAgent}
+              open
+              onOpenChange={(open) => {
+                if (!open) setDeletingAgent(null);
+              }}
+            />
+          )}
         </div>
 
         <div className="flex flex-col gap-1 border-t border-border-soft pt-3">
