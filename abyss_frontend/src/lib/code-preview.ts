@@ -156,25 +156,22 @@ function bridge(channel: string): string {
   window.addEventListener("unhandledrejection", function (e) {
     var r = e.reason; post("error", { message: "Unhandled promise rejection: " + String((r && r.message) || r) });
   });
-  // No navigation away from the preview. A srcdoc page has no address of its
-  // own -- relative URLs resolve against the app's page -- so even "#pricing"
-  // or a plain form submit would load the app inside the frame. In-page
-  // links scroll here instead; every other link does nothing.
-  function scrollToHash(hash) {
-    var id = "";
-    try { id = decodeURIComponent(hash.slice(1)); } catch (_) { id = hash.slice(1); }
-    if (!id || id === "top") { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
-    var target = document.getElementById(id) || document.getElementsByName(id)[0];
-    if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
+  // No navigation away from the preview. The document's own address is
+  // about:srcdoc, and the <base href="about:srcdoc"> that head() puts before
+  // the security policy makes every "#..." URL -- a link, location.href,
+  // location.assign/replace, window.location -- resolve to it: an in-page
+  // hash change (hash routers get their "hashchange"; nothing reloads). Any
+  // other link does nothing here: relative paths can't resolve against
+  // about:srcdoc, and other sites can't open in the preview.
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest && e.target.closest("a[href]");
     if (!a) return;
-    var href = a.getAttribute("href") || "";
+    var href = (a.getAttribute("href") || "").trim();
+    if (href.charAt(0) === "#" && href !== "#" && href !== "#!") return; // in-page: the browser handles it
     // Cancels only the browser's navigation: the page's own click handlers still run.
     e.preventDefault();
-    if (href.charAt(0) === "#") scrollToHash(href);
-    else if (/^(https?:|mailto:|tel:)/i.test(href)) notice("Links to other sites don't open in the preview.");
+    if (href === "#" || href === "#!") return; // a placeholder link (often a button styled as one)
+    if (/^(https?:|mailto:|tel:|\\/\\/)/i.test(href)) notice("Links to other sites don't open in the preview.");
   }, true);
 
   // A small in-page message, standing in for browser dialogs the sandbox blocks.
@@ -231,10 +228,16 @@ function bridge(channel: string): string {
     if (clip) Object.defineProperty(clip, "writeText", { value: writeText, configurable: true });
     else Object.defineProperty(navigator, "clipboard", { value: { writeText: writeText }, configurable: true });
   } catch (_) {}
-  // A form the page doesn't handle itself would submit to the app's address.
+  // A form submission would load a new document (the security policy's
+  // form-action 'none' blocks it too). Captured first, so a page that stops
+  // the event's propagation can't skip it; the page's own submit handlers
+  // still run.
   window.addEventListener("submit", function (e) {
     if (!e.defaultPrevented) e.preventDefault();
-  });
+  }, true);
+  // form.submit() skips the submit event and would reload the page: make it
+  // do nothing (requestSubmit() fires the event, so the guard above covers it).
+  try { HTMLFormElement.prototype.submit = function () {}; } catch (_) {}
   var last = "";
   // A page built to fill the screen (height: 100vh / h-screen) is exactly as
   // tall as the frame, whatever the frame is, so its height says nothing about
@@ -271,8 +274,18 @@ function bridge(channel: string): string {
 })();`;
 }
 
+/**
+ * The page's own address as the base for every relative URL. A srcdoc frame
+ * otherwise resolves them against the app page around it, so "#/menu" or
+ * location.href = "#/cart" would load the app inside the frame. It must come
+ * before the security policy, whose base-uri 'none' blocks any later <base>
+ * (including one in the page itself).
+ */
+export const PREVIEW_BASE = '<base href="about:srcdoc">';
+
 function head(channel: string, runtimeBase: string): string {
   return [
+    PREVIEW_BASE,
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta http-equiv="Content-Security-Policy" content="${policy(runtimeBase)}">`,
@@ -293,10 +306,20 @@ export function withLocalTailwind(code: string, runtimeBase: string): string {
   return code.replace(TAILWIND_CDN_SCRIPT, local);
 }
 
+/**
+ * A meta refresh (a timed redirect or self-reload) loads another document and
+ * can't be cancelled from inside the frame once it starts: drop it.
+ */
+const META_REFRESH = /<meta\b[^>]*\bhttp-equiv\s*=\s*["']?refresh\b[^>]*>/gi;
+
+export function withoutPageRedirects(code: string): string {
+  return code.replace(META_REFRESH, "");
+}
+
 /** The sandboxed document for a model-written HTML page. */
 export function buildHtmlPreview(code: string, channel: string, runtimeBase: string): string {
   const injected = head(channel, runtimeBase);
-  const page = withLocalTailwind(code, runtimeBase);
+  const page = withoutPageRedirects(withLocalTailwind(code, runtimeBase));
   if (/<head[^>]*>/i.test(page)) return page.replace(/<head[^>]*>/i, (tag) => `${tag}\n${injected}`);
   if (/<html[^>]*>/i.test(page)) return page.replace(/<html[^>]*>/i, (tag) => `${tag}\n<head>${injected}</head>`);
   return `<!doctype html><html><head>${injected}</head><body>${page}</body></html>`;

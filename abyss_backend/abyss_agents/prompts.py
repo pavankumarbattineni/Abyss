@@ -126,7 +126,8 @@ _VISUALS = (
     "a live preview -- an ```html page (inline CSS/JS) or a ```jsx React "
     "component with `export default`, importing only \"react\" (Tailwind works). "
     "Offline: no external resources or network. Shown in a ~700px chat column: "
-    "responsive, no fixed pixel widths."
+    "responsive, no fixed pixel widths. Multi-page: #/page links or "
+    "location.hash, never location = URL."
 )
 
 _SUB_AGENT_OUTPUT = (

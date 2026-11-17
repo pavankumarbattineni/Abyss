@@ -23,6 +23,8 @@ export const COMPOSE_EVENT = "abyss:compose";
 
 const MIN_HEIGHT = PREVIEW_SIZES.minHeight;
 const READY_TIMEOUT_MS = 10_000;
+/** After an extra frame load, how long our page has to report "ready" before it counts as having left. */
+const NAVIGATION_CHECK_MS = 2_500;
 const MAX_ERRORS = 3;
 
 interface CodePreviewProps {
@@ -63,10 +65,16 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const [fullscreen, setFullscreen] = useFullscreen();
   const [reloadKey, setReloadKey] = useState<number>(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  // Safety net: a page that changes its own address (e.g. location.href = "...")
-  // would load the app inside the frame. A second load of the same run means it
-  // navigated: reload the preview and say why.
+  // Safety net for navigation the frame can't stop by itself (lib/code-preview.ts
+  // turns "#..." links and location changes into in-page hash changes). Every
+  // load of our own page reports "ready" on this run's channel, which another
+  // document can't do. So a further load is fine when it is our page again
+  // (location.reload()), but if no "ready" follows, the frame left the page:
+  // reload the preview and say why.
   const loads = useRef<{ key: number; count: number }>({ key: -1, count: 0 });
+  const readies = useRef<{ channel: string; count: number }>({ channel: "", count: 0 });
+  const leaveCheck = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(leaveCheck.current), []);
   const [navigatedAway, setNavigatedAway] = useState(false);
   // The width available to the preview, to fit wide or full-screen pages into it.
   // A callback ref: the stage only exists once the page is built (React previews compile first).
@@ -140,6 +148,8 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
         const host = String((data.data as { host?: unknown } | null)?.host ?? "").slice(0, 120);
         if (host) updateFrame((c) => ({ blocked: c.blocked.includes(host) || c.blocked.length >= 8 ? c.blocked : [...c.blocked, host] }));
       } else if (data.type === "ready") {
+        const seen = readies.current.channel === channel ? readies.current.count + 1 : 1;
+        readies.current = { channel, count: seen };
         updateFrame(() => ({ ready: true }));
       } else if (data.type === "error") {
         const message = String((data.data as { message?: unknown } | null)?.message ?? "Error").slice(0, 500);
@@ -167,7 +177,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
     ...(blockedProblem ? [blockedProblem] : []),
     ...(navigatedAway
       ? [
-          "The page tried to open another address (a link or script changing the page location), so the preview was reloaded. Buttons and links should update the page in place instead of navigating.",
+          "The page tried to leave the preview (for example location.href set to a full web address), so the preview was reloaded. Switch pages in place instead: hash links like #/menu, location.hash, or updating the page with JavaScript.",
         ]
       : []),
     ...frame.errors,
@@ -301,10 +311,15 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
                 onLoad={() => {
                   const seen = loads.current.key === reloadKey ? loads.current.count + 1 : 1;
                   loads.current = { key: reloadKey, count: seen };
-                  if (seen > 1) {
+                  if (seen < 2) return;
+                  const run = channel;
+                  window.clearTimeout(leaveCheck.current);
+                  leaveCheck.current = window.setTimeout(() => {
+                    const ours = readies.current.channel === run ? readies.current.count : 0;
+                    if (ours >= seen) return; // our page loaded again (e.g. location.reload())
                     setNavigatedAway(true);
                     setReloadKey((k) => k + 1);
-                  }
+                  }, NAVIGATION_CHECK_MS);
                 }}
                 className="block border-0 bg-white"
                 style={{
