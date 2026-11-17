@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CodeBlock } from "./code-block";
 import { CopyButton } from "./copy-button";
+import { useCanAskToFix } from "./fix-request";
 import { FULLSCREEN_CLASS, useFullscreen } from "./use-fullscreen";
 
 /** Asks the chat composer to prefill a message (handled in chat-panel.tsx). */
@@ -60,6 +61,7 @@ const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: 
  */
 export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const [mode, setMode] = useState<"preview" | "code">("preview");
+  const canAskToFix = useCanAskToFix();
   // Full screen: the card itself becomes a fixed full-viewport layer. The
   // iframe is never moved or re-created, so the running page keeps its state.
   const [fullscreen, setFullscreen] = useFullscreen();
@@ -347,7 +349,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
                   {e}
                 </p>
               ))}
-              {errors.length > 0 && (
+              {errors.length > 0 && canAskToFix && (
                 <Button variant="outline" size="xs" className="self-start" onClick={askToFix}>
                   Ask the agent to fix it
                 </Button>

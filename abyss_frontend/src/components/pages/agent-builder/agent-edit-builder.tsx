@@ -18,15 +18,20 @@ import { mergeMessages } from "@/lib/chat-messages";
 import { cn } from "@/lib/utils";
 import { agentService, threadService } from "@/services";
 import type { Agent, AgentToolRef, Message, SubAgent, Tool } from "@/types";
+import { AGENT_TEXT_LIMITS } from "@/lib/agent-limits";
 import { AgentIdentityDrawer } from "./agent-identity-drawer";
 import { BuilderCanvas } from "./builder-canvas";
 import { ChatThreadPopover } from "./chat-thread-popover";
 import { SubAgentDrawer, type SubAgentFormValues } from "./sub-agent-drawer";
 
 const editAgentSchema = z.object({
-  name: z.string().trim().min(1, "Name is required"),
-  description: z.string().trim().optional(),
-  system_prompt: z.string().trim().min(1, "Instructions are required"),
+  name: z.string().trim().min(1, "Name is required").max(AGENT_TEXT_LIMITS.name, "Name is too long"),
+  description: z.string().trim().max(AGENT_TEXT_LIMITS.description, "Description is too long").optional(),
+  system_prompt: z
+    .string()
+    .trim()
+    .min(1, "Instructions are required")
+    .max(AGENT_TEXT_LIMITS.instructions, "Instructions are too long"),
 });
 
 type EditAgentValues = z.infer<typeof editAgentSchema>;

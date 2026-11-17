@@ -170,3 +170,48 @@ class ActOrAnswerGuard(AgentMiddleware):
         return await handler(
             request.override(messages=[*request.messages, HumanMessage(ACT_OR_ANSWER_NUDGE)])
         )
+
+
+REASONING_REMINDER = (
+    "\n\n[Note from the system, not the user] Start your reply with your brief "
+    "<reasoning> block, even if the message above asks for a specific format, "
+    "then act or answer."
+)
+
+
+def _is_user_question(message: Any) -> bool:
+    """A message the user wrote -- not a conversation summary or a system nudge."""
+    return isinstance(message, HumanMessage) and not message.additional_kwargs.get("lc_source")
+
+
+def with_reasoning_reminder(messages: list) -> list:
+    """The messages with REASONING_REMINDER after the latest user question."""
+    index = next((i for i in range(len(messages) - 1, -1, -1) if _is_user_question(messages[i])), None)
+    if index is None:
+        return messages
+    question = messages[index]
+    content = question.content
+    if isinstance(content, str):
+        new_content: Any = content + REASONING_REMINDER
+    else:
+        new_content = [*content, {"type": "text", "text": REASONING_REMINDER}]
+    return [*messages[:index], question.model_copy(update={"content": new_content}), *messages[index + 1:]]
+
+
+class ReasoningReminderMiddleware(AgentMiddleware):
+    """Repeats the prompt-protocol reasoning instruction right after the question.
+
+    With prompt-based reasoning (REASONING_INSTRUCTION in the system prompt),
+    a model can skip the <reasoning> block when the user's message dictates a
+    format of its own (e.g. "answer in sections A-E") -- the thinking panel
+    then stays empty although thinking is on. The instruction placed after the
+    latest question is what the model reads last. View only: the saved
+    conversation, summaries and the user's message are unchanged. Used only
+    when the prompt protocol is active (thinking on, no native reasoning).
+    """
+
+    def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+        return handler(request.override(messages=with_reasoning_reminder(request.messages)))
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        return await handler(request.override(messages=with_reasoning_reminder(request.messages)))

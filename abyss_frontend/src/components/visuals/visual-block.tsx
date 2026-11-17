@@ -7,6 +7,7 @@ import { Button, Dialog, DialogContent, DialogTitle } from "@/components/ui";
 import { CodeBlock } from "@/components/shared/code-block";
 import { COMPOSE_EVENT } from "@/components/shared/code-preview";
 import { CopyButton } from "@/components/shared/copy-button";
+import { useCanAskToFix } from "@/components/shared/fix-request";
 import { parseVisual, sniffFormat } from "@/lib/visuals/parse";
 import { VISUAL_FORMAT_META, visualToText } from "@/lib/visuals/registry";
 import type { VisualData, VisualFormatName } from "@/lib/visuals/schemas";
@@ -62,6 +63,7 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
   const parsed = useMemo(() => (isStreaming ? null : parseVisual(source)), [source, isStreaming]);
   const [view, setView] = useState<"visual" | "data">("visual");
   const [fullscreen, setFullscreen] = useState(false);
+  const canAskToFix = useCanAskToFix();
 
   const format = parsed?.format ?? sniffFormat(source);
   const meta = format ? VISUAL_FORMAT_META[format] : null;
@@ -94,9 +96,11 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
               {e}
             </p>
           ))}
-          <Button variant="outline" size="xs" onClick={askToFix}>
-            Ask the agent to fix it
-          </Button>
+          {canAskToFix && (
+            <Button variant="outline" size="xs" onClick={askToFix}>
+              Ask the agent to fix it
+            </Button>
+          )}
         </div>
       </div>
     );

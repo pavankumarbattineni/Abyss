@@ -27,6 +27,7 @@ import { contentForCopy } from "@/lib/interactive";
 import { agentService } from "@/services";
 import { AttachMenu } from "./attach-menu";
 import { CopyButton } from "./copy-button";
+import { FixRequestContext } from "./fix-request";
 import { MarkdownContent } from "./markdown-content";
 import { RelativeTime } from "./relative-time";
 import { ReasoningPanel } from "./reasoning-panel";
@@ -82,6 +83,8 @@ export function ChatPanel({
   const [draft, setDraft] = useState<string>("");
   const [spacerHeight, setSpacerHeight] = useState<number>(0);
   const hasThread = messages !== undefined;
+  // The newest saved answer: the only one whose previews/visuals offer "Ask the agent to fix it".
+  const lastAnswerIndex = messages?.findLastIndex((m) => m.role === "assistant") ?? -1;
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const lastMessageIdRef = useRef<string | null>(null);
@@ -378,7 +381,12 @@ export function ChatPanel({
                               <ReasoningPanel trace={reasoningTrace} isStreaming={false} agentNames={agentNames} />
                             )
                           )}
-                          {message.content && <MarkdownContent content={message.content} />}
+                          {message.content && (
+                            // Only the latest answer offers "Ask the agent to fix it" (see fix-request.ts).
+                            <FixRequestContext.Provider value={!isStreaming && index === lastAnswerIndex}>
+                              <MarkdownContent content={message.content} />
+                            </FixRequestContext.Provider>
+                          )}
                           {message.is_partial && (
                             <div
                               className={cn(

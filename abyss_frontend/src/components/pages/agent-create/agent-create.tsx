@@ -17,14 +17,19 @@ import { useResizablePanel } from "@/hooks";
 import { cn } from "@/lib/utils";
 import { agentService } from "@/services";
 import type { Agent, AgentToolRef, SubAgent, Tool } from "@/types";
+import { AGENT_TEXT_LIMITS } from "@/lib/agent-limits";
 import { AgentIdentityDrawer } from "../agent-builder/agent-identity-drawer";
 import { BuilderCanvas } from "../agent-builder/builder-canvas";
 import { SubAgentDrawer, type SubAgentFormValues } from "../agent-builder/sub-agent-drawer";
 
 const createAgentSchema = z.object({
-  name: z.string().trim().min(1, "Name is required"),
-  description: z.string().trim().optional(),
-  system_prompt: z.string().trim().min(1, "Instructions are required"),
+  name: z.string().trim().min(1, "Name is required").max(AGENT_TEXT_LIMITS.name, "Name is too long"),
+  description: z.string().trim().max(AGENT_TEXT_LIMITS.description, "Description is too long").optional(),
+  system_prompt: z
+    .string()
+    .trim()
+    .min(1, "Instructions are required")
+    .max(AGENT_TEXT_LIMITS.instructions, "Instructions are too long"),
 });
 
 type CreateAgentValues = z.infer<typeof createAgentSchema>;

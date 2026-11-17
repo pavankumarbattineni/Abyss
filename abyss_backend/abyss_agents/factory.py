@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from abyss_agents.middleware import (
     ActOrAnswerGuard,
+    ReasoningReminderMiddleware,
     TRANSIENT_LLM_EXCEPTIONS,
     SubAgentCallLimitMiddleware,
     ToolApprovalMiddleware,
@@ -151,6 +152,7 @@ async def build_agent(
                 _model_retry(),
                 ActOrAnswerGuard(),
                 ModelCallLimitMiddleware(run_limit=_SUB_AGENT_MODEL_CALL_LIMIT),
+                *([ReasoningReminderMiddleware()] if prompt_reasoning else []),
             ],
             name=tool_name,
         )
@@ -178,6 +180,9 @@ async def build_agent(
         middleware.append(PastTurnTrimMiddleware())
     # A message starting with /<format> gets that visual format's spec for the turn.
     middleware.append(VisualFormatMiddleware())
+    # Prompt-protocol reasoning: repeat the instruction after the question (view only).
+    if prompt_reasoning:
+        middleware.append(ReasoningReminderMiddleware())
 
     graph = create_agent(
         llm,
