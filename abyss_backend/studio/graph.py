@@ -29,31 +29,27 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 from langchain.agents import create_agent
 from sqlalchemy import select
 
-from config import config
 from abyss_agents.factory import PARENT_AGENT_NAME, build_agent
 from database.models import Agent, AgentTool, MCPTool
 from database.session import async_session_maker
+from utils.platform_llm import build_platform_llm, configured_default
 
 logger = logging.getLogger(__name__)
 
 # ── Shared LLM ───────────────────────────────────────────────────────────
 
-_llm: ChatOpenAI | None = None
-
-_llm_cfg = config["LLM"]
+_llm: BaseChatModel | None = None
 
 
-def _get_llm() -> ChatOpenAI:
+def _get_llm() -> BaseChatModel:
     global _llm
     if _llm is None:
-        _llm = ChatOpenAI(
-            model=_llm_cfg["openai_model"],
-            api_key=_llm_cfg["openai_api_key"],
-        )
+        provider, model = configured_default()
+        _llm = build_platform_llm(provider, model)
     return _llm
 
 
