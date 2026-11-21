@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import asyncio
+from uuid import uuid4
 
 import anyio
 import httpx
@@ -458,13 +459,19 @@ class ContinueCutOffAnswer(AgentMiddleware):
         return response
 
 
-# Custom stream event: a model call failed part-way and is made again, so the
-# chat drops what that call had shown (services/stream_projector.py).
-RESTART_EVENT = "abyss_answer_restart"
 # Provider trouble that passes: an outage or overload (503/529), a timeout, a
 # dropped connection. Waits before each new try.
 _RESTART_DELAYS = (3.0, 8.0, 20.0)
 _PASSING_ERRORS = {"provider_unavailable", "provider_timeout", "provider_unreachable"}
+# Custom stream events between RestartFailedReply and the chat's stream
+# projector (services/stream_projector.py), which knows what was shown:
+# CALL_START_EVENT marks where a model call's answer text begins; on
+# RESUME_EVENT the projector hands back the text that call has shown (via
+# resolve_resume), taking its last line back so it can be written again.
+CALL_START_EVENT = "abyss_model_call_start"
+RESUME_EVENT = "abyss_answer_resume"
+_RESUME_WAIT_SECONDS = 10
+_resume_requests: dict[str, asyncio.Future] = {}
 
 
 def is_passing_provider_error(exc: BaseException) -> bool:
@@ -478,36 +485,96 @@ def is_passing_provider_error(exc: BaseException) -> bool:
     return code in _PASSING_ERRORS
 
 
-class RestartFailedReply(AgentMiddleware):
-    """Makes a model call again when the provider fails part-way through it.
+def resolve_resume(request_id: str, shown: dict) -> None:
+    """Called by the stream projector with what a failed model call had shown."""
+    future = _resume_requests.pop(request_id, None)
+    if future is not None and not future.done():
+        future.set_result(shown)
 
-    A provider outage ("503 high demand"), timeout or dropped connection in
-    the middle of a long reply would otherwise end the turn with half an
-    answer. The text the failed call already streamed is taken back from the
-    chat first (RESTART_EVENT), so the new try starts clean -- nothing shown
-    twice -- then the call is made again, after a short wait, up to
-    len(_RESTART_DELAYS) times. Other errors are raised at once.
+
+async def _dispatch(name: str, data: dict) -> bool:
+    try:
+        await adispatch_custom_event(name, data)
+        return True
+    except RuntimeError:  # no run to tell (direct call, tests)
+        return False
+
+
+async def _shown_by_failed_call() -> dict | None:
+    """What the failed call showed in the chat (its last line already taken
+    back): {"text", "line", "tail", "in_code"}; None if nothing answers."""
+    request_id = uuid4().hex
+    future = asyncio.get_running_loop().create_future()
+    _resume_requests[request_id] = future
+    if not await _dispatch(RESUME_EVENT, {"request_id": request_id}):
+        _resume_requests.pop(request_id, None)
+        return None
+    try:
+        return await asyncio.wait_for(future, timeout=_RESUME_WAIT_SECONDS)
+    except asyncio.TimeoutError:
+        _resume_requests.pop(request_id, None)
+        return None
+
+
+def resume_note(line: str, in_code: bool) -> str:
+    """The note asking the model to go on after a failed call."""
+    reason = "by a connection problem with the model provider"
+    base = (CONTINUE_LINE_NUDGE + removed_line_note(line)) if line else CONTINUE_NUDGE
+    return base.replace("by the output length limit", reason) + (CONTINUE_IN_CODE_NOTE if in_code else "")
+
+
+class RestartFailedReply(AgentMiddleware):
+    """Tries a model call again when the provider fails part-way through it.
+
+    A provider outage ("503 high demand"), timeout or dropped connection would
+    otherwise end the turn. After a short wait the call is made again, up to
+    len(_RESTART_DELAYS) times. When it had already shown part of the answer
+    (`visible`: the main agent, whose text the user sees), that text stays:
+    the next try continues it from the start of its last line, exactly as a
+    reply cut off at the output limit is continued -- nothing disappears or
+    is shown twice. If the provider stays down, the error reaches the chat,
+    which saves what was shown as a partial reply. Other errors are raised at once.
     """
 
-    def __init__(self, delays: tuple[float, ...] = _RESTART_DELAYS) -> None:
+    def __init__(self, delays: tuple[float, ...] = _RESTART_DELAYS, visible: bool = False) -> None:
         super().__init__()
         self.delays = delays
+        self.visible = visible
 
     async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        if self.visible:
+            await _dispatch(CALL_START_EVENT, {})
+        current = request
+        partial: AIMessage | None = None
+        tail, in_code = "", False
         for attempt, delay in enumerate((*self.delays, None), start=1):
             try:
-                return await handler(request)
+                response = await handler(current)
             except GraphBubbleUp:
                 raise
             except Exception as exc:
                 if delay is None or not is_passing_provider_error(exc):
                     raise
                 logger.warning("Model call failed (%r); trying again (%d/%d)", exc, attempt, len(self.delays))
-                try:
-                    await adispatch_custom_event(RESTART_EVENT, {})
-                except RuntimeError:  # no run to tell (direct call, tests)
-                    pass
+                shown = await _shown_by_failed_call() if self.visible else None
+                if shown and shown.get("text"):
+                    partial = AIMessage(shown["text"])
+                    tail, in_code = shown.get("tail", ""), bool(shown.get("in_code"))
+                    note = resume_note(shown.get("line", ""), in_code)
+                    current = request.override(messages=[*request.messages, partial, system_note(note)])
+                else:
+                    partial, current = None, request
                 await asyncio.sleep(delay)
+                continue
+            if partial is None:
+                return response
+            index = next(
+                (i for i in range(len(response.result) - 1, -1, -1) if isinstance(response.result[i], AIMessage)),
+                None,
+            )
+            if index is not None:
+                response.result[index] = join_replies(partial, _with_clean_seam(response.result[index], tail, in_code))
+            return response
         raise AssertionError("unreachable")
 
 

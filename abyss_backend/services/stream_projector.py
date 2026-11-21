@@ -27,7 +27,16 @@ from collections.abc import Callable
 from langchain_core.messages import AIMessage, ToolMessage
 
 from abyss_agents.factory import PARENT_AGENT_NAME
-from abyss_agents.middleware import CONTINUE_EVENT, RESTART_EVENT, SeamFilter
+from abyss_agents.middleware import (
+    CALL_START_EVENT,
+    CONTINUE_EVENT,
+    RESUME_EVENT,
+    SeamFilter,
+    in_open_code_block,
+    resolve_resume,
+    seam_tail,
+    unfinished_line,
+)
 from utils.fake_tool_call import CallTextFilter
 from utils.reasoning_splitter import ReasoningSplitter
 from utils.tool_output import extract_tool_output
@@ -79,6 +88,7 @@ class StreamProjector:
         self._continuing: dict[str, tuple[str, bool]] = {}  # label → (tail, in_code) for its next call
         self._seam_filters: dict[str, SeamFilter] = {}
         self._run_seams: dict[str, tuple[str, bool]] = {}  # run_id → the seam it continues at
+        self._call_start: dict[str, int] = {}  # label → len(content_tokens) when its model call began
         self._is_final: dict[str, bool] = {}
         self._turn_start: dict[str, int] = {}        # run_id → len(content_tokens) at turn start
         self._reasoning_buffers: dict[str, list[str]] = {}
@@ -124,8 +134,10 @@ class StreamProjector:
             self._on_tool_end(event, label, ns)
         elif kind == "on_chain_end":
             self._on_chain_end(event, node, label)
-        elif kind == "on_custom_event" and event.get("name") == RESTART_EVENT:
-            self._on_restart(label)
+        elif kind == "on_custom_event" and event.get("name") == CALL_START_EVENT:
+            self._call_start[label] = len(self.content_tokens)
+        elif kind == "on_custom_event" and event.get("name") == RESUME_EVENT:
+            self._on_resume(label, str((event.get("data") or {}).get("request_id") or ""))
         elif kind == "on_custom_event" and event.get("name") == CONTINUE_EVENT:
             data = event.get("data") or {}
             self._on_continue(label, str(data.get("rewind") or ""), bool(data.get("in_code")), str(data.get("tail") or ""))
@@ -180,22 +192,25 @@ class StreamProjector:
                 remaining = 0
         self._emit("answer_rewind", {"text": text})
 
-    def _on_restart(self, label: str) -> None:
-        """A model call failed part-way and is made again
-        (abyss_agents/middleware.py RestartFailedReply): take back the answer
-        text that call showed, so the new try isn't shown after it."""
+    def _on_resume(self, label: str, request_id: str) -> None:
+        """A model call failed part-way and will be tried again, continuing
+        what it showed (abyss_agents/middleware.py RestartFailedReply): hand
+        back that text, its unfinished last line taken off here and in the
+        chat (answer_rewind) to be written again, like a cut-off reply."""
+        shown: dict = {"text": ""}
         run_id = self._last_run.get(label)
-        if run_id is None or not self._is_final.get(run_id):
-            return  # a specialist's text is never shown
-        self._seam_filters.pop(run_id, None)  # the half-held start is dropped with the rest
-        self._flush_run(run_id)
-        start = self._turn_start.get(run_id, 0)
-        shown = "".join(self.content_tokens[start:])
-        if shown:
-            self._take_back(shown)
-        # A failed continuation is tried again as a continuation.
-        if run_id in self._run_seams:
-            self._continuing[label] = self._run_seams[run_id]
+        if run_id is not None and self._is_final.get(run_id):
+            self._flush_run(run_id)
+            text = "".join(self.content_tokens[self._call_start.get(label, len(self.content_tokens)):])
+            if text:
+                line = unfinished_line(AIMessage(text))
+                if line:
+                    self._take_back(line)
+                    text = text[: len(text) - len(line)]
+                tail, in_code = seam_tail(text), in_open_code_block(text)
+                self._continuing[label] = (tail, in_code)
+                shown = {"text": text, "line": line, "tail": tail, "in_code": in_code}
+        resolve_resume(request_id, shown)
 
     def _on_continue(self, label: str, line: str, in_code: bool = False, tail: str = "") -> None:
         """A cut-off answer is about to be continued, its unfinished last line

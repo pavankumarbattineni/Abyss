@@ -213,8 +213,8 @@ async def build_agent(
         ActOrAnswerGuard(),
         # A reply cut off at the output limit is continued until complete.
         ContinueCutOffAnswer(constants.MAX_ANSWER_CONTINUATIONS),
-        # A provider outage part-way through a reply: shown text taken back, call made again.
-        RestartFailedReply(),
+        # A provider outage part-way through a reply: tried again, continuing what was shown.
+        RestartFailedReply(visible=True),
         ModelCallLimitMiddleware(run_limit=MAX_AGENT_ITERATIONS),
         # History: summarize at turn start (sized to the selected model), then
         # send earlier turns as question + answer only (abyss_agents/history.py).
