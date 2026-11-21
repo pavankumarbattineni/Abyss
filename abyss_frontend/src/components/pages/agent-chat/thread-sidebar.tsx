@@ -7,6 +7,7 @@ import { ChevronsLeft, Menu, MessageSquare } from "lucide-react";
 
 import { ThreadTooltip } from "@/components/shared/thread-tooltip";
 import { Button, Heading, Skeleton } from "@/components/ui";
+import { useStableOrder } from "@/hooks";
 import { cn } from "@/lib/utils";
 import { threadService } from "@/services";
 import type { Agent, Thread } from "@/types";
@@ -41,6 +42,8 @@ export function ThreadSidebar({
     queryKey: ["threads", agentId],
     queryFn: () => threadService.getThreads(agentId),
   });
+  // Recent-first, but never re-sorted under the pointer (see useStableOrder).
+  const { items: listedThreads, bind: holdThreadOrder } = useStableOrder(threads, (thread) => thread.id);
 
   return (
     <aside
@@ -86,15 +89,15 @@ export function ThreadSidebar({
             </Button>
           </div>
 
-          <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+          <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2" {...holdThreadOrder}>
             {isThreadsLoading ? (
               <div className="flex flex-col gap-1.5 px-2 py-1">
                 <Skeleton className="h-8 w-full" />
                 <Skeleton className="h-8 w-full" />
                 <Skeleton className="h-8 w-full" />
               </div>
-            ) : threads.length > 0 ? (
-              threads.map((thread) => {
+            ) : listedThreads.length > 0 ? (
+              listedThreads.map((thread) => {
                 const isActive = pathname === `/agents/${agentId}/threads/${thread.id}`;
                 return (
                   <div
