@@ -9,6 +9,7 @@ import {
   buildReactPreview,
   compileReactComponent,
   downloadableHtml,
+  PREVIEW_LIBRARY_NAMES,
   PREVIEW_SIZES,
   previewFrameLayout,
   type PreviewKind,
@@ -205,7 +206,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   // Blocked files usually explain a page that looks unstyled or does nothing:
   // say so plainly, as one problem the agent can fix.
   const blockedProblem = frame.blocked.length
-    ? `The page tries to load files from the internet (${frame.blocked.join(", ")}), which the preview blocks for security. Rebuild it as one self-contained file: only the libraries the preview provides (three, gsap, chart.js, d3, lucide), no other external scripts, stylesheets or data.`
+    ? `The page tries to load files from the internet (${frame.blocked.join(", ")}), which the preview blocks for security. Rebuild it as one self-contained file: only the libraries the preview provides (${PREVIEW_LIBRARY_NAMES}), no other external scripts, stylesheets or data.`
     : null;
   // Images, media and web fonts from the internet only change the look: a
   // note, not a problem to fix.
