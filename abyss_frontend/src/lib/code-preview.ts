@@ -55,16 +55,41 @@ const THREE_GLOBAL_ADDONS = new Set([
 ]);
 
 type LibName = "three" | "gsap" | "chart.js" | "d3" | "lucide" | "aos" | "animejs" | "lenis" | "swiper";
+
+/**
+ * Every name a page may use for a supported library: npm names, current and
+ * former (Lenis was @studio-freight/lenis), cdnjs names and GitHub
+ * repositories (jsDelivr's /gh/owner/repo form). Lower case.
+ */
 const LIB_ALIASES: Record<string, LibName> = {
-  three: "three", "three.js": "three", gsap: "gsap", "chart.js": "chart.js", d3: "d3", lucide: "lucide",
-  aos: "aos", animejs: "animejs", lenis: "lenis", swiper: "swiper",
+  three: "three", "three.js": "three", "mrdoob/three.js": "three",
+  gsap: "gsap", "greensock/gsap": "gsap",
+  "chart.js": "chart.js", "chartjs/chart.js": "chart.js",
+  d3: "d3", "d3/d3": "d3",
+  lucide: "lucide", "lucide-icons/lucide": "lucide",
+  aos: "aos", "michalsnik/aos": "aos",
+  animejs: "animejs", "juliangarnier/anime": "animejs",
+  lenis: "lenis", "@studio-freight/lenis": "lenis", "studio-freight/lenis": "lenis", "darkroomengineering/lenis": "lenis",
+  swiper: "swiper", "nolimits4web/swiper": "swiper",
 };
+
+/** What the preview provides, as the error for a blocked file names it. */
+export const PREVIEW_LIBRARY_NAMES =
+  "three.js (+ addons), GSAP (+ plugins), Chart.js, d3, lucide, AOS, anime.js, Lenis, Swiper and Tailwind";
+
 /** The stylesheet each library ships, if any. */
 const LIBRARY_CSS: Partial<Record<LibName, string>> = {
   aos: "aos/aos.css",
   lenis: "lenis/lenis.css",
   swiper: "swiper/swiper-bundle.min.css",
 };
+
+/** GSAP 2 names: GSAP 3's build still defines these globals. */
+const GSAP_LEGACY = new Set(["tweenmax", "tweenlite", "timelinemax", "timelinelite", "cssplugin"]);
+
+function gsapPlugin(name: string): string | undefined {
+  return GSAP_PLUGINS.find((plugin) => plugin.toLowerCase() === name.toLowerCase());
+}
 
 /** Local file (under lib/) for a library file a page loads with <script src>; null if not ours. */
 function classicFile(lib: LibName, path: string): string | null {
@@ -74,8 +99,9 @@ function classicFile(lib: LibName, path: string): string | null {
       return /\/examples\/js\//.test(path) ? "noop.js" : /module|\/examples\/jsm\/|\/addons\//.test(path) ? null : "three.global.js";
     case "gsap": {
       const name = /\/([A-Za-z0-9]+)(\.min)?\.js$/.exec(path)?.[1];
-      if (name && GSAP_PLUGINS.includes(name)) return `gsap/${name}.min.js`;
-      return name && name !== "gsap" && name !== "all" ? null : "gsap/gsap.min.js";
+      const plugin = name && gsapPlugin(name);
+      if (plugin) return `gsap/${plugin}.min.js`;
+      return name && name !== "gsap" && name !== "all" && !GSAP_LEGACY.has(name.toLowerCase()) ? null : "gsap/gsap.min.js";
     }
     case "chart.js":
       return "chart.umd.min.js";
@@ -112,22 +138,69 @@ function moduleFile(lib: LibName, path: string): string | null {
 }
 
 /**
- * A CDN URL: jsDelivr, unpkg, esm.sh, Skypack, JSPM (package[@version][/path])
- * or cdnjs (library/version/file).
+ * A CDN URL: jsDelivr (/npm/ and GitHub /gh/), unpkg, esm.sh, esm.run,
+ * Skypack, JSPM (ga.jspm.io and jspm.dev) -- package[@version][/path], the
+ * package possibly scoped or an owner/repo -- or cdnjs (library/version/file).
  */
 const CDN_URL =
-  /(?:https?:)?\/\/(?:cdn\.jsdelivr\.net\/npm\/|unpkg\.com\/|esm\.sh\/(?:v\d+\/)?|cdn\.skypack\.dev\/|ga\.jspm\.io\/npm:|(cdnjs\.cloudflare\.com\/ajax\/libs\/))([A-Za-z][\w.-]*)(?:@[\w.^~-]+)?(\/[^\s"'`)?#]*)?(?:\?[^\s"'`)#]*)?/g;
+  /(?:https?:)?\/\/(?:cdn\.jsdelivr\.net\/(?:npm|gh)\/|unpkg\.com\/|esm\.sh\/(?:v\d+\/)?|esm\.run\/|cdn\.skypack\.dev\/|ga\.jspm\.io\/npm:|jspm\.dev\/(?:npm:)?|(cdnjs\.cloudflare\.com\/ajax\/libs\/))((?:@?[\w.-]+\/)?[A-Za-z][\w.-]*)(?:@[\w.^~-]+)?(\/[^\s"'`)?#]*)?(?:\?[^\s"'`)#]*)?/g;
+
+function libraryOf(name: string, rawPath: string): { lib: LibName; path: string } | null {
+  const key = name.toLowerCase();
+  if (LIB_ALIASES[key]) return { lib: LIB_ALIASES[key], path: rawPath };
+  // "three/build/three.module.js" with no version: the name took a path segment.
+  const [first, ...rest] = key.split("/");
+  if (rest.length && LIB_ALIASES[first]) return { lib: LIB_ALIASES[first], path: `/${name.split("/").slice(1).join("/")}${rawPath}` };
+  return null;
+}
 
 function localLibraryUrl(match: RegExpExecArray | string[], base: string, classic: boolean): string | null {
   const [, cdnjs, name, rawPath = ""] = match;
-  const lib = LIB_ALIASES[name.toLowerCase()];
-  if (!lib) return null;
+  const found = libraryOf(name, rawPath);
+  if (!found) return null;
   // cdnjs puts the version first: /ajax/libs/three.js/r128/three.min.js
-  const path = cdnjs ? rawPath.replace(/^\/[^/]+/, "") : rawPath;
+  const path = cdnjs ? found.path.replace(/^\/[^/]+/, "") : found.path;
   // A library's own stylesheet; other files of these packages aren't served.
-  if (/\.css$/i.test(path)) return LIBRARY_CSS[lib] ? `${base}/${LIB}/${LIBRARY_CSS[lib]}` : null;
+  if (/\.css$/i.test(path)) return LIBRARY_CSS[found.lib] ? `${base}/${LIB}/${LIBRARY_CSS[found.lib]}` : null;
   if (/\.(map|json)$/i.test(path)) return null;
-  const file = classic ? classicFile(lib, path) : moduleFile(lib, path);
+  const file = classic ? classicFile(found.lib, path) : moduleFile(found.lib, path);
+  return file ? `${base}/${LIB}/${file}` : null;
+}
+
+/**
+ * The safety net: a library file recognised by its file name, whatever the
+ * host or URL shape (a mirror, a raw GitHub file, an unusual CDN path), so a
+ * supported library is never blocked just because of where it was linked from.
+ */
+const LIBRARY_FILE = /^(?:https?:)?\/\/[^\s"'`)]+\/([\w.-]+?)(?:[.-]min)?\.(m?js|css)(?:[?#][^\s"'`)]*)?$/i;
+
+function fileByName(url: string, base: string, context: "classic" | "module" | "css"): string | null {
+  if (url.startsWith(base)) return null; // already ours
+  const match = LIBRARY_FILE.exec(url);
+  if (!match) return null;
+  // d3's own site serves versioned names: d3.v7.min.js.
+  const name = match[1].toLowerCase().replace(/^d3\.v\d+$/, "d3");
+  const ext = match[2].toLowerCase();
+  let file: string | null = null;
+  if (ext === "css" || context === "css") {
+    file = { aos: "aos/aos.css", lenis: "lenis/lenis.css", swiper: "swiper/swiper-bundle.min.css", "swiper-bundle": "swiper/swiper-bundle.min.css" }[name] ?? null;
+  } else if (context === "classic" && ext === "js") {
+    const plugin = gsapPlugin(name);
+    file = plugin
+      ? `gsap/${plugin}.min.js`
+      : GSAP_LEGACY.has(name)
+        ? "gsap/gsap.min.js"
+        : ({
+            three: "three.global.js", gsap: "gsap/gsap.min.js", chart: "chart.umd.min.js", "chart.umd": "chart.umd.min.js",
+            d3: "d3.min.js", lucide: "lucide.min.js", aos: "aos/aos.js", anime: "anime/anime.min.js",
+            lenis: "lenis/lenis.min.js", swiper: "swiper/swiper-bundle.min.js", "swiper-bundle": "swiper/swiper-bundle.min.js",
+          } as Record<string, string>)[name] ?? null;
+  } else {
+    file = ({
+      "three.module": "three/build/three.module.js", three: "three/build/three.module.js", "anime.es": "anime/anime.es.js",
+      lenis: "lenis/lenis.mjs", d3: "d3.mjs", "swiper-bundle": "swiper/swiper-bundle.min.mjs", chart: "chart.mjs", lucide: "lucide.mjs",
+    } as Record<string, string>)[name] ?? null;
+  }
   return file ? `${base}/${LIB}/${file}` : null;
 }
 
@@ -148,6 +221,7 @@ export function libraryImportMap(runtimeBase: string): Record<string, string> {
     lucide: `${lib}/lucide.mjs`,
     animejs: `${lib}/anime/anime.es.js`,
     lenis: `${lib}/lenis/lenis.mjs`,
+    "@studio-freight/lenis": `${lib}/lenis/lenis.mjs`,
     swiper: `${lib}/swiper/swiper-bundle.min.mjs`,
     "swiper/bundle": `${lib}/swiper/swiper-bundle.min.mjs`,
   };
@@ -159,27 +233,42 @@ export function libraryImportMap(runtimeBase: string): Record<string, string> {
 }
 
 const SCRIPT_SRC_TAG = /<script\b([^>]*?)\bsrc\s*=\s*(["'])(.*?)\2([^>]*)>/gi;
+const STYLESHEET_TAG = /<link\b([^>]*?)\bhref\s*=\s*(["'])(.*?)\2([^>]*)>/gi;
 const IMPORT_MAP = /(<script\b[^>]*\btype\s*=\s*["']importmap["'][^>]*>)([\s\S]*?)(<\/script>)/i;
+/** A quoted remote .js/.mjs URL: an import, import() or import map entry. */
+const QUOTED_MODULE_URL = /(["'`])((?:https?:)?\/\/[^\s"'`)]+?\.m?js(?:[?#][^\s"'`)]*)?)\1/g;
 
 /**
- * A page's CDN copies of the supported libraries (three, gsap, chart.js, d3,
+ * A page's copies of the supported libraries (three, gsap, chart.js, d3,
  * lucide, AOS, anime.js, Lenis, Swiper -- and their stylesheets) swapped for
  * this app's local ones: classic scripts get the global builds, module
- * imports and import maps the ESM builds. The page's own import
- * map, if any, gets the bare names it lacks; other URLs are left alone (and
- * stay blocked by the security policy).
+ * imports and import maps the ESM builds. Known CDN URLs are matched by
+ * package; anything else by file name. The page's own import map, if any,
+ * gets the bare names it lacks; other URLs are left alone (and stay blocked
+ * by the security policy).
  */
 export function withLocalLibraries(code: string, runtimeBase: string): string {
   const base = runtimeBase.replace(/\/$/, "");
+  const cdn = (url: string, classic: boolean) => {
+    const match = new RegExp(CDN_URL.source).exec(url);
+    return match && match.index === 0 ? localLibraryUrl(match, base, classic) : null;
+  };
   let page = code.replace(SCRIPT_SRC_TAG, (tag, before: string, quote: string, src: string, after: string) => {
     const classic = !/\btype\s*=\s*["']?module/i.test(before + after);
-    const match = new RegExp(CDN_URL.source).exec(src);
-    if (!match || match.index !== 0) return tag;
-    const local = localLibraryUrl(match, base, classic);
+    const local = cdn(src, classic) ?? fileByName(src, base, classic ? "classic" : "module");
     return local ? `<script${before}src=${quote}${local}${quote}${after}>` : tag;
+  });
+  page = page.replace(STYLESHEET_TAG, (tag, before: string, quote: string, href: string, after: string) => {
+    if (!/\.css(?:[?#]|$)/i.test(href) && !/stylesheet/i.test(before + after)) return tag;
+    const local = cdn(href, false) ?? fileByName(href, base, "css");
+    return local ? `<link${before}href=${quote}${local}${quote}${after}>` : tag;
   });
   // Everything else is a module context: import statements, import(), import maps.
   page = page.replace(CDN_URL, (...args) => localLibraryUrl(args.slice(0, 4) as string[], base, false) ?? args[0]);
+  page = page.replace(QUOTED_MODULE_URL, (whole, quote: string, url: string) => {
+    const local = fileByName(url, base, "module");
+    return local ? `${quote}${local}${quote}` : whole;
+  });
   const ours = libraryImportMap(base);
   return page.replace(IMPORT_MAP, (whole, open: string, json: string, close: string) => {
     try {
@@ -206,7 +295,7 @@ function reactLibrary(name: string): ReactLibrary | null {
   if (name === "chart.js" || name === "chart.js/auto") return { file: "react/chart.js", global: "__previewChart" };
   if (name === "d3") return { file: "d3.min.js", global: "d3" };
   if (name === "animejs" || name === "animejs/lib/anime.es.js") return { file: "anime/anime.min.js", global: "anime" };
-  if (name === "lenis") return { file: "lenis/lenis.min.js", global: "Lenis" };
+  if (name === "lenis" || name === "@studio-freight/lenis") return { file: "lenis/lenis.min.js", global: "Lenis" };
   return null;
 }
 /** What the preview lists when a component imports something else. */
