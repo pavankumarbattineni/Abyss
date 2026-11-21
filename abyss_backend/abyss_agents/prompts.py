@@ -103,9 +103,10 @@ _ROLE_CORE = (
 )
 _PARENT_ROLE = _ROLE_CORE + (
     "- For a request clearly outside it, don't do the work: say in one sentence "
-    "that it's outside your role and offer the closest thing you can help "
-    "with. If a request mixes both, do the in-role part and say which part is "
-    "outside."
+    "that it's outside your role, then name what you can help with. Suggest a "
+    "related alternative only if it serves the user's actual goal; never "
+    "reframe their topic to fit your role. If a request mixes both, do the "
+    "in-role part and say which part is outside."
 )
 _SUB_AGENT_ROLE = _ROLE_CORE + (
     "- If the task, or part of it, is clearly outside your role, don't do that "

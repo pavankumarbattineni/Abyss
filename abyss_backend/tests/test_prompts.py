@@ -68,10 +68,11 @@ def test_prompts_stay_within_their_size_budget():
     "real tool calls only" reasoning rule; +~130 for the native visual formats
     (names only -- each spec is fetched on demand, see visual_specs.py); +~50
     for the libraries live previews serve offline (three, gsap, chart.js...);
-    +~125 each for the role section (in/out of role, mixed requests, role
-    changes), which replaced a one-line "stay within your role" rule."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 6700
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 7800  # + delegation rules
+    +~145 (parent) and ~125 (sub-agent) for the role section (in/out of role,
+    mixed requests, role changes, no forced tie-ins), which replaced a one-line
+    "stay within your role" rule."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 6750
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 7900  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 3350
 
 
@@ -88,11 +89,13 @@ def test_role_section_follows_the_agents_own_prompt_in_both_kinds():
         assert "contract" not in prompt.split("## Your role", 1)[1].lower()  # generic
     # The parent answers the user: decline in one sentence and redirect;
     # mixed requests get the in-role part done.
-    assert "offer the closest thing you can help" in parent
+    # Unrelated requests get a plain "what I can do", not a contrived tie-in.
+    assert "then name what you can help with" in parent
+    assert "never reframe their topic to fit your role" in parent
     assert "do the in-role part" in parent
     # A sub-agent reports to the main agent instead.
     assert "say in your result which part you left out" in sub
-    assert "offer the closest thing" not in sub
+    assert "name what you can help with" not in sub
     assert parent.index("## Your role") < parent.index("## Specialists")
 
 
