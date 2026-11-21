@@ -49,6 +49,15 @@ export interface StreamTokenEvent {
   data: { content: string };
 }
 
+/**
+ * A cut-off answer is being continued: its unfinished last line (this text,
+ * at the very end of the answer so far) is dropped and written again in full.
+ */
+export interface StreamAnswerRewindEvent {
+  type: "answer_rewind";
+  data: { text: string };
+}
+
 export interface StreamThreadTitleEvent {
   type: "thread_title";
   data: { title: string };
@@ -116,6 +125,7 @@ export type StreamEvent = { id: string } & (
   | StreamReasoningEndEvent
   | StreamSynthesisStartEvent
   | StreamTokenEvent
+  | StreamAnswerRewindEvent
   | StreamThreadTitleEvent
   | StreamDoneEvent
   | StreamErrorEvent

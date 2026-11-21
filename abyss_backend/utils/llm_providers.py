@@ -68,9 +68,11 @@ def _validate_google_key(api_key: str) -> None:
         raise ValueError(f"Could not validate Google Gemini API key: {exc}")
 
 
-# Anthropic requires max_tokens > the thinking budget.
+# Anthropic requires max_tokens > the thinking budget. Without a max_tokens,
+# ChatAnthropic uses the model's own output limit (its profile); this floor is
+# only for a model it has no profile for.
 _ANTHROPIC_THINKING_BUDGET = 4000
-_ANTHROPIC_MAX_TOKENS = 16000
+_ANTHROPIC_MIN_MAX_TOKENS = 16000
 
 
 def _build_openai(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
@@ -84,10 +86,12 @@ def _build_openai(model: str, api_key: str, native_reasoning: bool) -> BaseChatM
 
 
 def _build_anthropic(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
+    # Room for long answers: the model's full output limit, not a small default.
+    max_tokens = max(ChatAnthropic(model=model, api_key=api_key).max_tokens or 0, _ANTHROPIC_MIN_MAX_TOKENS)
     if not native_reasoning:
-        return ChatAnthropic(model=model, api_key=api_key)
+        return ChatAnthropic(model=model, api_key=api_key, max_tokens=max_tokens)
     return ChatAnthropic(
-        model=model, api_key=api_key, max_tokens=_ANTHROPIC_MAX_TOKENS,
+        model=model, api_key=api_key, max_tokens=max_tokens,
         thinking={"type": "enabled", "budget_tokens": _ANTHROPIC_THINKING_BUDGET},
     )
 
@@ -176,7 +180,7 @@ def _classify_one(exc: BaseException) -> tuple[str, str] | tuple[None, None]:
 # Provider outages as they read when an SDK error has been wrapped or re-raised
 # as text (e.g. by a LangChain integration): "503 UNAVAILABLE", "overloaded"...
 _UNAVAILABLE_TEXT = re.compile(
-    r"(503|529)|UNAVAILABLE|overloaded|high demand|service unavailable|try again later",
+    r"\b(503|529)\b|\bUNAVAILABLE\b|overloaded|high demand|service unavailable|try again later",
     re.IGNORECASE,
 )
 

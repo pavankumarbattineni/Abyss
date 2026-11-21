@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { createContext, memo, useContext } from "react";
 import dynamic from "next/dynamic";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -8,7 +8,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import "katex/dist/katex.min.css";
 
-import { previewKind } from "@/lib/code-preview";
+import { endsInOpenCodeBlock, previewKind } from "@/lib/code-preview";
 import { INTERACTIVE_LANGUAGE, looksLikeInteractiveJson } from "@/lib/interactive";
 import { looksLikeVisualJson, VISUAL_LANGUAGE } from "@/lib/visuals/parse";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
@@ -81,6 +81,58 @@ function fencedCode(node: unknown): { language: string; code: string } | null {
   return { language: languageClass?.slice("language-".length) ?? "", code: text(code) };
 }
 
+/**
+ * Set when a finished message ends inside a code block it never closed (an
+ * answer that was stopped, or failed, mid-code): the length of its source,
+ * so the block reaching the end is known to be unfinished.
+ */
+const UnfinishedTailContext = createContext<number | null>(null);
+
+interface PositionedNode {
+  position?: { end?: { offset?: number } };
+}
+
+/** A fenced block, rendered by kind: diagram, interactive view, live preview or code. */
+function FencedBlock({ node, isStreaming, ...props }: { node?: unknown; isStreaming: boolean } & React.ComponentProps<"pre">) {
+  const unfinishedFrom = useContext(UnfinishedTailContext);
+  const block = fencedCode(node);
+  if (
+    block?.language === VISUAL_LANGUAGE ||
+    (block?.language === "json" && !isStreaming && looksLikeVisualJson(block.code))
+  ) {
+    return <VisualBlock source={block.code} isStreaming={isStreaming} />;
+  }
+  if (block?.language === "mermaid") {
+    return <MermaidDiagram code={block.code} isStreaming={isStreaming} />;
+  }
+  if (
+    block?.language === INTERACTIVE_LANGUAGE ||
+    (block?.language === "json" && !isStreaming && looksLikeInteractiveJson(block.code))
+  ) {
+    return <InteractiveBlock source={block.code} isStreaming={isStreaming} />;
+  }
+  // Code that was cut off before its block closed is incomplete: shown as
+  // code, never run as a preview (it could only fail).
+  const end = (node as PositionedNode | undefined)?.position?.end?.offset;
+  const unfinished = unfinishedFrom !== null && typeof end === "number" && end >= unfinishedFrom;
+  // A complete HTML page or React component runs as a sandboxed live
+  // preview once the answer has finished streaming; other code stays code.
+  const kind = block && !isStreaming && !unfinished ? previewKind(block.language, block.code) : null;
+  if (block && kind) return <CodePreview kind={kind} language={block.language} code={block.code} />;
+  if (block && unfinished && previewKind(block.language, block.code)) {
+    return (
+      <div className="mb-3 last:mb-0">
+        <CodeBlock language={block.language} code={block.code} />
+        <p className="mt-1.5 font-sans text-xs text-muted-foreground">
+          This code stops before it was finished, so it isn&apos;t shown as a live preview.
+        </p>
+      </div>
+    );
+  }
+  if (block) return <CodeBlock language={block.language} code={block.code} />;
+  return <pre {...props} className="mb-3 last:mb-0" />;
+}
+
 function buildComponents(isStreaming: boolean): Components {
   return {
     a: ({ href, children, ...props }) => (
@@ -129,30 +181,7 @@ function buildComponents(isStreaming: boolean): Components {
         </code>
       );
     },
-    pre: ({ node, ...props }) => {
-      const block = fencedCode(node);
-      if (
-        block?.language === VISUAL_LANGUAGE ||
-        (block?.language === "json" && !isStreaming && looksLikeVisualJson(block.code))
-      ) {
-        return <VisualBlock source={block.code} isStreaming={isStreaming} />;
-      }
-      if (block?.language === "mermaid") {
-        return <MermaidDiagram code={block.code} isStreaming={isStreaming} />;
-      }
-      if (
-        block?.language === INTERACTIVE_LANGUAGE ||
-        (block?.language === "json" && !isStreaming && looksLikeInteractiveJson(block.code))
-      ) {
-        return <InteractiveBlock source={block.code} isStreaming={isStreaming} />;
-      }
-      // A complete HTML page or React component runs as a sandboxed live
-      // preview once the answer has finished streaming; other code stays code.
-      const kind = block && !isStreaming ? previewKind(block.language, block.code) : null;
-      if (block && kind) return <CodePreview kind={kind} language={block.language} code={block.code} />;
-      if (block) return <CodeBlock language={block.language} code={block.code} />;
-      return <pre {...props} className="mb-3 last:mb-0" />;
-    },
+    pre: ({ node, ...props }) => <FencedBlock node={node} isStreaming={isStreaming} {...props} />,
     table: ({ children }) => <CopyableTable>{children}</CopyableTable>,
     th: ({ ...props }) => (
       <th {...props} className="border border-border bg-muted/60 px-2 py-1 text-left font-semibold" />
@@ -185,17 +214,21 @@ export const MarkdownContent = memo(function MarkdownContent({
   isStreaming = false,
   className,
 }: MarkdownContentProps) {
+  const source = normalizeMathDelimiters(content);
+  const unfinishedFrom = !isStreaming && endsInOpenCodeBlock(source) ? source.trimEnd().length : null;
   return (
     // Agent response typography, as in Trench: Source Serif 4 at a reading
     // size. Same element while streaming and after, so fonts never jump.
     <div className={cn("min-w-0 font-serif text-[16px] leading-[1.7] wrap-break-word", className)}>
-      <ReactMarkdown
-        remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={REHYPE_PLUGINS}
-        components={isStreaming ? STREAMING_COMPONENTS : COMPONENTS}
-      >
-        {normalizeMathDelimiters(content)}
-      </ReactMarkdown>
+      <UnfinishedTailContext.Provider value={unfinishedFrom}>
+        <ReactMarkdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
+          components={isStreaming ? STREAMING_COMPONENTS : COMPONENTS}
+        >
+          {source}
+        </ReactMarkdown>
+      </UnfinishedTailContext.Provider>
     </div>
   );
 });

@@ -15,6 +15,13 @@ Two middlewares, both on the main agent only (specialists have no history):
   the selected model's context window x a fraction, reads the whole history it
   replaces, and uses a chat-oriented prompt. Each summary is announced with a
   custom event so the chat can save and show it.
+
+* `ContextBudgetMiddleware` -- the last line of defence (main agent and
+  specialists): when one model call would still exceed its share of the
+  context window (one huge question, huge tool results, very long kept
+  turns), the oldest earlier turns are left out of that call, then the
+  longest texts are shortened in the middle, so the request never fails for
+  being too long. Like trimming, it changes only that call's view.
 """
 
 from __future__ import annotations
@@ -81,7 +88,9 @@ def is_summary(message: AnyMessage) -> bool:
 
 
 def _is_question(message: AnyMessage) -> bool:
-    return isinstance(message, HumanMessage) and not is_summary(message)
+    """A message the user wrote -- not a summary or a note from the system
+    (abyss_agents/middleware.py system_note), which are marked lc_source."""
+    return isinstance(message, HumanMessage) and not message.additional_kwargs.get("lc_source")
 
 
 def strip_reasoning(message: AIMessage) -> AIMessage | None:
@@ -223,3 +232,108 @@ class TurnStartSummarization(SummarizationMiddleware):
                 except Exception:  # noqa: BLE001 -- showing it is best-effort
                     logger.warning("Couldn't announce the conversation summary", exc_info=True)
         return update
+
+
+_CHARS_PER_TOKEN = 4  # what count_tokens_approximately assumes
+_MIN_KEPT_TOKENS = 500
+
+
+def _shortened(text: str, keep_chars: int) -> str:
+    """The text with its middle left out (start and end kept), marked."""
+    if len(text) <= keep_chars:
+        return text
+    head = keep_chars * 2 // 3
+    tail = keep_chars - head
+    dropped = len(text) - head - tail
+    return (
+        f"{text[:head]}\n\n[... {dropped:,} characters left out here: the text is "
+        f"longer than the model can read at once ...]\n\n{text[len(text) - tail:]}"
+    )
+
+
+def _text_size(message: AnyMessage) -> int:
+    content = message.content
+    if isinstance(content, str):
+        return len(content)
+    return max((len(b.get("text", "")) for b in content if isinstance(b, dict) and b.get("type") == "text"), default=0)
+
+
+def _shorten_message(message: AnyMessage, keep_chars: int) -> AnyMessage:
+    """The message with its (longest) text shortened to about keep_chars."""
+    content = message.content
+    if isinstance(content, str):
+        return message.model_copy(update={"content": _shortened(content, keep_chars)})
+    longest = max(
+        (i for i, b in enumerate(content) if isinstance(b, dict) and b.get("type") == "text"),
+        key=lambda i: len(content[i].get("text", "")),
+        default=None,
+    )
+    if longest is None:
+        return message
+    blocks = list(content)
+    blocks[longest] = {**blocks[longest], "text": _shortened(blocks[longest]["text"], keep_chars)}
+    return message.model_copy(update={"content": blocks})
+
+
+def fit_to_budget(messages: list[AnyMessage], budget: int) -> list[AnyMessage]:
+    """The messages cut down to about `budget` tokens; the same list if they fit.
+
+    1. Earlier turns are left out oldest first, a whole turn at a time (a
+       summary of older history is kept).
+    2. Then the longest texts of the current turn -- tool results, the user's
+       question, earlier replies -- are shortened in the middle. A reply with
+       tool calls keeps its calls, so every tool result still has its call.
+    """
+    count = count_tokens_approximately
+    if count(messages) <= budget:
+        return messages
+
+    start = next((i for i in range(len(messages) - 1, -1, -1) if _is_question(messages[i])), 0)
+    summary = [messages[0]] if start and is_summary(messages[0]) else []
+    earlier = list(messages[len(summary):start])
+    current = list(messages[start:])
+    while earlier and count([*summary, *earlier, *current]) > budget:
+        earlier.pop(0)
+        while earlier and not _is_question(earlier[0]):
+            earlier.pop(0)  # the rest of that turn
+    result = [*summary, *earlier, *current]
+
+    # Longest first; each is cut by what is still over, never below a floor.
+    for _ in range(len(result)):
+        over = count(result) - budget
+        if over <= 0:
+            break
+        index = max(range(len(result)), key=lambda i: _text_size(result[i]))
+        size = _text_size(result[index])
+        keep = max(_MIN_KEPT_TOKENS * _CHARS_PER_TOKEN, size - (over + 200) * _CHARS_PER_TOKEN)
+        if keep >= size:
+            break  # nothing long left to shorten
+        result[index] = _shorten_message(result[index], keep)
+    return result
+
+
+class ContextBudgetMiddleware(AgentMiddleware):
+    """Keeps every model call within its share of the context window."""
+
+    def __init__(self, llm: BaseChatModel) -> None:
+        super().__init__()
+        self.budget = int(context_window(llm) * constants.CONTEXT_BUDGET_FRACTION)
+
+    def _fit(self, request: Any) -> Any:
+        system = request.system_message
+        reserve = count_tokens_approximately([system]) if system is not None else 0
+        messages = fit_to_budget(request.messages, max(_MIN_KEPT_TOKENS, self.budget - reserve))
+        if messages is request.messages:
+            return request
+        logger.warning(
+            "Model call over its context budget (%d tokens); cut down to fit", self.budget - reserve,
+        )
+        return request.override(messages=messages)
+
+    def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+        return handler(self._fit(request))
+
+    async def awrap_model_call(
+        self, request: Any, handler: Callable[[Any], Awaitable[Any]]
+    ) -> Any:
+        return await handler(self._fit(request))

@@ -11,9 +11,12 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import asyncio
+
 import anyio
 import httpx
 from langchain.agents.middleware import AgentMiddleware, HumanInTheLoopMiddleware
+from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt.tool_node import ToolCallRequest
@@ -168,8 +171,314 @@ class ActOrAnswerGuard(AgentMiddleware):
             return response
         logger.warning("Model reply neither acted nor answered; asking once more")
         return await handler(
-            request.override(messages=[*request.messages, HumanMessage(ACT_OR_ANSWER_NUDGE)])
+            request.override(messages=[*request.messages, system_note(ACT_OR_ANSWER_NUDGE)])
         )
+
+
+def system_note(text: str) -> HumanMessage:
+    """A note to the model in a user-role message. Marked so history handling
+    never mistakes it for the user's question (abyss_agents/history.py)."""
+    return HumanMessage(text, additional_kwargs={"lc_source": "system_note"})
+
+
+CONTINUE_NUDGE = (
+    "[Note from the system, not the user] Your reply above was cut off by the "
+    "output length limit. Continue it from the exact character where it stopped: "
+    "no repetition, no preamble, no reasoning block, no note about the cut. If it "
+    "stopped inside a code block, keep writing that code and close the block."
+)
+CONTINUE_LINE_NUDGE = (
+    "[Note from the system, not the user] Your reply above was cut off by the "
+    "output length limit, and its unfinished last line was removed. Continue the "
+    "reply from the start of that line: write that line in full, then the rest. "
+    "No repetition of earlier lines, no preamble, no reasoning block, no note "
+    "about the cut. If it is inside a code block, keep writing that code and "
+    "close the block."
+)
+CONTINUE_IN_CODE_NOTE = (
+    " The cut is inside a code block that is still open: continue its code "
+    "directly, with no new ``` fence."
+)
+# Custom stream event: the unfinished last line of a cut-off reply is about to
+# be written again, so the chat drops it first (services/stream_projector.py).
+CONTINUE_EVENT = "abyss_answer_continue"
+_FENCE = re.compile(r"^[ \t]*```", re.MULTILINE)
+# A fence that opens a block names its language; a closing fence never does.
+_REOPENED_FENCE = re.compile(r"\s*```[A-Za-z0-9_+.#-]+[^\n]*\n")
+# A longer unfinished line (minified code, say) is continued as is instead.
+_MAX_REWRITTEN_LINE = 2_000
+
+# How each provider reports a reply that hit its output-token limit.
+_CUT_OFF_REASONS = {"length", "max_tokens", "max_output_tokens"}
+
+
+def was_cut_off(message: AIMessage) -> bool:
+    """True when the provider stopped the reply at its output-token limit:
+    OpenAI finish_reason "length" (Responses API: status "incomplete" for
+    max_output_tokens), Anthropic stop_reason "max_tokens", Gemini "MAX_TOKENS"."""
+    meta = message.response_metadata or {}
+    for key in ("finish_reason", "stop_reason"):
+        if str(meta.get(key) or "").lower() in _CUT_OFF_REASONS:
+            return True
+    details = meta.get("incomplete_details") or {}
+    return meta.get("status") == "incomplete" and (
+        isinstance(details, dict) and details.get("reason") == "max_output_tokens"
+    )
+
+
+def _blocks(content: Any) -> list:
+    return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
+
+
+def unfinished_line(message: AIMessage) -> str:
+    """The reply's last line, to be written again in full when the reply is
+    continued; "" when the reply should be continued as is instead.
+
+    Resuming at a line start is far more reliable than mid-word or mid-token
+    (a model resuming "Math.sin(" may skip the bracket), and rewriting the
+    last line even when the cut fell right after its line break stops the
+    model skipping or repeating a line. Not used when the cut is inside a
+    reasoning block or a written tool call, or the line is very long.
+    """
+    text = message.text if isinstance(message.text, str) else str(message.text)
+    line = text[text.rfind("\n", 0, max(len(text) - 1, 0)) + 1:]
+    if not line or len(line) > _MAX_REWRITTEN_LINE:
+        return ""
+    if text.count("<reasoning>") > text.count("</reasoning>") or text.count("<call>") > text.count("</call>"):
+        return ""
+    content = message.content
+    if isinstance(content, str):
+        return line if content.endswith(line) else ""
+    last = next((b for b in reversed(content) if isinstance(b, dict) and b.get("type") == "text"), None)
+    return line if last is not None and str(last.get("text", "")).endswith(line) else ""
+
+
+def removed_line_note(line: str) -> str:
+    """Quotes how the removed line began, so it is rewritten the same way."""
+    if not line.strip():
+        return ""
+    return f" The removed line began with: «{line.rstrip(chr(10))}» -- write it in full, then go on."
+
+
+def in_open_code_block(text: str) -> bool:
+    """True when the text ends inside a ``` code block it has not closed."""
+    return len(_FENCE.findall(text)) % 2 == 1
+
+
+# The last lines of the reply so far that a continuation may repeat.
+_SEAM_LINES = 8
+_SEAM_CHARS = 4_000
+# A repeated single line shorter than this ("}", "</div>") may be meant.
+_MIN_REPEAT_CHARS = 12
+
+
+def seam_tail(text: str) -> str:
+    """The reply's last complete lines (at a line start only), for clean_seam."""
+    if not text.endswith("\n"):
+        return ""
+    lines = text.splitlines(keepends=True)[-_SEAM_LINES:]
+    while lines and sum(map(len, lines)) > _SEAM_CHARS:
+        lines.pop(0)
+    return "".join(lines)
+
+
+def clean_seam(text: str, tail: str, in_code: bool) -> str:
+    """A continuation's text without what it should not repeat: a new
+    ```lang fence when it is already inside a code block (a closing fence
+    names no language, so it is kept), then lines that repeat the end of the
+    reply so far (`tail`, see seam_tail) -- models sometimes restart a line
+    or two early."""
+    if in_code:
+        match = _REOPENED_FENCE.match(text)
+        if match:
+            text = text[match.end():]
+    before = tail.splitlines(keepends=True)
+    after = text.splitlines(keepends=True)
+    for k in range(min(len(before), len(after)), 0, -1):
+        repeat = after[:k]
+        if not all(line.endswith("\n") for line in repeat) or repeat != before[-k:]:
+            continue
+        if k == 1 and len(repeat[0].strip()) < _MIN_REPEAT_CHARS:
+            continue
+        return text[sum(map(len, repeat)):]
+    return text
+
+
+class SeamFilter:
+    """Streams a continuation through clean_seam: holds back only its first
+    lines, as many as the seam can affect, and gives the same text as
+    clean_seam on the whole reply."""
+
+    def __init__(self, tail: str, in_code: bool) -> None:
+        self._tail = tail
+        self._in_code = in_code
+        self._lines_needed = len(tail.splitlines()) + (1 if in_code else 0)
+        self._max_held = len(tail) + 400
+        self._held = ""
+        self._decided = False
+
+    def feed(self, text: str) -> str:
+        if self._decided:
+            return text
+        self._held += text
+        body = self._held.lstrip()
+        if (body and body.count("\n") >= max(1, self._lines_needed)) or len(self._held) > self._max_held:
+            return self.flush()
+        return ""
+
+    def flush(self) -> str:
+        if self._decided:
+            return ""
+        self._decided = True
+        held, self._held = self._held, ""
+        return clean_seam(held, self._tail, self._in_code)
+
+
+def _with_clean_seam(message: AIMessage, tail: str, in_code: bool) -> AIMessage:
+    content = message.content
+    if isinstance(content, str):
+        return message.model_copy(update={"content": clean_seam(content, tail, in_code)})
+    blocks = list(content)
+    first = next((i for i, b in enumerate(blocks) if isinstance(b, dict) and b.get("type") == "text"), None)
+    if first is None:
+        return message
+    blocks[first] = {**blocks[first], "text": clean_seam(str(blocks[first].get("text", "")), tail, in_code)}
+    return message.model_copy(update={"content": blocks})
+
+
+def without_tail(message: AIMessage, tail: str) -> AIMessage:
+    """The reply with `tail` (its unfinished last line) removed."""
+    if not tail:
+        return message
+    content = message.content
+    if isinstance(content, str):
+        return message.model_copy(update={"content": content[: len(content) - len(tail)]})
+    blocks = list(content)
+    index = max(i for i, b in enumerate(blocks) if isinstance(b, dict) and b.get("type") == "text")
+    text = blocks[index]["text"]
+    blocks[index] = {**blocks[index], "text": text[: len(text) - len(tail)]}
+    return message.model_copy(update={"content": blocks})
+
+
+def join_replies(first: AIMessage, rest: AIMessage) -> AIMessage:
+    """One reply made of a cut-off reply and its continuation."""
+    if isinstance(first.content, str) and isinstance(rest.content, str):
+        content: Any = first.content + rest.content
+    else:
+        content = _blocks(first.content) + _blocks(rest.content)
+    return first.model_copy(update={
+        "content": content,
+        "tool_calls": rest.tool_calls,
+        "invalid_tool_calls": rest.invalid_tool_calls,
+        "response_metadata": rest.response_metadata,
+    })
+
+
+class ContinueCutOffAnswer(AgentMiddleware):
+    """Continues a reply the provider cut off at its output-token limit.
+
+    A long answer (a whole website, a long report) can be stopped mid-sentence
+    or mid-code by the model's output limit; the user would get broken code and
+    an error in its live preview. The model is asked to go on from where it
+    stopped -- its partial reply plus a note -- up to MAX_ANSWER_CONTINUATIONS
+    times. The unfinished last line is taken off first and written again in
+    full (the chat drops it from view on CONTINUE_EVENT), so the seam is exact.
+    Each continuation streams right after the text already shown, and the
+    parts are joined into one reply in the conversation.
+    """
+
+    def __init__(self, max_continuations: int) -> None:
+        super().__init__()
+        self.max_continuations = max_continuations
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        response = await handler(request)
+        for attempt in range(1, self.max_continuations + 1):
+            index = next(
+                (i for i in range(len(response.result) - 1, -1, -1) if isinstance(response.result[i], AIMessage)),
+                None,
+            )
+            if index is None:
+                return response
+            message = response.result[index]
+            # A cut inside a tool call can't be resumed as text; the agent loop
+            # (and ActOrAnswerGuard) handle a broken call.
+            if not was_cut_off(message) or message.tool_calls or message.invalid_tool_calls:
+                return response
+            logger.warning("Reply hit the output limit; continuing it (%d/%d)", attempt, self.max_continuations)
+            line = unfinished_line(message)
+            partial = without_tail(message, line).model_copy(update={"tool_calls": [], "invalid_tool_calls": []})
+            text = partial.text if isinstance(partial.text, str) else str(partial.text)
+            in_code = in_open_code_block(text)
+            tail = seam_tail(text)
+            try:  # the chat drops the line and cleans the seam the same way
+                await adispatch_custom_event(CONTINUE_EVENT, {"rewind": line, "in_code": in_code, "tail": tail})
+            except RuntimeError:  # no run to tell (direct call, tests)
+                pass
+            note = (
+                (CONTINUE_LINE_NUDGE + removed_line_note(line) if line else CONTINUE_NUDGE)
+                + (CONTINUE_IN_CODE_NOTE if in_code else "")
+            )
+            more = await handler(request.override(messages=[*request.messages, partial, system_note(note)]))
+            rest = next((m for m in reversed(more.result) if isinstance(m, AIMessage)), None)
+            if rest is None:
+                # Nothing came back: keep the reply as it was, line and all.
+                return response
+            response.result[index] = join_replies(partial, _with_clean_seam(rest, tail, in_code))
+        return response
+
+
+# Custom stream event: a model call failed part-way and is made again, so the
+# chat drops what that call had shown (services/stream_projector.py).
+RESTART_EVENT = "abyss_answer_restart"
+# Provider trouble that passes: an outage or overload (503/529), a timeout, a
+# dropped connection. Waits before each new try.
+_RESTART_DELAYS = (3.0, 8.0, 20.0)
+_PASSING_ERRORS = {"provider_unavailable", "provider_timeout", "provider_unreachable"}
+
+
+def is_passing_provider_error(exc: BaseException) -> bool:
+    """True for provider failures worth another try (not a bad key, a missing
+    model, a too-long request or a cancel)."""
+    if isinstance(exc, TRANSIENT_LLM_EXCEPTIONS):
+        return True
+    from utils.llm_providers import classify_llm_error
+
+    code, _ = classify_llm_error(exc)
+    return code in _PASSING_ERRORS
+
+
+class RestartFailedReply(AgentMiddleware):
+    """Makes a model call again when the provider fails part-way through it.
+
+    A provider outage ("503 high demand"), timeout or dropped connection in
+    the middle of a long reply would otherwise end the turn with half an
+    answer. The text the failed call already streamed is taken back from the
+    chat first (RESTART_EVENT), so the new try starts clean -- nothing shown
+    twice -- then the call is made again, after a short wait, up to
+    len(_RESTART_DELAYS) times. Other errors are raised at once.
+    """
+
+    def __init__(self, delays: tuple[float, ...] = _RESTART_DELAYS) -> None:
+        super().__init__()
+        self.delays = delays
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        for attempt, delay in enumerate((*self.delays, None), start=1):
+            try:
+                return await handler(request)
+            except GraphBubbleUp:
+                raise
+            except Exception as exc:
+                if delay is None or not is_passing_provider_error(exc):
+                    raise
+                logger.warning("Model call failed (%r); trying again (%d/%d)", exc, attempt, len(self.delays))
+                try:
+                    await adispatch_custom_event(RESTART_EVENT, {})
+                except RuntimeError:  # no run to tell (direct call, tests)
+                    pass
+                await asyncio.sleep(delay)
+        raise AssertionError("unreachable")
 
 
 REASONING_REMINDER = (

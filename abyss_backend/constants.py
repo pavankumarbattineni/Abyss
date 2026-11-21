@@ -67,6 +67,14 @@ SUMMARY_INPUT_TOKEN_LIMIT = 120_000
 # Context window assumed for a model LangChain has no profile for and that
 # isn't in database/seed.py's KNOWN_CONTEXT_WINDOWS.
 DEFAULT_CONTEXT_WINDOW = 128_000
+# Share of the model's context window one model call may fill (approximate
+# count). History, tool results or a huge question past it are cut down for
+# that call only (abyss_agents/history.py ContextBudgetMiddleware), so a
+# request never fails for being too long; the rest is room for the answer.
+CONTEXT_BUDGET_FRACTION = 0.6
+# Times a reply cut off at the model's output limit is continued, so long
+# answers (a whole website, say) arrive complete (abyss_agents/middleware.py).
+MAX_ANSWER_CONTINUATIONS = 4
 
 # Reasoning source for a model (ProviderModel.reasoning_mode)
 
