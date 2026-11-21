@@ -8,6 +8,7 @@ from sqlalchemy import Select, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import Agent, StreamRecord, Thread
+from services.thread_service import count_active_threads
 from schemas.usage import UsageRunItem, UsageRunListResponse, UsageSummaryResponse
 from utils.datetime_utils import to_storage_naive as _to_storage_naive
 
@@ -93,14 +94,14 @@ class UsageService:
         )
 
     async def get_summary(self, session: AsyncSession, user_id: str) -> UsageSummaryResponse:
-        """Overall usage summary for the authenticated user — 2 aggregate
+        """Overall usage summary for the authenticated user — 3 aggregate
         queries total, no row fetching.
 
-        threads/runs/spend all come from one query: a LEFT JOIN from Thread
-        to StreamRecord means threads with zero runs are still counted
-        (an INNER JOIN or deriving totals from StreamRecord alone would
-        silently drop them), while COUNT(DISTINCT thread.id) keeps a
-        multi-run thread from being counted once per run.
+        runs/spend come from one query over every thread the user ever had
+        (a LEFT JOIN from Thread to StreamRecord, so spend on threads or
+        agents deleted since is still counted -- it was really spent).
+        total_threads is the active thread count, the same number the
+        Profile page shows (see thread_service.count_active_threads).
 
         total_agents is necessarily a separate query — agents aren't 1:1
         with threads (an agent could have zero threads), so joining it into
@@ -109,7 +110,6 @@ class UsageService:
         """
         threads_result = await session.execute(
             select(
-                func.count(func.distinct(Thread.id)),
                 func.count(StreamRecord.id),
                 func.coalesce(func.sum(StreamRecord.cost_usd), 0),
             )
@@ -117,7 +117,8 @@ class UsageService:
             .outerjoin(StreamRecord, StreamRecord.thread_id == Thread.id)
             .where(Thread.user_id == user_id)
         )
-        total_threads, total_runs, total_spent = threads_result.one()
+        total_runs, total_spent = threads_result.one()
+        total_threads = await count_active_threads(session, user_id)
 
         agents_result = await session.execute(
             select(func.count())

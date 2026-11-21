@@ -395,12 +395,13 @@ export function ChatPanel({
                           {message.is_partial && (
                             <div
                               className={cn(
-                                "flex items-center gap-1.5 border-t border-dashed border-border-soft pt-2 text-xs text-muted-foreground",
-                                message.content && "mt-3",
+                                "flex items-center gap-1.5 text-xs text-muted-foreground",
+                                // The divider separates it from the answer text; alone it needs none.
+                                message.content && "mt-3 border-t border-dashed border-border-soft pt-2",
                               )}
                             >
                               <CircleSlash className="size-3.5 shrink-0" />
-                              <span className="italic">Abyss was interrupted</span>
+                              <span className="italic">Agent was interrupted</span>
                             </div>
                           )}
                         </>

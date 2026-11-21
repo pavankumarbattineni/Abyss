@@ -175,10 +175,28 @@ def catalog() -> str:
     return ", ".join(f.name for f in _FORMATS)
 
 
-_COMMAND = re.compile(r"^\s*/([a-z][a-z-]*)\b")
+# One or more `/<format>` commands at the start of a message, e.g.
+# "/timeline /flowchart How did X evolve?". Capped so the specs added to the
+# prompt stay a reasonable size.
+MAX_REQUESTED_FORMATS = 3
+_COMMAND = re.compile(r"\s*/([a-z][a-z-]*)\b")
+
+
+def requested_formats(text: str) -> list[str]:
+    """The formats a message asks for with leading `/<format>` commands, in
+    order: known formats only, no repeats, at most MAX_REQUESTED_FORMATS.
+    Reading stops at the first word that isn't a known command."""
+    text = text or ""
+    found: list[str] = []
+    pos = 0
+    while (match := _COMMAND.match(text, pos)) and match.group(1) in FORMATS:
+        if match.group(1) not in found:
+            found.append(match.group(1))
+        pos = match.end()
+    return found[:MAX_REQUESTED_FORMATS]
 
 
 def requested_format(text: str) -> str | None:
-    """The format a message asks for with a leading `/<format>`, if any."""
-    match = _COMMAND.match(text or "")
-    return match.group(1) if match and match.group(1) in FORMATS else None
+    """The first format a message asks for with a leading `/<format>`, if any."""
+    formats = requested_formats(text)
+    return formats[0] if formats else None

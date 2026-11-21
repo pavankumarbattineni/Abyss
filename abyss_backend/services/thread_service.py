@@ -1,9 +1,22 @@
-from sqlalchemy import select, desc
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.checkpointer import delete_thread_checkpoints
 from database.models import Agent, Thread
 from schemas.thread import ThreadCreate
+
+
+async def count_active_threads(session: AsyncSession, user_id: str) -> int:
+    """The user's threads that are still listed: not deleted, and their agent not
+    deleted (deleting an agent keeps its threads for history). Profile and Usage
+    both show this number, so they always agree."""
+    return (
+        await session.execute(
+            select(func.count(Thread.id))
+            .join(Agent, Agent.id == Thread.agent_id)
+            .where(Thread.user_id == user_id, Thread.is_active == True, Agent.is_active == True)
+        )
+    ).scalar_one()
 
 
 class ThreadService:

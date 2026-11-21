@@ -92,49 +92,55 @@ function ConfirmByName({
 }) {
   const [typed, setTyped] = useState("");
   const matches = typed === name;
+  // Only once something that isn't a prefix of the name was typed: no red while typing it right.
+  const mismatch = typed.length > 0 && !name.startsWith(typed);
 
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col gap-5"
       onSubmit={(event) => {
         event.preventDefault();
         if (matches && !isPending) onConfirm();
       }}
     >
-      <DialogHeader>
-        <DialogTitle>Delete agent</DialogTitle>
-        <DialogDescription>
-          This permanently deletes <span className="font-medium text-foreground">{name}</span>,
-          its specialists and all of its conversations.
-        </DialogDescription>
+      <DialogHeader className="flex-row items-start gap-3 text-left">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
+          <TriangleAlert className="size-5" aria-hidden="true" />
+        </span>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <DialogTitle>Delete this agent?</DialogTitle>
+          <DialogDescription className="break-words">
+            <span className="font-medium text-foreground">{name}</span>, its specialists and all of
+            its conversations will be permanently deleted. This can&apos;t be undone.
+          </DialogDescription>
+        </div>
       </DialogHeader>
 
-      <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-        <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-        <span>This can&apos;t be undone.</span>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="delete-agent-confirm">
-          Type <span className="font-mono font-semibold select-all">{name}</span> to confirm
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="delete-agent-confirm" className="block font-normal leading-relaxed text-muted-foreground">
+          To confirm, type{" "}
+          <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium [overflow-wrap:anywhere] text-foreground [box-decoration-break:clone] select-all">
+            {name}
+          </span>
         </Label>
         <Input
           id="delete-agent-confirm"
           value={typed}
           onChange={(event) => setTyped(event.target.value)}
+          placeholder="Agent name"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
           disabled={isPending}
-          aria-invalid={typed.length > 0 && !matches}
-          aria-describedby="delete-agent-hint"
+          aria-invalid={mismatch}
+          aria-describedby={mismatch ? "delete-agent-hint" : undefined}
         />
-        <p id="delete-agent-hint" className="text-xs text-muted-foreground">
-          {typed.length > 0 && !matches
-            ? "The name doesn't match yet. It's case-sensitive."
-            : "Delete stays disabled until the name matches exactly."}
-        </p>
+        {mismatch && (
+          <p id="delete-agent-hint" className="text-xs text-destructive">
+            The name doesn&apos;t match yet (it&apos;s case-sensitive).
+          </p>
+        )}
       </div>
 
       <DialogFooter>
