@@ -7,9 +7,10 @@
  * bare imports are pointed at these pinned copies, served by this app:
  *
  * - ESM, for <script type="module"> / import maps: three (+ examples/jsm
- *   addons), gsap (+ every plugin), chart.js, d3, lucide.
+ *   addons), gsap (+ every plugin), chart.js, d3, lucide, anime.js, Lenis, Swiper.
  * - Classic scripts, for <script src>: the same libraries as globals
- *   (THREE with common addons, gsap + plugins, Chart, d3, lucide).
+ *   (THREE with common addons, gsap + plugins, Chart, d3, lucide, AOS,
+ *   anime, Lenis, Swiper), plus the AOS, Lenis and Swiper stylesheets.
  * - For React previews (`require` in the compiled component): the globals
  *   above plus framer-motion and lucide-react, bundled against the preview's
  *   own React 18 (window.React).
@@ -204,11 +205,23 @@ for (const plugin of GSAP_PLUGINS) copy(`gsap/dist/${plugin}.min.js`, `gsap/${pl
 copy("chart.js/dist/chart.umd.min.js", "chart.umd.min.js");
 copy("d3/dist/d3.min.js", "d3.min.js");
 copy("lucide/dist/umd/lucide.min.js", "lucide.min.js");
+// Common animation, scrolling and carousel libraries (globals AOS, anime,
+// Lenis, Swiper; ESM builds for imports) and their stylesheets.
+copy("aos/dist/aos.js", "aos/aos.js");
+copy("aos/dist/aos.css", "aos/aos.css");
+copy("animejs/lib/anime.min.js", "anime/anime.min.js");
+copy("animejs/lib/anime.es.js", "anime/anime.es.js");
+copy("lenis/dist/lenis.min.js", "lenis/lenis.min.js");
+copy("lenis/dist/lenis.mjs", "lenis/lenis.mjs");
+copy("lenis/dist/lenis.css", "lenis/lenis.css");
+copy("swiper/swiper-bundle.min.js", "swiper/swiper-bundle.min.js");
+copy("swiper/swiper-bundle.min.mjs", "swiper/swiper-bundle.min.mjs");
+copy("swiper/swiper-bundle.min.css", "swiper/swiper-bundle.min.css");
 // Stands in for old classic three addon scripts (examples/js/...): THREE.* already has them.
 writeFileSync(join(out, "noop.js"), "/* provided by three.global.js */\n");
 
 const versions = Object.fromEntries(
-  ["three", "gsap", "chart.js", "d3", "lucide", "framer-motion", "lucide-react"].map((name) => [
+  ["three", "gsap", "chart.js", "d3", "lucide", "framer-motion", "lucide-react", "aos", "animejs", "lenis", "swiper"].map((name) => [
     name,
     JSON.parse(readFileSync(join(modules, name, "package.json"), "utf8")).version,
   ]),
