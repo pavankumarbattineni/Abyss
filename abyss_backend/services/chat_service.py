@@ -213,14 +213,44 @@ def _compute_cost_usd(
     return cost
 
 
+@dataclass
+class TitleUsage:
+    """Tokens the thread-title call(s) used, on the platform default model."""
+
+    input_tokens: int = 0
+    cache_read_tokens: int = 0
+    output_tokens: int = 0
+
+    def add(self, response) -> None:
+        usage = getattr(response, "usage_metadata", None) or {}
+        self.input_tokens += usage.get("input_tokens", 0) or 0
+        self.output_tokens += usage.get("output_tokens", 0) or 0
+        self.cache_read_tokens += (usage.get("input_token_details") or {}).get("cache_read", 0) or 0
+
+    def cost_usd(self) -> float | None:
+        provider, model = configured_default()
+        return _compute_cost_usd(provider, model, self.input_tokens, self.cache_read_tokens, self.output_tokens)
+
+
+def _add_costs(*costs: float | None) -> float | None:
+    """Sum of the known costs; None only when none is known."""
+    known = [cost for cost in costs if cost is not None]
+    return round(sum(known), 6) if known else None
+
+
 async def _generate_thread_title(
-    user_message: str, trace_meta: dict | None = None, trace_ids: list[str] | None = None
+    user_message: str,
+    trace_meta: dict | None = None,
+    trace_ids: list[str] | None = None,
+    usage: TitleUsage | None = None,
 ) -> str | None:
     """A short, specific thread title for the opening message.
 
     The candidate is validated (see utils.thread_title): a reply or refusal is
     retried once, then replaced by a title from the message's key words. Only
     an LLM failure returns None, so the caller continues without a title.
+    Tokens of every call are added to ``usage`` (they are real spend: Tracing
+    shows this call as its own trace, and Usage counts it on the run).
     """
     try:
         for retry in (False, True):
@@ -236,6 +266,8 @@ async def _generate_thread_title(
                     ),
                 },
             ], config=_trace_config(run_id, KIND_THREAD_TITLE, trace_meta))
+            if usage is not None:
+                usage.add(response)
             title = clean_title(getattr(response, "text", None) or str(response.content))
             if title:
                 return title[:THREAD_TITLE_OUTPUT_MAX_CHARS]
@@ -564,6 +596,7 @@ async def _run_generation(
             # Only triggered when the thread has no title yet; best-effort (any
             # LLM failure is swallowed so the stream still completes normally).
             generated_title: str | None = None
+            title_usage = TitleUsage()
             title_check = await session.execute(
                 select(Thread.title).where(Thread.id == thread_id)
             )
@@ -575,7 +608,7 @@ async def _run_generation(
                     .limit(1)
                 )
                 title_source = opening_message.scalar_one_or_none() or user_message
-                generated_title = await _generate_thread_title(title_source, trace_meta, trace_ids)
+                generated_title = await _generate_thread_title(title_source, trace_meta, trace_ids, title_usage)
                 if generated_title:
                     await session.execute(
                         update(Thread)
@@ -589,10 +622,20 @@ async def _run_generation(
 
             projector._emit("done", {"message_id": assistant_msg.id, "total_chunks": projector.chunk_index})
 
-            cost_usd = _compute_cost_usd(
-                llm_provider_value, llm_model_value,
-                projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
+            # The run's cost includes the title call (priced at the platform
+            # default's rate, which may differ from the selected model's), so
+            # Usage totals match Tracing, where the title is its own trace.
+            cost_usd = _add_costs(
+                _compute_cost_usd(
+                    llm_provider_value, llm_model_value,
+                    projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
+                ),
+                title_usage.cost_usd() if title_usage.input_tokens or title_usage.output_tokens else None,
             )
+            run_usage = usage_values()
+            run_usage["input_tokens"] += title_usage.input_tokens
+            run_usage["cache_read_tokens"] += title_usage.cache_read_tokens
+            run_usage["output_tokens"] += title_usage.output_tokens
             await session.execute(
                 update(StreamRecord)
                 .where(StreamRecord.id == stream_id)
@@ -605,7 +648,7 @@ async def _run_generation(
                     cost_usd=cost_usd,
                     completed_at=utcnow(),
                     updated_at=utcnow(),
-                    **usage_values(),
+                    **run_usage,
                 )
             )
             await session.commit()  # title update + StreamRecord COMPLETED in one transaction
@@ -625,19 +668,20 @@ async def _run_generation(
                 partial_text = "".join(projector.content_tokens)
                 stream_values: dict = {"status": STREAM_STATUS_CANCELLED, "updated_at": utcnow()}
 
-                if partial_text or projector.reasoning_steps:
-                    # Create an assistant message so get_messages can attach reasoning.
-                    # content may be empty string when cancelled before the final answer started.
-                    partial_msg = Message(
-                        thread_id=thread_id,
-                        role="assistant",
-                        content=partial_text,
-                        is_partial=True,
-                    )
-                    session.add(partial_msg)
-                    await session.flush()
-                    stream_values["assistant_message_id"] = partial_msg.id
-                    stream_values["partial_content"] = None
+                # Always save the stopped reply (is_partial=True), even with no text or
+                # reasoning yet -- e.g. stopped while the model was still thinking. The
+                # chat shows "Agent was interrupted" for it, also after a reload, and
+                # get_messages attaches any reasoning to it.
+                partial_msg = Message(
+                    thread_id=thread_id,
+                    role="assistant",
+                    content=partial_text,
+                    is_partial=True,
+                )
+                session.add(partial_msg)
+                await session.flush()
+                stream_values["assistant_message_id"] = partial_msg.id
+                stream_values["partial_content"] = None
 
                 if projector.reasoning_steps:
                     stream_values["reasoning"] = json.dumps({"steps": projector.reasoning_steps})

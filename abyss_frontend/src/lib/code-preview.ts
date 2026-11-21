@@ -23,17 +23,191 @@ export type PreviewKind = "html" | "react";
 
 /** Larger blocks are shown as code only. */
 export const MAX_PREVIEW_CHARS = 400_000;
-/** The only modules a React preview may import. */
-const ALLOWED_IMPORTS = new Set(["react", "react-dom", "react-dom/client"]);
 const RUNTIME = {
   react: "react-18.3.1.min.js",
   reactDom: "react-dom-18.3.1.min.js",
   tailwind: "tailwindcss-browser-4.3.5.js",
 };
 
+/*
+ * Libraries a preview may use, served by this app from public/preview-runtime/lib
+ * (built by scripts/build-preview-runtime.mjs from the pinned devDependencies).
+ * The frame has no network, so a page's CDN URLs and bare imports for these
+ * are pointed at the local copies; anything else stays blocked.
+ */
+const LIB = "lib";
+/** gsap's plugins (each a classic script of its own, all in the ESM bundle). */
+const GSAP_PLUGINS = [
+  "CSSRulePlugin", "CustomBounce", "CustomEase", "CustomWiggle", "Draggable", "DrawSVGPlugin", "EasePack",
+  "EaselPlugin", "Flip", "GSDevTools", "InertiaPlugin", "MorphSVGPlugin", "MotionPathHelper", "MotionPathPlugin",
+  "Observer", "Physics2DPlugin", "PhysicsPropsPlugin", "PixiPlugin", "ScrambleTextPlugin", "ScrollSmoother",
+  "ScrollToPlugin", "ScrollTrigger", "SplitText", "TextPlugin",
+];
+/** three.js addons attached to the THREE global (classic pages, React `require`). */
+const THREE_GLOBAL_ADDONS = new Set([
+  "OrbitControls", "TrackballControls", "PointerLockControls", "FlyControls", "MapControls", "DragControls",
+  "TransformControls", "EffectComposer", "RenderPass", "ShaderPass", "UnrealBloomPass", "OutputPass", "FilmPass",
+  "GlitchPass", "BokehPass", "AfterimagePass", "SMAAPass", "OutlinePass", "RGBShiftShader", "FXAAShader",
+  "CopyShader", "VignetteShader", "RoundedBoxGeometry", "TextGeometry", "ParametricGeometry", "ConvexGeometry",
+  "FontLoader", "GLTFLoader", "OBJLoader", "SVGLoader", "RGBELoader", "RoomEnvironment", "Sky", "Water",
+  "Reflector", "ImprovedNoise", "SimplexNoise", "GPUComputationRenderer", "CSS2DRenderer", "CSS3DRenderer",
+  "BufferGeometryUtils", "lil-gui.module.min",
+]);
+
+type LibName = "three" | "gsap" | "chart.js" | "d3" | "lucide";
+const LIB_ALIASES: Record<string, LibName> = {
+  three: "three", "three.js": "three", gsap: "gsap", "chart.js": "chart.js", d3: "d3", lucide: "lucide",
+};
+
+/** Local file (under lib/) for a library file a page loads with <script src>; null if not ours. */
+function classicFile(lib: LibName, path: string): string | null {
+  switch (lib) {
+    case "three":
+      // Old addon scripts (examples/js/...) set THREE.X, already in the global build.
+      return /\/examples\/js\//.test(path) ? "noop.js" : /module|\/examples\/jsm\/|\/addons\//.test(path) ? null : "three.global.js";
+    case "gsap": {
+      const name = /\/([A-Za-z0-9]+)(\.min)?\.js$/.exec(path)?.[1];
+      if (name && GSAP_PLUGINS.includes(name)) return `gsap/${name}.min.js`;
+      return name && name !== "gsap" && name !== "all" ? null : "gsap/gsap.min.js";
+    }
+    case "chart.js":
+      return "chart.umd.min.js";
+    case "d3":
+      return "d3.min.js";
+    case "lucide":
+      return "lucide.min.js";
+  }
+}
+
+/** Local file (under lib/) for a library module a page imports; null if not ours. */
+function moduleFile(lib: LibName, path: string): string | null {
+  if (lib !== "three") return { gsap: "gsap.mjs", "chart.js": "chart.mjs", d3: "d3.mjs", lucide: "lucide.mjs" }[lib];
+  const addon = /\/(?:examples\/jsm|addons)\/(.*)$/.exec(path)?.[1];
+  if (addon === "") return "three/examples/jsm/"; // an import-map folder entry
+  if (addon) return `three/examples/jsm/${/\.[a-z]+$/i.test(addon) ? addon : `${addon}.js`}`;
+  if (/webgpu/.test(path)) return "three/build/three.webgpu.js";
+  if (/tsl/.test(path)) return "three/build/three.tsl.js";
+  if (/three\.core/.test(path)) return "three/build/three.core.js";
+  return "three/build/three.module.js";
+}
+
+/**
+ * A CDN URL: jsDelivr, unpkg, esm.sh, Skypack, JSPM (package[@version][/path])
+ * or cdnjs (library/version/file).
+ */
+const CDN_URL =
+  /(?:https?:)?\/\/(?:cdn\.jsdelivr\.net\/npm\/|unpkg\.com\/|esm\.sh\/(?:v\d+\/)?|cdn\.skypack\.dev\/|ga\.jspm\.io\/npm:|(cdnjs\.cloudflare\.com\/ajax\/libs\/))([A-Za-z][\w.-]*)(?:@[\w.^~-]+)?(\/[^\s"'`)?#]*)?(?:\?[^\s"'`)#]*)?/g;
+
+function localLibraryUrl(match: RegExpExecArray | string[], base: string, classic: boolean): string | null {
+  const [, cdnjs, name, rawPath = ""] = match;
+  const lib = LIB_ALIASES[name.toLowerCase()];
+  if (!lib) return null;
+  // cdnjs puts the version first: /ajax/libs/three.js/r128/three.min.js
+  const path = cdnjs ? rawPath.replace(/^\/[^/]+/, "") : rawPath;
+  // Stylesheets and other files of these packages aren't served.
+  if (/\.(css|map|json)$/i.test(path)) return null;
+  const file = classic ? classicFile(lib, path) : moduleFile(lib, path);
+  return file ? `${base}/${LIB}/${file}` : null;
+}
+
+/** The import map that makes bare imports ("three", "gsap/ScrollTrigger"...) load the local copies. */
+export function libraryImportMap(runtimeBase: string): Record<string, string> {
+  const lib = `${runtimeBase.replace(/\/$/, "")}/${LIB}`;
+  const imports: Record<string, string> = {
+    three: `${lib}/three/build/three.module.js`,
+    "three/webgpu": `${lib}/three/build/three.webgpu.js`,
+    "three/tsl": `${lib}/three/build/three.tsl.js`,
+    "three/addons/": `${lib}/three/examples/jsm/`,
+    "three/examples/jsm/": `${lib}/three/examples/jsm/`,
+    gsap: `${lib}/gsap.mjs`,
+    "gsap/all": `${lib}/gsap.mjs`,
+    "chart.js": `${lib}/chart.mjs`,
+    "chart.js/auto": `${lib}/chart.mjs`,
+    d3: `${lib}/d3.mjs`,
+    lucide: `${lib}/lucide.mjs`,
+  };
+  for (const plugin of GSAP_PLUGINS) {
+    imports[`gsap/${plugin}`] = `${lib}/gsap.mjs`;
+    imports[`gsap/${plugin}.js`] = `${lib}/gsap.mjs`;
+  }
+  return imports;
+}
+
+const SCRIPT_SRC_TAG = /<script\b([^>]*?)\bsrc\s*=\s*(["'])(.*?)\2([^>]*)>/gi;
+const IMPORT_MAP = /(<script\b[^>]*\btype\s*=\s*["']importmap["'][^>]*>)([\s\S]*?)(<\/script>)/i;
+
+/**
+ * A page's CDN copies of the supported libraries (three, gsap, chart.js, d3,
+ * lucide) swapped for this app's local ones: classic scripts get the global
+ * builds, module imports and import maps the ESM builds. The page's own import
+ * map, if any, gets the bare names it lacks; other URLs are left alone (and
+ * stay blocked by the security policy).
+ */
+export function withLocalLibraries(code: string, runtimeBase: string): string {
+  const base = runtimeBase.replace(/\/$/, "");
+  let page = code.replace(SCRIPT_SRC_TAG, (tag, before: string, quote: string, src: string, after: string) => {
+    const classic = !/\btype\s*=\s*["']?module/i.test(before + after);
+    const match = new RegExp(CDN_URL.source).exec(src);
+    if (!match || match.index !== 0) return tag;
+    const local = localLibraryUrl(match, base, classic);
+    return local ? `<script${before}src=${quote}${local}${quote}${after}>` : tag;
+  });
+  // Everything else is a module context: import statements, import(), import maps.
+  page = page.replace(CDN_URL, (...args) => localLibraryUrl(args.slice(0, 4) as string[], base, false) ?? args[0]);
+  const ours = libraryImportMap(base);
+  return page.replace(IMPORT_MAP, (whole, open: string, json: string, close: string) => {
+    try {
+      const map = JSON.parse(json) as { imports?: Record<string, string> };
+      return `${open}${JSON.stringify({ ...map, imports: { ...ours, ...(map.imports ?? {}) } })}${close}`;
+    } catch {
+      return whole;
+    }
+  });
+}
+
+/** Modules a React preview may import, with the file and global each comes from. */
+interface ReactLibrary {
+  file?: string;
+  global: string;
+}
+function reactLibrary(name: string): ReactLibrary | null {
+  if (name === "react") return { global: "React" };
+  if (name === "react-dom" || name === "react-dom/client") return { global: "ReactDOM" };
+  if (name === "three" || /^three\/(addons|examples\/jsm)\//.test(name)) return { file: "three.global.js", global: "THREE" };
+  if (name === "gsap" || /^gsap\/[A-Za-z]+(\.js)?$/.test(name)) return { file: "react/gsap.js", global: "__previewGsap" };
+  if (name === "framer-motion" || name === "motion/react") return { file: "react/framer-motion.js", global: "__previewMotion" };
+  if (name === "lucide-react") return { file: "react/lucide-react.js", global: "__previewLucideReact" };
+  if (name === "chart.js" || name === "chart.js/auto") return { file: "react/chart.js", global: "__previewChart" };
+  if (name === "d3") return { file: "d3.min.js", global: "d3" };
+  return null;
+}
+/** What the preview lists when a component imports something else. */
+const REACT_LIBRARY_NAMES = "react, three (+ addons), gsap, framer-motion, lucide-react, chart.js and d3";
+
 const HTML_LANGUAGES = new Set(["html", "htm", "xhtml"]);
 const REACT_LANGUAGES = new Set(["jsx", "tsx", "react"]);
 const SCRIPT_LANGUAGES = new Set(["js", "javascript", "ts", "typescript"]);
+
+/**
+ * True when Markdown ends inside a fenced code block that was never closed
+ * (``` or ~~~, CommonMark rules: a closing fence uses the same character, is
+ * at least as long and has no info string).
+ */
+export function endsInOpenCodeBlock(markdown: string): boolean {
+  let open: { char: string; length: number } | null = null;
+  for (const line of markdown.split("\n")) {
+    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!fence) continue;
+    const [, marks, rest] = fence;
+    if (!open) {
+      if (marks[0] === "`" && rest.includes("`")) continue; // not a fence: inline code
+      open = { char: marks[0], length: marks.length };
+    } else if (marks[0] === open.char && marks.length >= open.length && !rest.trim()) {
+      open = null;
+    }
+  }
+  return open !== null;
+}
 
 /** Whether a fenced code block is a runnable page/component, and which kind. */
 export function previewKind(language: string, code: string): PreviewKind | null {
@@ -56,6 +230,8 @@ export function previewKind(language: string, code: string): PreviewKind | null 
 
 export interface CompiledComponent {
   code?: string;
+  /** Library files (under lib/) the component imports, loaded before it runs. */
+  libraries?: string[];
   error?: string;
 }
 
@@ -68,14 +244,23 @@ export async function compileReactComponent(source: string): Promise<CompiledCom
       jsxRuntime: "classic",
       production: true,
     });
-    const imports = [...code.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]);
-    const unsupported = [...new Set(imports.filter((name) => !ALLOWED_IMPORTS.has(name)))];
+    const imports = [...new Set([...code.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]))];
+    const unsupported = imports.filter((name) => !reactLibrary(name));
     if (unsupported.length) {
       return {
-        error: `The preview can only use React; this component also imports ${unsupported.join(", ")}.`,
+        error: `The preview can only use ${REACT_LIBRARY_NAMES}; this component also imports ${unsupported.join(", ")}.`,
       };
     }
-    return { code };
+    const missingAddons = imports
+      .filter((name) => /^three\//.test(name))
+      .filter((name) => !THREE_GLOBAL_ADDONS.has(name.split("/").pop()!.replace(/\.js$/, "")));
+    if (missingAddons.length) {
+      return {
+        error: `The preview's three.js has these addons: ${[...THREE_GLOBAL_ADDONS].join(", ")}; this component also imports ${missingAddons.join(", ")}.`,
+      };
+    }
+    const libraries = [...new Set(imports.map((name) => reactLibrary(name)?.file).filter((f): f is string => Boolean(f)))];
+    return { code, libraries };
   } catch (err) {
     return { error: `The component couldn't be compiled: ${(err as Error).message}` };
   }
@@ -106,6 +291,10 @@ function bridge(channel: string): string {
   return `(function () {
   var CHANNEL = ${JSON.stringify(channel)};
   function post(type, data) { try { parent.postMessage({ channel: CHANNEL, type: type, data: data }, "*"); } catch (e) {} }
+  // Sent before anything else of the page runs: our document is in the frame.
+  // "ready" waits for the load event, which a heavy page (3D scenes, big
+  // scripts) can take seconds to reach.
+  post("alive");
   function memoryStorage() {
     var m = new Map();
     return {
@@ -138,6 +327,20 @@ function bridge(channel: string): string {
     try { window[name].getItem("__probe"); }
     catch (e) { try { Object.defineProperty(window, name, { value: memoryStorage(), configurable: true }); } catch (_) {} }
   });
+  // document.cookie throws without a real origin: an in-memory jar instead.
+  try { document.cookie; } catch (e) {
+    var jar = {};
+    try {
+      Object.defineProperty(document, "cookie", {
+        configurable: true,
+        get: function () { return Object.keys(jar).map(function (k) { return k + "=" + jar[k]; }).join("; "); },
+        set: function (v) {
+          var pair = String(v).split(";")[0], i = pair.indexOf("=");
+          if (i > 0) jar[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+        }
+      });
+    } catch (_) {}
+  }
   // Files the security policy blocked (CDN scripts, web fonts, remote images):
   // report each site once, so the user sees why the page looks broken.
   var blockedHosts = {};
@@ -150,11 +353,31 @@ function bridge(channel: string): string {
     blockedHosts[host] = true;
     post("blocked", { host: host, kind: String(e.effectiveDirective || e.violatedDirective || "") });
   });
+  // Only errors in the page's own code are reported as problems to fix. Not:
+  // - "ResizeObserver loop ..." -- a browser notice, nothing is broken;
+  // - a bare "Script error." -- no detail at all (thrown inside a library
+  //   file), so there is nothing the agent could act on;
+  // - what the sandbox or the browser refuses, not the code: autoplay,
+  //   fullscreen, clipboard or pointer-lock requests (NotAllowedError), an
+  //   interrupted play() (AbortError), media that can't load offline
+  //   (NotSupportedError) -- and no WebGL on this device, reported as such.
+  var ENVIRONMENT_ERRORS = { NotAllowedError: 1, AbortError: 1, NotSupportedError: 1 };
+  var NO_WEBGL = "3D graphics (WebGL) aren't available in this browser, so the 3D part can't be shown here.";
+  function isWebglMissing(text) { return /webgl/i.test(text) && /(context|not supported|unavailable|creat)/i.test(text); }
   window.addEventListener("error", function (e) {
-    post("error", { message: String(e.message || (e.error && e.error.message) || "Script error"), line: e.lineno || null });
+    var message = String(e.message || (e.error && e.error.message) || "");
+    if (/ResizeObserver loop/i.test(message)) return;
+    if (!e.error && /^(Uncaught )?Script error\\.?$/i.test(message.trim())) return;
+    if (e.error && ENVIRONMENT_ERRORS[e.error.name]) return;
+    if (isWebglMissing(message)) { post("environment", { message: NO_WEBGL }); return; }
+    post("error", { message: message || "Script error", line: e.lineno || null });
   });
   window.addEventListener("unhandledrejection", function (e) {
-    var r = e.reason; post("error", { message: "Unhandled promise rejection: " + String((r && r.message) || r) });
+    var r = e.reason;
+    if (r && ENVIRONMENT_ERRORS[r.name]) return;
+    var message = String((r && r.message) || r);
+    if (isWebglMissing(message)) { post("environment", { message: NO_WEBGL }); return; }
+    post("error", { message: "Unhandled promise rejection: " + message });
   });
   // No navigation away from the preview. The document's own address is
   // about:srcdoc, and the <base href="about:srcdoc"> that head() puts before
@@ -318,21 +541,38 @@ export function withoutPageRedirects(code: string): string {
 
 /** The sandboxed document for a model-written HTML page. */
 export function buildHtmlPreview(code: string, channel: string, runtimeBase: string): string {
-  const injected = head(channel, runtimeBase);
-  const page = withoutPageRedirects(withLocalTailwind(code, runtimeBase));
+  const page = withoutPageRedirects(withLocalLibraries(withLocalTailwind(code, runtimeBase), runtimeBase));
+  // Bare imports ("three", "gsap") resolve to the local copies -- unless the
+  // page has an import map of its own, which withLocalLibraries completed.
+  const importMap = IMPORT_MAP.test(page)
+    ? ""
+    : `\n<script type="importmap">${inlineScript(JSON.stringify({ imports: libraryImportMap(runtimeBase) }))}</script>`;
+  const injected = head(channel, runtimeBase) + importMap;
   if (/<head[^>]*>/i.test(page)) return page.replace(/<head[^>]*>/i, (tag) => `${tag}\n${injected}`);
   if (/<html[^>]*>/i.test(page)) return page.replace(/<html[^>]*>/i, (tag) => `${tag}\n<head>${injected}</head>`);
   return `<!doctype html><html><head>${injected}</head><body>${page}</body></html>`;
 }
 
 /** The sandboxed document for a compiled React component. */
-export function buildReactPreview(compiled: string, channel: string, runtimeBase: string): string {
+export function buildReactPreview(
+  compiled: string,
+  channel: string,
+  runtimeBase: string,
+  libraries: string[] = [],
+): string {
   const src = (file: string) => `${runtimeBase.replace(/\/$/, "")}/${file}`;
+  // Each import the compile step allowed, mapped to the global its file sets.
+  const globals: Record<string, string> = {};
+  for (const name of [...compiled.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1])) {
+    const lib = reactLibrary(name);
+    if (lib) globals[name] = lib.global;
+  }
   const run = `(function () {
   var module = { exports: {} };
+  var GLOBALS = ${JSON.stringify(globals)};
   function require(name) {
-    if (name === "react") return React;
-    if (name === "react-dom" || name === "react-dom/client") return ReactDOM;
+    var value = GLOBALS[name] && window[GLOBALS[name]];
+    if (value) return value;
     throw new Error("The preview can't load '" + name + "'.");
   }
   function show(error) {
@@ -363,6 +603,7 @@ ${head(channel, runtimeBase)}
 <script src="${src(RUNTIME.react)}"></script>
 <script src="${src(RUNTIME.reactDom)}"></script>
 <script src="${src(RUNTIME.tailwind)}"></script>
+${libraries.map((file) => `<script src="${src(`${LIB}/${file}`)}"></script>`).join("\n")}
 <style>body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif}</style>
 </head>
 <body>

@@ -108,6 +108,14 @@ export function useChatStream({
       if (event.type === "token") {
         accumulatedRef.current += event.data.content;
         setStreamingContent(accumulatedRef.current);
+      } else if (event.type === "answer_rewind") {
+        // The backend continues an answer cut off at the model's output limit
+        // from the start of its last line: drop that line, it comes again whole.
+        const { text } = event.data;
+        if (text && accumulatedRef.current.endsWith(text)) {
+          accumulatedRef.current = accumulatedRef.current.slice(0, accumulatedRef.current.length - text.length);
+          setStreamingContent(accumulatedRef.current);
+        }
       } else if (event.type === "summary") {
         // Show it just before the question that triggered it -- unless it's already listed
         // (a reconnect replays events, and after a reload it comes from the saved messages).

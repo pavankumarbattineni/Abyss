@@ -4,7 +4,9 @@ from types import SimpleNamespace
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from abyss_agents.visual_formats import VisualFormatMiddleware, get_visual_format
-from abyss_agents.visual_specs import FORMATS, catalog, requested_format, spec_for
+from abyss_agents.visual_specs import (
+    FORMATS, MAX_REQUESTED_FORMATS, catalog, requested_format, requested_formats, spec_for,
+)
 
 EXPECTED = {
     "flowchart", "diagram", "blueprint", "tree", "timeline", "roadmap", "cycle", "layers",
@@ -63,3 +65,19 @@ def test_middleware_uses_the_latest_question_only():
     assert _run(history) == "BASE"
     summary = HumanMessage("summary", additional_kwargs={"lc_source": "summarization"})
     assert '"format":"tree"' in _run([HumanMessage("/tree Gen AI"), summary])
+
+
+def test_several_leading_commands_are_all_requested():
+    assert requested_formats("/timeline /flowchart How did X evolve?") == ["timeline", "flowchart"]
+    assert requested_formats("/tree /tree /cycle Plants") == ["tree", "cycle"]  # no repeats
+    assert requested_formats("/timeline /nope /tree x") == ["timeline"]  # stops at an unknown word
+    many = "/timeline /flowchart /tree /cycle /layers x"
+    assert requested_formats(many) == ["timeline", "flowchart", "tree"][:MAX_REQUESTED_FORMATS]
+    assert requested_formats("Compare /tree and /cycle") == []
+
+
+def test_middleware_adds_every_requested_spec_in_order():
+    system = _run([HumanMessage("/timeline /flowchart History of the web")])
+    assert "## Requested formats" in system and "`/timeline`, `/flowchart`" in system
+    assert "one ```visual block per format" in system
+    assert system.index('"format":"timeline"') < system.index('"format":"flowchart"')

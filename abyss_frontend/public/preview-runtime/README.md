@@ -11,3 +11,20 @@ never by the app itself. Copied unmodified from the npm packages:
 
 React 18 is used because React 19 no longer ships browser (UMD) builds; it
 runs only in the preview, separate from the app's own React.
+
+## Libraries (`lib/`, generated)
+
+`lib/` is built by `scripts/build-preview-runtime.mjs` (runs before `npm run
+dev` and `npm run build`; git-ignored) from the exact devDependencies in
+`package.json`: three (+ `examples/jsm` addons; the Draco/Basis decoders,
+which need network, are left out), gsap (+ every plugin), chart.js, d3,
+lucide, and for React previews framer-motion and lucide-react bundled
+against the preview's React 18. All MIT, except three.js and d3 (MIT/ISC)
+and gsap (GreenSock standard license, free for all use since 3.13).
+
+The preview has no network, so `src/lib/code-preview.ts` points a page's
+CDN URLs (jsDelivr, unpkg, esm.sh, Skypack, JSPM, cdnjs) and bare imports
+(through an import map) for these libraries at the local copies; anything
+else stays blocked. `next.config.ts` serves this folder with
+`Access-Control-Allow-Origin: *`, which module scripts need in the
+opaque-origin frame.

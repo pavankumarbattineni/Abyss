@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -69,6 +69,37 @@ function NavTooltip({
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="right" sideOffset={8} className="max-w-64 break-words">
         {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** An agent row's full name: always while the sidebar is collapsed (only the
+ *  avatar shows), and while it's open only when the name is cut off with "…".
+ *  Placed beside the row, wide enough for long names. */
+function AgentNameTooltip({
+  name,
+  collapsed,
+  children,
+}: {
+  name: string;
+  collapsed: boolean;
+  children: React.ReactElement;
+}) {
+  const [open, setOpen] = useState(false);
+  // Typed as the trigger expects; it is the row's link element, only measured here.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const isCutOff = () => {
+    const label = triggerRef.current?.querySelector<HTMLElement>("[data-agent-name]");
+    return !!label && label.scrollWidth > label.clientWidth;
+  };
+  return (
+    <Tooltip open={open} onOpenChange={(next) => setOpen(next && (collapsed || isCutOff()))}>
+      <TooltipTrigger asChild ref={triggerRef}>
+        {children}
+      </TooltipTrigger>
+      <TooltipContent side="right" align="center" sideOffset={collapsed ? 8 : 12} className="max-w-80 break-words">
+        {name}
       </TooltipContent>
     </Tooltip>
   );
@@ -242,7 +273,7 @@ export function Sidebar() {
                 ))
               : agents.map((agent) => (
                   <div key={agent.id} className="group/agent relative">
-                    <NavTooltip label={agent.name} show={collapsed}>
+                    <AgentNameTooltip name={agent.name} collapsed={collapsed}>
                       <Link
                         href={`/agents/${agent.id}`}
                         aria-label={collapsed ? agent.name : undefined}
@@ -255,10 +286,10 @@ export function Sidebar() {
                       >
                         <AgentAvatar name={agent.name} className="size-6 text-xs" />
                         {!collapsed && (
-                          <span className="truncate">{agent.name}</span>
+                          <span data-agent-name className="truncate">{agent.name}</span>
                         )}
                       </Link>
-                    </NavTooltip>
+                    </AgentNameTooltip>
                     {!collapsed && (
                       <div className="absolute top-1/2 right-1 -translate-y-1/2">
                         <ActionMenu

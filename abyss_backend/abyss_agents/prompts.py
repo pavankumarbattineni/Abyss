@@ -141,8 +141,10 @@ _VISUALS = (
     "arithmetic yourself.\n"
     "- An app or UI these components can't express: ONE runnable file, shown as "
     "a live preview -- an ```html page (inline CSS/JS) or a ```jsx React "
-    "component with `export default`, importing only \"react\" (Tailwind works). "
-    "Offline: no external resources or network. Shown in a ~700px chat column: "
+    "component with `export default` (Tailwind works). Libraries, served offline: "
+    "three (+ addons), gsap (+ plugins), chart.js, d3, lucide; in jsx also react, "
+    "framer-motion, lucide-react. Use these (CDN URLs or imports work), nothing "
+    "else external: no network, remote fonts or images. Shown in a ~700px chat column: "
     "responsive, no fixed pixel widths. Multi-page: #/page links or "
     "location.hash, never location = URL."
 )

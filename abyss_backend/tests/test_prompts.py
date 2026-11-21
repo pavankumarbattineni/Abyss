@@ -66,9 +66,10 @@ def test_prompts_stay_within_their_size_budget():
     interactive views), sub-agent ~600 -- down from ~1,600 and ~1,270.
     +~60 tokens since: the live-preview rule (runnable html/jsx) and the
     "real tool calls only" reasoning rule; +~130 for the native visual formats
-    (names only -- each spec is fetched on demand, see visual_specs.py)."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 5950
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 7100  # + delegation rules
+    (names only -- each spec is fetched on demand, see visual_specs.py); +~50
+    for the libraries live previews serve offline (three, gsap, chart.js...)."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 6150
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 7300  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 2800
 
 

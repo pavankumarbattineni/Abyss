@@ -43,16 +43,39 @@ interface FrameState {
   fill: boolean;
   /** Width of content wider than the frame (fixed pixel widths); 0 when it fits. */
   contentWidth: number;
-  /** Sites the page tried to load files from, which the preview blocks. */
+  /** Our document started running in the frame (sent before the page's own code). */
+  alive: boolean;
+  /** Sites the page tried to load scripts, stylesheets or data from, which the preview blocks. */
   blocked: string[];
+  /** Sites of blocked images, media or web fonts: the page still works without them. */
+  blockedAssets: string[];
   errors: string[];
+  /** What this browser can't do (e.g. no WebGL): not a fault in the code. */
+  notices: string[];
 }
+
+/** Directives whose blocked files only change how the page looks. */
+const COSMETIC_DIRECTIVE = /^(img-src|media-src|font-src)/;
+/** Web-font services: their stylesheets only bring fonts. */
+const FONT_HOSTS = /(^|\.)(fonts\.googleapis\.com|fonts\.gstatic\.com|use\.typekit\.net|fonts\.bunny\.net|rsms\.me|api\.fontshare\.com|use\.fontawesome\.com)$/i;
 
 const noSubscribe = () => () => {};
 const clientRuntimeBase = () => `${window.location.origin}/preview-runtime`;
 const serverRuntimeBase = () => "";
 
-const freshFrame = (key: string): FrameState => ({ key, ready: false, timedOut: false, height: MIN_HEIGHT, fill: false, contentWidth: 0, blocked: [], errors: [] });
+const freshFrame = (key: string): FrameState => ({
+  key,
+  ready: false,
+  alive: false,
+  timedOut: false,
+  height: MIN_HEIGHT,
+  fill: false,
+  contentWidth: 0,
+  blocked: [],
+  blockedAssets: [],
+  errors: [],
+  notices: [],
+});
 
 /**
  * A live preview of frontend code an agent wrote, run in a sandboxed iframe
@@ -69,12 +92,13 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   // Safety net for navigation the frame can't stop by itself (lib/code-preview.ts
   // turns "#..." links and location changes into in-page hash changes). Every
-  // load of our own page reports "ready" on this run's channel, which another
-  // document can't do. So a further load is fine when it is our page again
-  // (location.reload()), but if no "ready" follows, the frame left the page:
+  // load of our own page reports "alive" on this run's channel as its very
+  // first script, which another document can't do. So a further load is fine
+  // when it is our page again (location.reload()), however long the page then
+  // takes to finish loading; if no "alive" follows, the frame left the page:
   // reload the preview and say why.
   const loads = useRef<{ key: number; count: number }>({ key: -1, count: 0 });
-  const readies = useRef<{ channel: string; count: number }>({ channel: "", count: 0 });
+  const alives = useRef<{ channel: string; count: number }>({ channel: "", count: 0 });
   const leaveCheck = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(leaveCheck.current), []);
   const [navigatedAway, setNavigatedAway] = useState(false);
@@ -111,7 +135,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
       if (cancelled) return;
       setCompiled({
         key: channel,
-        doc: result.code ? buildReactPreview(result.code, channel, runtimeBase) : undefined,
+        doc: result.code ? buildReactPreview(result.code, channel, runtimeBase, result.libraries) : undefined,
         error: result.code ? undefined : (result.error ?? "The component couldn't be compiled."),
       });
     });
@@ -147,12 +171,21 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
         const contentWidth = Math.round(data.data);
         updateFrame((c) => ({ contentWidth: Math.max(c.contentWidth, contentWidth) }));
       } else if (data.type === "blocked") {
-        const host = String((data.data as { host?: unknown } | null)?.host ?? "").slice(0, 120);
-        if (host) updateFrame((c) => ({ blocked: c.blocked.includes(host) || c.blocked.length >= 8 ? c.blocked : [...c.blocked, host] }));
+        const info = (data.data as { host?: unknown; kind?: unknown } | null) ?? {};
+        const host = String(info.host ?? "").slice(0, 120);
+        const kind = String(info.kind ?? "");
+        const cosmetic = COSMETIC_DIRECTIVE.test(kind) || FONT_HOSTS.test(host);
+        const add = (list: string[]) => (list.includes(host) || list.length >= 8 ? list : [...list, host]);
+        if (host) updateFrame((c) => (cosmetic ? { blockedAssets: add(c.blockedAssets) } : { blocked: add(c.blocked) }));
+      } else if (data.type === "alive") {
+        const seen = alives.current.channel === channel ? alives.current.count + 1 : 1;
+        alives.current = { channel, count: seen };
+        updateFrame(() => ({ alive: true }));
       } else if (data.type === "ready") {
-        const seen = readies.current.channel === channel ? readies.current.count + 1 : 1;
-        readies.current = { channel, count: seen };
-        updateFrame(() => ({ ready: true }));
+        updateFrame(() => ({ ready: true, alive: true }));
+      } else if (data.type === "environment") {
+        const message = String((data.data as { message?: unknown } | null)?.message ?? "").slice(0, 300);
+        if (message) updateFrame((c) => ({ notices: c.notices.includes(message) ? c.notices : [...c.notices, message] }));
       } else if (data.type === "error") {
         const message = String((data.data as { message?: unknown } | null)?.message ?? "Error").slice(0, 500);
         updateFrame((c) => ({
@@ -172,8 +205,16 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
   // Blocked files usually explain a page that looks unstyled or does nothing:
   // say so plainly, as one problem the agent can fix.
   const blockedProblem = frame.blocked.length
-    ? `The page tries to load files from the internet (${frame.blocked.join(", ")}), which the preview blocks for security. Rebuild it as one self-contained file: no external scripts, stylesheets, fonts, icon libraries or images.`
+    ? `The page tries to load files from the internet (${frame.blocked.join(", ")}), which the preview blocks for security. Rebuild it as one self-contained file: only the libraries the preview provides (three, gsap, chart.js, d3, lucide), no other external scripts, stylesheets or data.`
     : null;
+  // Images, media and web fonts from the internet only change the look: a
+  // note, not a problem to fix.
+  const notes = [
+    ...frame.notices,
+    ...(frame.blockedAssets.length
+      ? [`Images, media or web fonts from the internet aren't loaded in the preview (${frame.blockedAssets.join(", ")}); the downloaded page shows them.`]
+      : []),
+  ];
   const errors = [
     ...(reactResult?.error ? [reactResult.error] : []),
     ...(blockedProblem ? [blockedProblem] : []),
@@ -184,7 +225,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
       : []),
     ...frame.errors,
   ];
-  const failed = Boolean(reactResult?.error) || (frame.timedOut && !frame.ready);
+  const failed = Boolean(reactResult?.error) || (frame.timedOut && !frame.ready && !frame.alive);
   const height = frame.height;
 
   const download = () => {
@@ -317,7 +358,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
                   const run = channel;
                   window.clearTimeout(leaveCheck.current);
                   leaveCheck.current = window.setTimeout(() => {
-                    const ours = readies.current.channel === run ? readies.current.count : 0;
+                    const ours = alives.current.channel === run ? alives.current.count : 0;
                     if (ours >= seen) return; // our page loaded again (e.g. location.reload())
                     setNavigatedAway(true);
                     setReloadKey((k) => k + 1);
@@ -336,6 +377,15 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
           {building && (
             <div className="flex h-40 animate-pulse items-center justify-center gap-2 text-xs text-muted-foreground">
               <AppWindow className="size-4" /> Preparing preview…
+            </div>
+          )}
+          {notes.length > 0 && errors.length === 0 && !failed && (
+            <div role="status" className="flex flex-col gap-1 border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {notes.map((note) => (
+                <p key={note} className="break-words">
+                  {note}
+                </p>
+              ))}
             </div>
           )}
           {(errors.length > 0 || failed) && (

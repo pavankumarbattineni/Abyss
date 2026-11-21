@@ -27,6 +27,7 @@ from collections.abc import Callable
 from langchain_core.messages import AIMessage, ToolMessage
 
 from abyss_agents.factory import PARENT_AGENT_NAME
+from abyss_agents.middleware import CONTINUE_EVENT, RESTART_EVENT, SeamFilter
 from utils.fake_tool_call import CallTextFilter
 from utils.reasoning_splitter import ReasoningSplitter
 from utils.tool_output import extract_tool_output
@@ -74,6 +75,10 @@ class StreamProjector:
         # Drops tool calls a model wrote as text from the visible answer (utils/fake_tool_call.py).
         self._call_filters: dict[str, CallTextFilter] = {}
         self._labels: dict[str, str] = {}
+        self._last_run: dict[str, str] = {}          # agent label → its latest model call's run_id
+        self._continuing: dict[str, tuple[str, bool]] = {}  # label → (tail, in_code) for its next call
+        self._seam_filters: dict[str, SeamFilter] = {}
+        self._run_seams: dict[str, tuple[str, bool]] = {}  # run_id → the seam it continues at
         self._is_final: dict[str, bool] = {}
         self._turn_start: dict[str, int] = {}        # run_id → len(content_tokens) at turn start
         self._reasoning_buffers: dict[str, list[str]] = {}
@@ -119,6 +124,11 @@ class StreamProjector:
             self._on_tool_end(event, label, ns)
         elif kind == "on_chain_end":
             self._on_chain_end(event, node, label)
+        elif kind == "on_custom_event" and event.get("name") == RESTART_EVENT:
+            self._on_restart(label)
+        elif kind == "on_custom_event" and event.get("name") == CONTINUE_EVENT:
+            data = event.get("data") or {}
+            self._on_continue(label, str(data.get("rewind") or ""), bool(data.get("in_code")), str(data.get("tail") or ""))
 
     def steps_for_flush(self) -> list[dict]:
         """Reasoning steps so far, including any still-open reasoning block as a partial step."""
@@ -135,20 +145,73 @@ class StreamProjector:
 
     def finish(self) -> None:
         """Flush splitters after the event stream ended cleanly, emitting the held-back tail."""
-        for run_id, splitter in self._splitters.items():
-            label = self._labels.get(run_id, "unknown")
-            for sc in splitter.flush(generation_ended_cleanly=True):
-                if sc.channel == "reasoning":
-                    if sc.text:
-                        self._reasoning_buffers.setdefault(run_id, []).append(sc.text)
-                        self._reasoning_token_count += 1
-                        self._emit("reasoning_token", {"content": sc.text, "agent": label})
-                    if sc.event == "end":
-                        self._close_reasoning(run_id, label, sc.truncated)
-                elif sc.text and self._is_final.get(run_id, False):
-                    self._emit_answer(run_id, sc.text)
-            if self._is_final.get(run_id, False):
-                self._emit_answer(run_id, "", flush=True)
+        for run_id in list(self._splitters):
+            self._flush_run(run_id)
+
+    def _flush_run(self, run_id: str) -> None:
+        """Emit what a model call's splitter and call filter still hold back."""
+        splitter = self._splitters[run_id]
+        label = self._labels.get(run_id, "unknown")
+        if run_id in self._seam_filters:
+            self._on_text(run_id, label, self._seam_filters.pop(run_id).flush(), filtered=True)
+        for sc in splitter.flush(generation_ended_cleanly=True):
+            if sc.channel == "reasoning":
+                if sc.text:
+                    self._reasoning_buffers.setdefault(run_id, []).append(sc.text)
+                    self._reasoning_token_count += 1
+                    self._emit("reasoning_token", {"content": sc.text, "agent": label})
+                if sc.event == "end":
+                    self._close_reasoning(run_id, label, sc.truncated)
+            elif sc.text and self._is_final.get(run_id, False):
+                self._emit_answer(run_id, sc.text)
+        if self._is_final.get(run_id, False):
+            self._emit_answer(run_id, "", flush=True)
+
+    def _take_back(self, text: str) -> None:
+        """Remove `text` from the end of the answer, here and in the chat."""
+        remaining = len(text)
+        while remaining:
+            last = self.content_tokens[-1]
+            if len(last) <= remaining:
+                self.content_tokens.pop()
+                remaining -= len(last)
+            else:
+                self.content_tokens[-1] = last[: len(last) - remaining]
+                remaining = 0
+        self._emit("answer_rewind", {"text": text})
+
+    def _on_restart(self, label: str) -> None:
+        """A model call failed part-way and is made again
+        (abyss_agents/middleware.py RestartFailedReply): take back the answer
+        text that call showed, so the new try isn't shown after it."""
+        run_id = self._last_run.get(label)
+        if run_id is None or not self._is_final.get(run_id):
+            return  # a specialist's text is never shown
+        self._seam_filters.pop(run_id, None)  # the half-held start is dropped with the rest
+        self._flush_run(run_id)
+        start = self._turn_start.get(run_id, 0)
+        shown = "".join(self.content_tokens[start:])
+        if shown:
+            self._take_back(shown)
+        # A failed continuation is tried again as a continuation.
+        if run_id in self._run_seams:
+            self._continuing[label] = self._run_seams[run_id]
+
+    def _on_continue(self, label: str, line: str, in_code: bool = False, tail: str = "") -> None:
+        """A cut-off answer is about to be continued, its unfinished last line
+        written again in full (abyss_agents/middleware.py ContinueCutOffAnswer):
+        show everything the cut-off call held back, then take that line off --
+        here and, through an answer_rewind event, in the chat."""
+        run_id = self._last_run.get(label)
+        if run_id is None or not self._is_final.get(run_id):
+            return  # a specialist's text is never shown
+        self._flush_run(run_id)
+        # The continuation's start is cleaned like the joined reply (clean_seam).
+        self._continuing[label] = (tail, in_code)
+        start = self._turn_start.get(run_id, 0)
+        if not line or not "".join(self.content_tokens[start:]).endswith(line):
+            return
+        self._take_back(line)
 
     def abort(self) -> None:
         """Close open reasoning blocks after a cancel. Records steps only — nothing is emitted."""
@@ -218,12 +281,16 @@ class StreamProjector:
         if not run_id:
             return
 
+        self._last_run[label] = run_id
         if run_id not in self._splitters:
             self._splitters[run_id] = ReasoningSplitter()
             self._reasoning_buffers[run_id] = []
             self._labels[run_id] = label
             self._is_final[run_id] = label == PARENT_AGENT_NAME
             self._turn_start[run_id] = len(self.content_tokens)
+            if label in self._continuing:
+                self._run_seams[run_id] = self._continuing.pop(label)
+                self._seam_filters[run_id] = SeamFilter(*self._run_seams[run_id])
         label = self._labels[run_id]
 
         # Providers with native reasoning stream a list of content blocks; plain
@@ -257,7 +324,9 @@ class StreamProjector:
             self._native_open.discard(run_id)
             self._close_reasoning(run_id, label, truncated=False)
 
-    def _on_text(self, run_id: str, label: str, token: str) -> None:
+    def _on_text(self, run_id: str, label: str, token: str, *, filtered: bool = False) -> None:
+        if not filtered and run_id in self._seam_filters:
+            token = self._seam_filters[run_id].feed(token)
         if not token:
             return
         for sc in self._splitters[run_id].feed(token):
@@ -300,6 +369,8 @@ class StreamProjector:
         # A parent turn that only calls specialists has nothing user-facing to
         # say yet; drop any text it leaked so it isn't persisted as the answer.
         run_id = event.get("run_id", "")
+        if run_id in self._seam_filters:  # a one-line continuation: release what was held
+            self._on_text(run_id, self._labels[run_id], self._seam_filters.pop(run_id).flush(), filtered=True)
         if run_id in self._labels:
             self._close_native_reasoning(run_id, self._labels[run_id])
         if (

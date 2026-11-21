@@ -14,6 +14,7 @@ from constants import (
     STREAM_STATUS_RUNNING,
 )
 from database.checkpointer import delete_thread_checkpoints
+from services.thread_service import count_active_threads
 from database.models import (
     Agent,
     ApiKey,
@@ -89,7 +90,7 @@ class ProfileService:
         return ProfileStats(
             # Specialists are agents too (parent_id set); count the user's own agents.
             agents=await count(Agent, Agent.parent_id.is_(None)),
-            threads=await count(Thread),
+            threads=await count_active_threads(session, user_id),
             mcp_servers=await count(MCPConnection),
             api_keys=await count(ApiKey),
             provider_keys=await count(LlmCredential),

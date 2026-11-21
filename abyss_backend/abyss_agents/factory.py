@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from langchain.agents import create_agent
 import constants
-from abyss_agents.history import PastTurnTrimMiddleware, TurnStartSummarization
+from abyss_agents.history import ContextBudgetMiddleware, PastTurnTrimMiddleware, TurnStartSummarization
 from langchain.agents.middleware import (
     ModelCallLimitMiddleware,
     ModelRetryMiddleware,
@@ -29,7 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from abyss_agents.middleware import (
     ActOrAnswerGuard,
+    ContinueCutOffAnswer,
     ReasoningReminderMiddleware,
+    RestartFailedReply,
     TRANSIENT_LLM_EXCEPTIONS,
     SubAgentCallLimitMiddleware,
     ToolApprovalMiddleware,
@@ -185,8 +187,11 @@ async def build_agent(
                 *_tool_policy(tool_name, get_tool_permissions_for_agent(str(sub.id)), child_tools),
                 _model_retry(),
                 ActOrAnswerGuard(),
+                ContinueCutOffAnswer(constants.MAX_ANSWER_CONTINUATIONS),
+                RestartFailedReply(),
                 ModelCallLimitMiddleware(run_limit=_SUB_AGENT_MODEL_CALL_LIMIT),
                 *([ReasoningReminderMiddleware()] if prompt_reasoning else []),
+                ContextBudgetMiddleware(llm),
             ],
             name=tool_name,
         )
@@ -205,6 +210,10 @@ async def build_agent(
     middleware += [
         _model_retry(),
         ActOrAnswerGuard(),
+        # A reply cut off at the output limit is continued until complete.
+        ContinueCutOffAnswer(constants.MAX_ANSWER_CONTINUATIONS),
+        # A provider outage part-way through a reply: shown text taken back, call made again.
+        RestartFailedReply(),
         ModelCallLimitMiddleware(run_limit=MAX_AGENT_ITERATIONS),
         # History: summarize at turn start (sized to the selected model), then
         # send earlier turns as question + answer only (abyss_agents/history.py).
@@ -217,6 +226,8 @@ async def build_agent(
     # Prompt-protocol reasoning: repeat the instruction after the question (view only).
     if prompt_reasoning:
         middleware.append(ReasoningReminderMiddleware())
+    # Last: whatever the history and this turn hold, the call fits the model.
+    middleware.append(ContextBudgetMiddleware(llm))
 
     graph = create_agent(
         llm,

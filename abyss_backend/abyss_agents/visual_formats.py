@@ -1,7 +1,8 @@
 """How the agent gets a visual format's spec (data in abyss_agents/visual_specs.py).
 
-- The user starts a message with `/<format>`: `VisualFormatMiddleware` adds that
-  format's spec to the system prompt for the turn -- no extra call.
+- The user starts a message with one or more `/<format>` commands:
+  `VisualFormatMiddleware` adds their specs to the system prompt for the turn
+  -- no extra call.
 - The agent decides a visual would help: it calls the `get_visual_format` tool
   for the spec, then answers.
 """
@@ -13,7 +14,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
-from abyss_agents.visual_specs import catalog, requested_format, spec_for
+from abyss_agents.visual_specs import catalog, requested_formats, spec_for
 
 
 @tool("get_visual_format")
@@ -41,7 +42,7 @@ def _last_question(messages: list) -> str:
 
 
 class VisualFormatMiddleware(AgentMiddleware):
-    """A message starting with `/<format>` gets that format's spec for the turn.
+    """A message starting with `/<format>` commands gets those formats' specs for the turn.
 
     Added to the system prompt of every model call in the turn (the request is
     rebuilt per call, so nothing accumulates), so the model can draw straight
@@ -49,14 +50,23 @@ class VisualFormatMiddleware(AgentMiddleware):
     """
 
     def _with_spec(self, request):
-        name = requested_format(_last_question(request.messages))
-        if not name:
+        names = requested_formats(_last_question(request.messages))
+        if not names:
             return request
         base = request.system_message.content if request.system_message else ""
-        addition = (
-            f"## Requested format\nThe user asked for `/{name}`: answer with it "
-            f"(no need to call get_visual_format).\n{spec_for(name)}"
-        )
+        specs = "\n\n".join(spec_for(name) for name in names)
+        if len(names) == 1:
+            addition = (
+                f"## Requested format\nThe user asked for `/{names[0]}`: answer with it "
+                f"(no need to call get_visual_format).\n{specs}"
+            )
+        else:
+            asked = ", ".join(f"`/{name}`" for name in names)
+            addition = (
+                f"## Requested formats\nThe user asked for {asked}: answer with one "
+                f"```visual block per format, in that order, each covering the question "
+                f"(no need to call get_visual_format).\n{specs}"
+            )
         return request.override(system_message=SystemMessage(content=f"{base}\n\n{addition}".strip()))
 
     def wrap_model_call(self, request, handler: Callable):

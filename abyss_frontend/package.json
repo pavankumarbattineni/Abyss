@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/build-preview-runtime.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/build-preview-runtime.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -53,10 +55,17 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "chart.js": "4.6.1",
+    "d3": "7.9.2",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "framer-motion": "14.14.0",
+    "gsap": "3.15.1",
+    "lucide": "1.77.0",
     "patch-package": "^8.0.1",
     "tailwindcss": "^4",
+    "three": "0.187.0",
     "typescript": "^5"
   },
   "overrides": {
