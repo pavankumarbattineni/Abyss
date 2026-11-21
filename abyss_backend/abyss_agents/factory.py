@@ -202,7 +202,8 @@ async def build_agent(
     sub_names = {opt["tool_name"] for opt in sub_options}
 
     middleware = [
-        ToolResultMiddleware(),
+        # Specialists have their own (longer) time limit.
+        ToolResultMiddleware(no_timeout=frozenset(to_tool_name(sub.name) for sub in sub_agents)),
         *_tool_policy(PARENT_AGENT_NAME, parent_permissions, parent_tools),
     ]
     if sub_names:

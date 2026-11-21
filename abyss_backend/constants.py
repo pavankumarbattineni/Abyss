@@ -96,6 +96,15 @@ SUB_AGENT_RECURSION_LIMIT = 50
 LLM_SOURCE_DEFAULT = "default"
 LLM_SOURCE_BYOK = "byok"
 SUB_AGENT_TIMEOUT_SECONDS = 900
+# A single (MCP) tool call that hasn't answered by then returns an error to
+# the agent instead of holding the whole turn (abyss_agents/middleware.py).
+TOOL_CALL_TIMEOUT_SECONDS = 180
+# Stop: how long DELETE /streams/{id} waits for the generation to save the
+# stopped reply itself before saving it on its behalf (chat_service.stop_stream).
+CANCEL_GRACE_SECONDS = 5
+# A RUNNING/PENDING stream with no live generation in this process, untouched
+# for this long, is left over (e.g. a lost Stop): it no longer blocks the thread.
+ORPHANED_STREAM_SECONDS = 120
 # Retries for transient network errors (dropped connection, reset) talking to the
 # LLM provider. Only applied where nothing with side effects (tool execution)
 # happens before the call returns — see ModelRetryMiddleware in abyss_agents/factory.py.

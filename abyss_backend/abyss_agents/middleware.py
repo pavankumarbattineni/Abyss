@@ -51,25 +51,55 @@ class ToolResultMiddleware(AgentMiddleware):
     - Converts a raised tool exception into an error ToolMessage so the agent
       can adapt instead of the whole run failing. Graph control-flow signals
       (interrupts) are never swallowed.
+    - Runs each call in a task of its own and waits for it with a time limit
+      (TOOL_CALL_TIMEOUT_SECONDS; none for the names in `no_timeout`, i.e.
+      specialists, which have their own). A tool that hangs -- an MCP server
+      that never answers -- gives the agent an error instead of holding the
+      turn forever, and a Stop always reaches the turn: MCP clients run on
+      anyio task groups, which can absorb a cancel aimed at the turn while it
+      waits inside them, leaving the turn running and unsaved.
     """
+
+    def __init__(self, timeout: float | None = None, no_timeout: frozenset[str] = frozenset()) -> None:
+        super().__init__()
+        from constants import TOOL_CALL_TIMEOUT_SECONDS
+
+        self.timeout = TOOL_CALL_TIMEOUT_SECONDS if timeout is None else timeout
+        self.no_timeout = no_timeout
+
+    def _error(self, request: ToolCallRequest, text: str) -> ToolMessage:
+        return ToolMessage(
+            content=sanitize_for_reasoning_tags(text),
+            tool_call_id=request.tool_call["id"],
+            name=request.tool_call["name"],
+            status="error",
+        )
 
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
     ) -> ToolMessage | Command[Any]:
+        name = request.tool_call["name"]
+        call = asyncio.ensure_future(handler(request))
         try:
-            result = await handler(request)
+            done, _ = await asyncio.wait({call}, timeout=None if name in self.no_timeout else self.timeout)
+        except asyncio.CancelledError:
+            call.cancel()  # the turn was stopped: stop the call too, without waiting on it
+            raise
+        if not done:
+            call.cancel()
+            logger.warning("Tool %s didn't answer within %ss", name, self.timeout)
+            return self._error(
+                request, f"Tool error: {name} didn't answer within {int(self.timeout)} seconds. Try again or go on without it.",
+            )
+        try:
+            result = call.result()
         except GraphBubbleUp:
             raise
         except Exception as exc:
-            logger.warning("Tool %s raised: %r", request.tool_call["name"], exc)
-            return ToolMessage(
-                content=sanitize_for_reasoning_tags(f"Tool error: {exc}"),
-                tool_call_id=request.tool_call["id"],
-                name=request.tool_call["name"],
-                status="error",
-            )
+            logger.warning("Tool %s raised: %r", name, exc)
+            return self._error(request, f"Tool error: {exc}")
         if isinstance(result, ToolMessage):
             result.content = sanitize_for_reasoning_tags(extract_tool_output(result) or "")
         return result

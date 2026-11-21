@@ -3,7 +3,8 @@ from uuid import UUID, uuid4
 import json
 import logging
 import os
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from langchain_core.language_models import BaseChatModel
@@ -13,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import config
 from constants import (
+    CANCEL_GRACE_SECONDS,
     LLM_SOURCE_BYOK,
     LLM_SOURCE_DEFAULT,
     MAX_AGENT_ITERATIONS,
+    ORPHANED_STREAM_SECONDS,
     REASONING_MODE_NATIVE,
     REASONING_MODE_PROMPT,
     STREAM_CLEANUP_DELAY_SECONDS,
@@ -379,6 +382,140 @@ async def _save_summary(
     return message.id
 
 
+_ACTIVE_STATUSES = (STREAM_STATUS_PENDING, STREAM_STATUS_RUNNING)
+
+
+@dataclass
+class _RunState:
+    """What a running generation has produced so far (kept in stream_manager),
+    so a Stop can save the stopped reply on the generation's behalf."""
+
+    thread_id: str
+    projector: StreamProjector
+    usage_values: Callable[[], dict]
+    cost_usd: Callable[[], float | None]
+    summary_message_ids: list[str] = field(default_factory=list)
+    # The thread's last checkpoint before this turn; unknown until read.
+    checkpoint_known: bool = False
+    last_good_checkpoint_id: str | None = None
+
+
+async def _save_stopped_reply(
+    session: AsyncSession,
+    stream_id: str,
+    *,
+    thread_id: str,
+    partial_text: str,
+    reasoning_steps: list[dict],
+    usage: dict,
+    cost_usd: float | None,
+    summary_message_ids: list[str],
+    checkpoint_known: bool,
+    last_good_checkpoint_id: str | None,
+) -> bool:
+    """Save a stopped generation: its reply so far (is_partial, shown as
+    "Agent was interrupted", also with no text yet), its reasoning and usage,
+    the stream CANCELLED -- and take the thread back to its state before the
+    turn. Exactly once: the stream is claimed first (only while it is still
+    PENDING/RUNNING), so the generation and a Stop that saves on its behalf
+    can't both save it. Returns whether this call saved it.
+    """
+    claimed = await session.execute(
+        update(StreamRecord)
+        .where(StreamRecord.id == stream_id, StreamRecord.status.in_(_ACTIVE_STATUSES))
+        .values(status=STREAM_STATUS_CANCELLED, updated_at=utcnow())
+    )
+    if claimed.rowcount == 0:
+        await session.rollback()
+        return False
+    # The turn's state is rolled back below, so a summary made in it no
+    # longer applies: drop it from the chat too.
+    if summary_message_ids:
+        await session.execute(delete(Message).where(Message.id.in_(summary_message_ids)))
+    partial_msg = Message(thread_id=thread_id, role="assistant", content=partial_text, is_partial=True)
+    session.add(partial_msg)
+    await session.flush()
+    values: dict = {"assistant_message_id": partial_msg.id, "partial_content": None, **usage}
+    if reasoning_steps:
+        values["reasoning"] = json.dumps({"steps": reasoning_steps})
+    if cost_usd is not None:
+        values["cost_usd"] = cost_usd
+    await session.execute(update(StreamRecord).where(StreamRecord.id == stream_id).values(**values))
+    await session.commit()
+    # Remove only the checkpoints written during the stopped turn; earlier
+    # turns are kept so the next message has the whole conversation.
+    if checkpoint_known:
+        from database.checkpointer import delete_checkpoints_after
+        await delete_checkpoints_after(thread_id, last_good_checkpoint_id)
+    return True
+
+
+async def stop_stream(stream_id: str) -> None:
+    """Stop a generation and make sure its reply so far is saved.
+
+    Cancels the generation task and gives it CANCEL_GRACE_SECONDS to save the
+    stopped reply itself. If the stream is still not saved then -- the task
+    didn't respond (stuck in a call that absorbs the cancel), or it runs
+    nowhere any more (lost after a restart) -- it is saved here from the
+    task's live state (or the last flushed state), so the chat, the stream
+    record and the thread always agree that the reply was stopped.
+    """
+    task = stream_manager.get_task(stream_id)
+    if task is not None and not task.done():
+        task.cancel()
+        await asyncio.wait({task}, timeout=CANCEL_GRACE_SECONDS)
+    if await _save_stopped_on_behalf(stream_id):
+        logger.warning("Stream %s: saved the stopped reply on the generation's behalf", stream_id)
+    if task is not None and not task.done():
+        task.cancel()  # once more: a stuck task may let the next cancel through
+
+
+async def _save_stopped_on_behalf(stream_id: str) -> bool:
+    """Save a stopped stream that its own generation didn't save (see stop_stream)."""
+    from database.session import async_session_maker
+
+    state: _RunState | None = stream_manager.get_run_state(stream_id)
+    async with async_session_maker() as session:
+        record = await session.get(StreamRecord, stream_id)
+        if record is None or record.status not in _ACTIVE_STATUSES:
+            return False
+        if state is not None:
+            saved = await _save_stopped_reply(
+                session, stream_id,
+                thread_id=state.thread_id,
+                partial_text="".join(state.projector.content_tokens),
+                reasoning_steps=state.projector.steps_for_flush(),
+                usage=state.usage_values(),
+                cost_usd=state.cost_usd(),
+                summary_message_ids=state.summary_message_ids,
+                checkpoint_known=state.checkpoint_known,
+                last_good_checkpoint_id=state.last_good_checkpoint_id,
+            )
+        else:
+            # No live state in this process: what the last periodic flush saved.
+            steps: list[dict] = []
+            if record.reasoning:
+                try:
+                    steps = json.loads(record.reasoning).get("steps", [])
+                except Exception:
+                    steps = []
+            saved = await _save_stopped_reply(
+                session, stream_id,
+                thread_id=record.thread_id,
+                partial_text=record.partial_content or "",
+                reasoning_steps=steps,
+                usage={},
+                cost_usd=None,
+                summary_message_ids=[],
+                checkpoint_known=False,
+                last_good_checkpoint_id=None,
+            )
+    if saved and state is not None:
+        state.projector._emit("error", {"message": "Stream cancelled", "code": "cancelled"})
+        stream_manager.signal_done(stream_id)
+    return saved
+
+
 async def _run_generation(
     stream_id: str,
     thread_id: str,
@@ -436,6 +573,19 @@ async def _run_generation(
                 llm_provider=llm_provider_value,
                 llm_model=llm_model_value,
             )
+
+        def run_cost_usd() -> float | None:
+            return _compute_cost_usd(
+                llm_provider_value, llm_model_value,
+                projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
+            )
+
+        run_state = _RunState(
+            thread_id=thread_id, projector=projector, usage_values=usage_values,
+            cost_usd=run_cost_usd, summary_message_ids=summary_message_ids,
+        )
+        stream_manager.set_run_state(stream_id, run_state)
+        last_good_checkpoint_id: str | None = None
 
         try:
             await session.execute(
@@ -507,9 +657,9 @@ async def _run_generation(
             # conversation turns in the checkpoint history.
             thread_config = {"configurable": {"thread_id": thread_id}}
             pre_turn_tuple = await checkpointer.aget_tuple(thread_config)
-            last_good_checkpoint_id: str | None = (
-                pre_turn_tuple.checkpoint["id"] if pre_turn_tuple else None
-            )
+            last_good_checkpoint_id = pre_turn_tuple.checkpoint["id"] if pre_turn_tuple else None
+            run_state.last_good_checkpoint_id = last_good_checkpoint_id
+            run_state.checkpoint_known = True
 
             graph_input = (
                 Command(resume=resume_map) if resume_map is not None
@@ -565,20 +715,24 @@ async def _run_generation(
             # interrupts, not via an exception.
             state_snapshot = await graph.aget_state(thread_config)
             if state_snapshot.interrupts:
-                projector._emit("tool_approval_required", _approval_payload(state_snapshot.interrupts))
-                await session.execute(
+                paused = await session.execute(
                     update(StreamRecord)
-                    .where(StreamRecord.id == stream_id)
+                    .where(StreamRecord.id == stream_id, StreamRecord.status.in_(_ACTIVE_STATUSES))
                     .values(
                         status=STREAM_STATUS_AWAITING_APPROVAL,
                         partial_content="".join(projector.content_tokens) if projector.content_tokens else None,
                         reasoning=json.dumps({"steps": projector.reasoning_steps}) if projector.reasoning_steps else None,
-                        total_chunks=projector.chunk_index,
+                        total_chunks=projector.chunk_index + 1,
                         updated_at=utcnow(),
                         **usage_values(),
                     )
                 )
+                if paused.rowcount == 0:  # stopped meanwhile, and saved as stopped
+                    await session.rollback()
+                    stream_manager.signal_done(stream_id)
+                    return
                 await session.commit()
+                projector._emit("tool_approval_required", _approval_payload(state_snapshot.interrupts))
                 stream_manager.signal_done(stream_id)
                 paused_for_approval = True
                 logger.info("Stream %s paused for tool approval (%d chunks)", stream_id, projector.chunk_index)
@@ -636,9 +790,9 @@ async def _run_generation(
             run_usage["input_tokens"] += title_usage.input_tokens
             run_usage["cache_read_tokens"] += title_usage.cache_read_tokens
             run_usage["output_tokens"] += title_usage.output_tokens
-            await session.execute(
+            completed = await session.execute(
                 update(StreamRecord)
-                .where(StreamRecord.id == stream_id)
+                .where(StreamRecord.id == stream_id, StreamRecord.status.in_(_ACTIVE_STATUSES))
                 .values(
                     status=STREAM_STATUS_COMPLETED,
                     assistant_message_id=assistant_msg.id,
@@ -651,64 +805,37 @@ async def _run_generation(
                     **run_usage,
                 )
             )
+            if completed.rowcount == 0:
+                # Stopped while finishing, and already saved as stopped: keep that.
+                await session.rollback()
+                stream_manager.signal_done(stream_id)
+                return
             await session.commit()  # title update + StreamRecord COMPLETED in one transaction
             stream_manager.signal_done(stream_id)
             logger.info("Stream %s completed (%d chunks)", stream_id, projector.chunk_index)
 
         except asyncio.CancelledError:
             logger.info("Stream %s cancelled", stream_id)
+            saved = False
             try:
                 await session.rollback()
-                # The turn's state is rolled back below, so a summary made in it no
-                # longer applies: drop it from the chat too.
-                if summary_message_ids:
-                    await session.execute(delete(Message).where(Message.id.in_(summary_message_ids)))
-                # Close any pending reasoning blocks
-                projector.abort()
-                partial_text = "".join(projector.content_tokens)
-                stream_values: dict = {"status": STREAM_STATUS_CANCELLED, "updated_at": utcnow()}
-
-                # Always save the stopped reply (is_partial=True), even with no text or
-                # reasoning yet -- e.g. stopped while the model was still thinking. The
-                # chat shows "Agent was interrupted" for it, also after a reload, and
-                # get_messages attaches any reasoning to it.
-                partial_msg = Message(
+                projector.abort()  # close any open reasoning block
+                saved = await _save_stopped_reply(
+                    session, stream_id,
                     thread_id=thread_id,
-                    role="assistant",
-                    content=partial_text,
-                    is_partial=True,
+                    partial_text="".join(projector.content_tokens),
+                    reasoning_steps=projector.reasoning_steps,
+                    # A cancelled run still consumed real tokens: record and cost them.
+                    usage=usage_values(),
+                    cost_usd=run_cost_usd(),
+                    summary_message_ids=summary_message_ids,
+                    checkpoint_known=run_state.checkpoint_known,
+                    last_good_checkpoint_id=last_good_checkpoint_id,
                 )
-                session.add(partial_msg)
-                await session.flush()
-                stream_values["assistant_message_id"] = partial_msg.id
-                stream_values["partial_content"] = None
-
-                if projector.reasoning_steps:
-                    stream_values["reasoning"] = json.dumps({"steps": projector.reasoning_steps})
-
-                # A cancelled run still consumed real tokens up to the point of
-                # cancellation — record and cost them, don't discard.
-                stream_values.update(usage_values())
-                stream_values["cost_usd"] = _compute_cost_usd(
-                    llm_provider_value, llm_model_value,
-                    projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
-                )
-
-                await session.execute(
-                    update(StreamRecord)
-                    .where(StreamRecord.id == stream_id)
-                    .values(**stream_values)
-                )
-                await session.commit()
-
-                # Remove only the partial checkpoints written during this cancelled
-                # turn. All prior turns' checkpoints are preserved so the next
-                # message resumes with full conversation context.
-                from database.checkpointer import delete_checkpoints_after
-                await delete_checkpoints_after(thread_id, last_good_checkpoint_id)
-            except Exception:
-                pass
-            projector._emit("error", {"message": "Stream cancelled", "code": "cancelled"})
+            except BaseException:
+                logger.exception("Stream %s: couldn't save the stopped reply", stream_id)
+            if saved:
+                projector._emit("error", {"message": "Stream cancelled", "code": "cancelled"})
             stream_manager.signal_done(stream_id)
             raise
 
@@ -752,9 +879,9 @@ async def _run_generation(
                 # A failed run still consumed real tokens up to the point of
                 # failure (e.g. the model answered but content assembly or
                 # title generation errored afterward) — record and cost them.
-                await session.execute(
+                failed = await session.execute(
                     update(StreamRecord)
-                    .where(StreamRecord.id == stream_id)
+                    .where(StreamRecord.id == stream_id, StreamRecord.status.in_(_ACTIVE_STATUSES))
                     .values(
                         status=STREAM_STATUS_FAILED,
                         error_message=error_msg,
@@ -767,10 +894,15 @@ async def _run_generation(
                         **usage_values(),
                     )
                 )
-                await session.commit()
+                if failed.rowcount == 0:  # stopped meanwhile, and saved as stopped
+                    await session.rollback()
+                    notice = ""
+                else:
+                    await session.commit()
             except Exception:
                 logger.exception("Stream %s: could not record the failure", stream_id)
-            projector._emit("error", {"message": notice, "code": error_code, "message_id": notice_id})
+            if notice:
+                projector._emit("error", {"message": notice, "code": error_code, "message_id": notice_id})
             stream_manager.signal_done(stream_id)
 
         finally:
@@ -785,6 +917,16 @@ async def _run_generation(
             # self-cancels any stale timer from a prior run of this stream_id.
             if not paused_for_approval:
                 stream_manager.schedule_cleanup_task(stream_id, delay=STREAM_CLEANUP_DELAY_SECONDS)
+
+
+def _is_left_over(record: StreamRecord) -> bool:
+    """A PENDING/RUNNING stream with no generation running for it in this
+    process, untouched for ORPHANED_STREAM_SECONDS (a live run in another
+    process, e.g. during a deploy, flushes its progress well within that)."""
+    if record.status not in _ACTIVE_STATUSES or stream_manager.is_task_running(record.id):
+        return False
+    updated = record.updated_at or record.created_at
+    return updated is None or (utcnow() - updated).total_seconds() > ORPHANED_STREAM_SECONDS
 
 
 class ChatService:
@@ -839,7 +981,16 @@ class ChatService:
                 ]),
             )
         )
-        if active.scalar_one_or_none():
+        existing = active.scalar_one_or_none()
+        if existing is not None and _is_left_over(existing):
+            # A generation that runs nowhere any more (e.g. its Stop was lost):
+            # save it as stopped, so the thread can go on.
+            logger.warning("Stream %s was left running; saving it as stopped", existing.id)
+            await _save_stopped_on_behalf(existing.id)
+            await session.refresh(existing)
+            if existing.status not in (*_ACTIVE_STATUSES, STREAM_STATUS_AWAITING_APPROVAL):
+                existing = None
+        if existing is not None:
             raise ValueError(
                 "A generation is already in progress for this thread "
                 "(it may be waiting on a tool approval decision)"
