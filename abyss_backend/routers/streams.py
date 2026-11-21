@@ -10,8 +10,7 @@ from constants import STREAM_STATUS_AWAITING_APPROVAL, STREAM_STATUS_COMPLETED, 
 from database.models import Message
 from database.session import get_async_session
 from schemas.stream import StreamCancelResponse, StreamStartResponse, StreamStatusResponse, ToolApprovalRequest
-from services.chat_service import ChatService
-import utils.stream_manager as stream_manager
+from services.chat_service import ChatService, stop_stream
 from utils.auth import get_current_user, get_current_user_flexible, get_current_user_sse
 from utils.reasoning_splitter import normalize_reasoning
 from utils.sse import get_verified_stream_record, sse_generator
@@ -124,7 +123,8 @@ async def cancel_stream(
     Returns:
         StreamCancelResponse with status "interrupted" if the stream was
         actively cancelled or a pending approval was denied, or the existing
-        terminal status otherwise.
+        terminal status otherwise. When it returns, the reply so far is saved
+        (is_partial) and the stream is CANCELLED.
 
     Raises:
         HTTPException: 422 if stream not found, 403 if access denied.
@@ -138,7 +138,9 @@ async def cancel_stream(
     if record.status not in (STREAM_STATUS_PENDING, STREAM_STATUS_RUNNING):
         return StreamCancelResponse(stream_id=stream_id, status=record.status.lower())
 
-    stream_manager.cancel_task(stream_id)
+    # Returns once the stopped reply is saved (by the generation, or on its
+    # behalf), so the client can reload the thread and find it there.
+    await stop_stream(stream_id)
     return StreamCancelResponse(stream_id=stream_id, status="interrupted")
 
 

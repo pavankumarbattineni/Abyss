@@ -59,6 +59,8 @@ export function useChatStream({
   // it ourselves on send/done/cancel doesn't retrigger that effect mid-stream.
   const [streamIdParam, setStreamIdParam] = useQueryState(STREAM_ID_PARAM);
   const streamIdParamRef = useRef(streamIdParam);
+  // Streams this view has already stopped (DELETE sent once each).
+  const stoppedStreamsRef = useRef<Set<string>>(new Set());
 
   const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
   const [isSending, setIsSending] = useState<boolean>(false);
@@ -396,8 +398,11 @@ export function useChatStream({
   };
 
   const cancelStream = () => {
-    const streamId = streamIdRef.current;
-    if (!streamId) return;
+    // The live stream's id; after a reload or a hand-off it may only be in the URL.
+    const streamId = streamIdRef.current ?? streamIdParamRef.current;
+    // One Stop per stream: a second call before the URL updates sends nothing.
+    if (!streamId || stoppedStreamsRef.current.has(streamId)) return;
+    stoppedStreamsRef.current.add(streamId);
 
     streamControllerRef.current?.abort();
     streamControllerRef.current = null;
@@ -426,9 +431,17 @@ export function useChatStream({
     setStreamingContent("");
     setIsStreaming(false);
 
-    streamService.cancelStream(streamId).catch(() => {
-      toast.error("Failed to stop the response cleanly, but generation has been halted locally.");
-    });
+    // DELETE /streams/{id} stops the generation and returns once the reply so
+    // far is saved (is_partial): reload the thread so the saved copy -- with its
+    // reasoning -- replaces the local one and stays after a refresh.
+    streamService
+      .cancelStream(streamId)
+      .then(() => {
+        if (resolvedThreadId) void queryClient.invalidateQueries({ queryKey: ["thread-messages", resolvedThreadId] });
+      })
+      .catch(() => {
+        toast.error("Failed to stop the response cleanly, but generation has been halted locally.");
+      });
   };
 
   const resolveApprovals = async (approvals: ToolApprovalPayload[]) => {

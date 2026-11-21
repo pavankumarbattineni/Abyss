@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Any
 
 from constants import STREAM_CLEANUP_DELAY_SECONDS
 
@@ -70,6 +71,25 @@ def register_task(stream_id: str, task: asyncio.Task) -> None:
     _running_tasks[stream_id] = task
 
 
+def get_task(stream_id: str) -> asyncio.Task | None:
+    return _running_tasks.get(stream_id)
+
+
+# Live state of a generation (services/chat_service.py): what it has shown so
+# far, so a Stop can save the stopped reply even when the generation task
+# itself doesn't respond to being cancelled (e.g. stuck in a tool call).
+
+_run_states: dict[str, Any] = {}
+
+
+def set_run_state(stream_id: str, state: Any) -> None:
+    _run_states[stream_id] = state
+
+
+def get_run_state(stream_id: str) -> Any | None:
+    return _run_states.get(stream_id)
+
+
 def cancel_task(stream_id: str) -> bool:
     """Cancel the background generation task. Returns True if a running task was found."""
     task = _running_tasks.get(stream_id)
@@ -91,6 +111,7 @@ def cleanup_stream(stream_id: str) -> None:
     _chunk_buffers.pop(stream_id, None)
     _sse_queues.pop(stream_id, None)
     _running_tasks.pop(stream_id, None)
+    _run_states.pop(stream_id, None)
     logger.debug("Cleaned up in-memory state for stream %s", stream_id)
 
 

@@ -32,6 +32,7 @@ import {
 import { ActionMenu } from "@/components/shared/action-menu";
 import { DeleteAgentDialog } from "@/components/shared/delete-agent-dialog";
 import { MOBILE_QUERY, useMediaQuery } from "@/hooks";
+import { useStableOrder } from "@/hooks";
 import { useAuth } from "@/providers";
 import { agentService, authService } from "@/services";
 import { useSidebarStore } from "@/store";
@@ -119,6 +120,8 @@ export function Sidebar() {
     queryKey: ["agents"],
     queryFn: () => agentService.getAgents(),
   });
+  // Recent-first, but never re-sorted under the pointer (see useStableOrder).
+  const { items: listedAgents, bind: holdAgentOrder } = useStableOrder(agents, (agent) => agent.id);
   const { user, isUserLoading, refreshAuthState } = useAuth();
   const [deletingAgent, setDeletingAgent] = useState<Agent | null>(null);
 
@@ -260,7 +263,11 @@ export function Sidebar() {
             </NavTooltip>
           </div>
           {/* Only the agent list scrolls; the navigation above and the footer stay put. */}
-          <nav aria-label="Agents" className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-1 pb-1">
+          <nav
+            aria-label="Agents"
+            className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-1 pb-1"
+            {...holdAgentOrder}
+          >
             {isLoading
               ? Array.from({ length: 3 }).map((_, index) => (
                   <div
@@ -271,7 +278,7 @@ export function Sidebar() {
                     {!collapsed && <Skeleton className="h-3 flex-1" />}
                   </div>
                 ))
-              : agents.map((agent) => (
+              : listedAgents.map((agent) => (
                   <div key={agent.id} className="group/agent relative">
                     <AgentNameTooltip name={agent.name} collapsed={collapsed}>
                       <Link

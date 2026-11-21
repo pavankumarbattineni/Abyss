@@ -54,9 +54,16 @@ const THREE_GLOBAL_ADDONS = new Set([
   "BufferGeometryUtils", "lil-gui.module.min",
 ]);
 
-type LibName = "three" | "gsap" | "chart.js" | "d3" | "lucide";
+type LibName = "three" | "gsap" | "chart.js" | "d3" | "lucide" | "aos" | "animejs" | "lenis" | "swiper";
 const LIB_ALIASES: Record<string, LibName> = {
   three: "three", "three.js": "three", gsap: "gsap", "chart.js": "chart.js", d3: "d3", lucide: "lucide",
+  aos: "aos", animejs: "animejs", lenis: "lenis", swiper: "swiper",
+};
+/** The stylesheet each library ships, if any. */
+const LIBRARY_CSS: Partial<Record<LibName, string>> = {
+  aos: "aos/aos.css",
+  lenis: "lenis/lenis.css",
+  swiper: "swiper/swiper-bundle.min.css",
 };
 
 /** Local file (under lib/) for a library file a page loads with <script src>; null if not ours. */
@@ -76,12 +83,25 @@ function classicFile(lib: LibName, path: string): string | null {
       return "d3.min.js";
     case "lucide":
       return "lucide.min.js";
+    case "aos":
+      return "aos/aos.js";
+    case "animejs":
+      return "anime/anime.min.js";
+    case "lenis":
+      return /snap/.test(path) ? null : "lenis/lenis.min.js";
+    case "swiper":
+      return /element/.test(path) ? null : "swiper/swiper-bundle.min.js";
   }
 }
 
 /** Local file (under lib/) for a library module a page imports; null if not ours. */
 function moduleFile(lib: LibName, path: string): string | null {
-  if (lib !== "three") return { gsap: "gsap.mjs", "chart.js": "chart.mjs", d3: "d3.mjs", lucide: "lucide.mjs" }[lib];
+  if (lib !== "three") {
+    return {
+      gsap: "gsap.mjs", "chart.js": "chart.mjs", d3: "d3.mjs", lucide: "lucide.mjs", aos: null,
+      animejs: "anime/anime.es.js", lenis: "lenis/lenis.mjs", swiper: "swiper/swiper-bundle.min.mjs",
+    }[lib];
+  }
   const addon = /\/(?:examples\/jsm|addons)\/(.*)$/.exec(path)?.[1];
   if (addon === "") return "three/examples/jsm/"; // an import-map folder entry
   if (addon) return `three/examples/jsm/${/\.[a-z]+$/i.test(addon) ? addon : `${addon}.js`}`;
@@ -104,8 +124,9 @@ function localLibraryUrl(match: RegExpExecArray | string[], base: string, classi
   if (!lib) return null;
   // cdnjs puts the version first: /ajax/libs/three.js/r128/three.min.js
   const path = cdnjs ? rawPath.replace(/^\/[^/]+/, "") : rawPath;
-  // Stylesheets and other files of these packages aren't served.
-  if (/\.(css|map|json)$/i.test(path)) return null;
+  // A library's own stylesheet; other files of these packages aren't served.
+  if (/\.css$/i.test(path)) return LIBRARY_CSS[lib] ? `${base}/${LIB}/${LIBRARY_CSS[lib]}` : null;
+  if (/\.(map|json)$/i.test(path)) return null;
   const file = classic ? classicFile(lib, path) : moduleFile(lib, path);
   return file ? `${base}/${LIB}/${file}` : null;
 }
@@ -125,6 +146,10 @@ export function libraryImportMap(runtimeBase: string): Record<string, string> {
     "chart.js/auto": `${lib}/chart.mjs`,
     d3: `${lib}/d3.mjs`,
     lucide: `${lib}/lucide.mjs`,
+    animejs: `${lib}/anime/anime.es.js`,
+    lenis: `${lib}/lenis/lenis.mjs`,
+    swiper: `${lib}/swiper/swiper-bundle.min.mjs`,
+    "swiper/bundle": `${lib}/swiper/swiper-bundle.min.mjs`,
   };
   for (const plugin of GSAP_PLUGINS) {
     imports[`gsap/${plugin}`] = `${lib}/gsap.mjs`;
@@ -138,8 +163,9 @@ const IMPORT_MAP = /(<script\b[^>]*\btype\s*=\s*["']importmap["'][^>]*>)([\s\S]*
 
 /**
  * A page's CDN copies of the supported libraries (three, gsap, chart.js, d3,
- * lucide) swapped for this app's local ones: classic scripts get the global
- * builds, module imports and import maps the ESM builds. The page's own import
+ * lucide, AOS, anime.js, Lenis, Swiper -- and their stylesheets) swapped for
+ * this app's local ones: classic scripts get the global builds, module
+ * imports and import maps the ESM builds. The page's own import
  * map, if any, gets the bare names it lacks; other URLs are left alone (and
  * stay blocked by the security policy).
  */
@@ -179,10 +205,12 @@ function reactLibrary(name: string): ReactLibrary | null {
   if (name === "lucide-react") return { file: "react/lucide-react.js", global: "__previewLucideReact" };
   if (name === "chart.js" || name === "chart.js/auto") return { file: "react/chart.js", global: "__previewChart" };
   if (name === "d3") return { file: "d3.min.js", global: "d3" };
+  if (name === "animejs" || name === "animejs/lib/anime.es.js") return { file: "anime/anime.min.js", global: "anime" };
+  if (name === "lenis") return { file: "lenis/lenis.min.js", global: "Lenis" };
   return null;
 }
 /** What the preview lists when a component imports something else. */
-const REACT_LIBRARY_NAMES = "react, three (+ addons), gsap, framer-motion, lucide-react, chart.js and d3";
+const REACT_LIBRARY_NAMES = "react, three (+ addons), gsap, framer-motion, lucide-react, chart.js, d3, anime.js and lenis";
 
 const HTML_LANGUAGES = new Set(["html", "htm", "xhtml"]);
 const REACT_LANGUAGES = new Set(["jsx", "tsx", "react"]);
@@ -498,6 +526,113 @@ function bridge(channel: string): string {
 }
 
 /**
+ * Tailwind v3 Play CDN compatibility. Pages written for cdn.tailwindcss.com
+ * (v3) configure it with `tailwind.config = {...}`; the preview runs Tailwind
+ * v4's browser build instead (withLocalTailwind), which has no `tailwind`
+ * global -- so that line threw "tailwind is not defined" and the page lost
+ * its theme. This stands in for the v3 global: a config assigned to it (or
+ * changed before the page has loaded) is translated into Tailwind v4 theme
+ * variables in a <style type="text/tailwindcss">, which the v4 build reads.
+ * Covers what pages configure: colors, fonts, font sizes and weights, radii,
+ * shadows, spacing, breakpoints, max widths, letter spacing, line heights,
+ * easings, animations with their keyframes, background images and
+ * class-based dark mode. Plugins aren't available and are ignored.
+ */
+export function tailwindV3Shim(): string {
+  return `(function () {
+  if (window.tailwind) return;
+  var THEME = {
+    colors: "color", fontFamily: "font", fontSize: "text", fontWeight: "font-weight", borderRadius: "radius",
+    boxShadow: "shadow", dropShadow: "drop-shadow", spacing: "spacing", screens: "breakpoint", maxWidth: "container",
+    letterSpacing: "tracking", lineHeight: "leading", transitionTimingFunction: "ease", animation: "animate", blur: "blur"
+  };
+  function kebab(s) { return String(s).replace(/([a-z0-9])([A-Z])/g, "$1-$2").replace(/[\\s_.\\/]+/g, "-").toLowerCase(); }
+  function fontList(v) {
+    return (Array.isArray(v) ? v : [v]).map(function (f) {
+      f = String(f);
+      return /\\s/.test(f) && !/^["']/.test(f) && f.indexOf(",") < 0 && f.indexOf("var(") < 0 ? '"' + f + '"' : f;
+    }).join(", ");
+  }
+  function declarations(obj) {
+    var out = [];
+    for (var k in obj) out.push(kebab(k) + ": " + obj[k] + ";");
+    return out.join(" ");
+  }
+  function build(config) {
+    var theme = (config && config.theme) || {};
+    var extend = theme.extend || {};
+    var vars = [], extra = [];
+    function section(key, value) {
+      if (!value || typeof value !== "object") return;
+      var ns = THEME[key];
+      if (key === "keyframes") {
+        for (var name in value) {
+          var frames = [];
+          for (var step in value[name]) frames.push(step + " { " + declarations(value[name][step]) + " }");
+          vars.push("@keyframes " + name + " { " + frames.join(" ") + " }");
+        }
+        return;
+      }
+      if (key === "backgroundImage") {
+        for (var bg in value) extra.push("@utility bg-" + kebab(bg) + " { background-image: " + value[bg] + "; }");
+        return;
+      }
+      if (!ns) return;
+      (function walk(prefix, obj) {
+        for (var k in obj) {
+          var v = obj[k];
+          var name = k === "DEFAULT" ? prefix : prefix + "-" + kebab(k);
+          if (key === "fontFamily") { vars.push("--" + name + ": " + fontList(v) + ";"); continue; }
+          if (key === "fontSize" && Array.isArray(v)) {
+            vars.push("--" + name + ": " + v[0] + ";");
+            var lh = v[1] && typeof v[1] === "object" ? v[1].lineHeight : v[1];
+            if (lh) vars.push("--" + name + "--line-height: " + lh + ";");
+            continue;
+          }
+          if (v && typeof v === "object" && !Array.isArray(v)) { walk(name, v); continue; }
+          vars.push("--" + name + ": " + (Array.isArray(v) ? v.join(", ") : v) + ";");
+        }
+      })(ns, value);
+    }
+    var keys = {};
+    for (var a in theme) if (a !== "extend") keys[a] = 1;
+    for (var b in extend) keys[b] = 1;
+    for (var key in keys) { section(key, theme[key]); section(key, extend[key]); }
+    var dark = config && config.darkMode;
+    if (dark === "class" || dark === "selector" || (Array.isArray(dark) && (dark[0] === "class" || dark[0] === "selector"))) {
+      extra.push("@custom-variant dark (&:where(.dark, .dark *));");
+    }
+    return (vars.length ? "@theme {\\n" + vars.join("\\n") + "\\n}\\n" : "") + extra.join("\\n");
+  }
+  var current = {};
+  function apply() {
+    var css = "";
+    try { css = build(current); } catch (e) { return; }
+    var el = document.getElementById("__tailwind_v3_config");
+    if (!el) {
+      if (!css) return;
+      el = document.createElement("style");
+      el.id = "__tailwind_v3_config";
+      el.setAttribute("type", "text/tailwindcss");
+      (document.head || document.documentElement).appendChild(el);
+    }
+    if (el.textContent !== css) el.textContent = css;
+  }
+  var api = {};
+  Object.defineProperty(api, "config", {
+    configurable: true,
+    enumerable: true,
+    get: function () { return current; },
+    set: function (value) { current = value || {}; apply(); }
+  });
+  window.tailwind = api;
+  // A config changed in place after it was set (tailwind.config.theme.x = ...).
+  document.addEventListener("DOMContentLoaded", apply);
+  window.addEventListener("load", apply);
+})();`;
+}
+
+/**
  * The page's own address as the base for every relative URL. A srcdoc frame
  * otherwise resolves them against the app page around it, so "#/menu" or
  * location.href = "#/cart" would load the app inside the frame. It must come
@@ -513,6 +648,7 @@ function head(channel: string, runtimeBase: string): string {
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<meta http-equiv="Content-Security-Policy" content="${policy(runtimeBase)}">`,
     `<script>${inlineScript(bridge(channel))}</script>`,
+    `<script>${inlineScript(tailwindV3Shim())}</script>`,
   ].join("\n");
 }
 

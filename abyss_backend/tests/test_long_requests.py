@@ -353,29 +353,62 @@ async def test_other_errors_and_too_many_failures_are_raised():
     assert len(calls) == 4  # the first try + one per delay
 
 
-def test_the_chat_takes_back_what_a_failed_call_showed():
-    from abyss_agents.middleware import RESTART_EVENT
+def _custom(projector, name, data):
+    projector.handle({
+        "event": "on_custom_event", "name": name, "run_id": "x",
+        "metadata": {"langgraph_node": "model", "lc_agent_name": PARENT_AGENT_NAME}, "data": data,
+    })
+
+
+async def test_the_chat_keeps_what_a_failed_call_showed_and_continues_it():
+    import asyncio
+
+    from abyss_agents.middleware import CALL_START_EVENT, RESUME_EVENT, _resume_requests
 
     events = []
     projector = StreamProjector(events.append)
-    _stream(projector, "run-0", "")  # nothing
-    projector.content_tokens.append("Earlier text. ")  # from an earlier model call of the turn
-    _stream(projector, "run-1", "```html\n<div>half")
-    projector.handle({
-        "event": "on_custom_event", "name": RESTART_EVENT, "run_id": "x",
-        "metadata": {"langgraph_node": "model", "lc_agent_name": PARENT_AGENT_NAME}, "data": {},
-    })
-    _stream(projector, "run-2", "```html\n<div>whole</div>\n```")
+    projector.content_tokens.append("Earlier text.\n")  # an earlier model call of the turn
+    _custom(projector, CALL_START_EVENT, {})
+    _stream(projector, "run-1", "```html\n<div>\n<p>hal")  # the provider fails here
+    future = asyncio.get_running_loop().create_future()
+    _resume_requests["r1"] = future
+    _custom(projector, RESUME_EVENT, {"request_id": "r1"})
+    shown = future.result()
+    # Only this call's text, minus its unfinished line (taken back to be rewritten).
+    assert shown["text"] == "```html\n<div>\n" and shown["line"] == "<p>hal" and shown["in_code"]
+    # The next try rewrites the line (a reopened fence and a repeated line are dropped).
+    _stream(projector, "run-2", "```html\n<p>half done</p>\n</div>\n```")
     projector.finish()
-    assert "".join(projector.content_tokens) == "Earlier text. ```html\n<div>whole</div>\n```"
-    shown = "Earlier text. "
+    assert "".join(projector.content_tokens) == "Earlier text.\n```html\n<div>\n<p>half done</p>\n</div>\n```"
+    seen = "Earlier text.\n"
     for event in events:
         if event["event_type"] == "token":
-            shown += event["data"]["content"]
+            seen += event["data"]["content"]
         elif event["event_type"] == "answer_rewind":
-            assert shown.endswith(event["data"]["text"])
-            shown = shown[: len(shown) - len(event["data"]["text"])]
-    assert shown == "".join(projector.content_tokens)
+            assert seen.endswith(event["data"]["text"])
+            seen = seen[: len(seen) - len(event["data"]["text"])]
+    assert seen == "".join(projector.content_tokens)
+
+
+async def test_a_retry_continues_the_shown_text_into_one_reply(monkeypatch):
+    import abyss_agents.middleware as mw
+
+    async def shown(*_):
+        return {"text": "Install Python 3.12\nCreate a virtual env\n", "line": "Then run", "tail": "Install Python 3.12\nCreate a virtual env\n", "in_code": False}
+
+    monkeypatch.setattr(mw, "_shown_by_failed_call", shown)
+    seen = []
+
+    async def handler(request):
+        seen.append(request.messages)
+        if len(seen) == 1:
+            raise _Unavailable("503 UNAVAILABLE")
+        return SimpleNamespace(result=[AIMessage("Create a virtual env\nThen run the app.")])  # repeats a line: dropped
+
+    response = await mw.RestartFailedReply(delays=(0,), visible=True).awrap_model_call(Request(messages=[]), handler)
+    assert response.result[0].content == "Install Python 3.12\nCreate a virtual env\nThen run the app."
+    assert seen[1][-2].content == "Install Python 3.12\nCreate a virtual env\n"
+    assert "connection problem" in seen[1][-1].content and "Then run" in seen[1][-1].content
 
 
 def test_provider_outages_are_recognised_from_their_text():

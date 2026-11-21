@@ -202,7 +202,8 @@ async def build_agent(
     sub_names = {opt["tool_name"] for opt in sub_options}
 
     middleware = [
-        ToolResultMiddleware(),
+        # Specialists have their own (longer) time limit.
+        ToolResultMiddleware(no_timeout=frozenset(to_tool_name(sub.name) for sub in sub_agents)),
         *_tool_policy(PARENT_AGENT_NAME, parent_permissions, parent_tools),
     ]
     if sub_names:
@@ -212,8 +213,8 @@ async def build_agent(
         ActOrAnswerGuard(),
         # A reply cut off at the output limit is continued until complete.
         ContinueCutOffAnswer(constants.MAX_ANSWER_CONTINUATIONS),
-        # A provider outage part-way through a reply: shown text taken back, call made again.
-        RestartFailedReply(),
+        # A provider outage part-way through a reply: tried again, continuing what was shown.
+        RestartFailedReply(visible=True),
         ModelCallLimitMiddleware(run_limit=MAX_AGENT_ITERATIONS),
         # History: summarize at turn start (sized to the selected model), then
         # send earlier turns as question + answer only (abyss_agents/history.py).
