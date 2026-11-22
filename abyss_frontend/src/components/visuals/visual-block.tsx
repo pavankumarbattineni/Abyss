@@ -134,14 +134,14 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
     />
     <figure
       aria-label={title ? `${name}: ${title}` : name}
-      className="overflow-hidden rounded-xl border border-border-soft bg-card font-sans text-sm leading-normal text-card-foreground"
+      className="font-sans text-sm leading-normal text-foreground"
     >
       {view === "data" ? (
-        <div className="p-3">
+        <div>
           <CodeBlock language="json" code={JSON.stringify(parsed.data, null, 2)} />
         </div>
       ) : (
-        <div ref={drawingRef} className="bg-card p-3 sm:p-4">
+        <div ref={drawingRef} className="py-1">
           {!ownsTitle && (title || subtitle) && (
             <figcaption className="mb-3">
               {title && <p className="text-base leading-snug font-semibold text-foreground">{title}</p>}

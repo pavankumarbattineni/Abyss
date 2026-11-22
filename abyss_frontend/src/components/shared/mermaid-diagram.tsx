@@ -303,7 +303,7 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
       image={ready ? { target: inlineRef, fileName: "diagram.png" } : undefined}
       moreItems={[ready && { label: "Download as SVG", icon: Download, onClick: handleDownload }]}
     />
-    <div className="relative overflow-hidden rounded-xl border border-border-soft font-sans">
+    <div className="relative overflow-hidden font-sans">
       {/* Off-screen scratch space Mermaid measures/draws in (see render()). */}
       <div
         ref={scratchRef}
@@ -311,17 +311,17 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
         className="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden"
       />
       {effective.status === "waiting" && (
-        <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+        <p className="pb-1.5 text-xs text-muted-foreground">
           The diagram appears when the answer finishes.
         </p>
       )}
 
       {showCode ? (
-        <pre className="overflow-x-auto bg-card p-3 font-mono text-[0.875em]">
+        <pre className="overflow-x-auto rounded-lg border border-border-soft bg-card p-3 font-mono text-[0.875em]">
           <code>{shownSource}</code>
         </pre>
       ) : effective.status === "error" ? (
-        <div className="flex flex-col items-start gap-2 bg-card p-4 text-sm">
+        <div className="flex flex-col items-start gap-2 rounded-lg border border-border-soft bg-card p-4 text-sm">
           <p className="flex items-center gap-1.5 font-medium">
             <CircleAlert className="size-4 text-destructive" />
             This diagram can&apos;t be drawn
@@ -337,7 +337,7 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
       ) : effective.status === "ready" ? (
         // Natural size; a diagram wider than the column scrolls sideways
         // (mx-auto centers narrow ones without clipping wide ones).
-        <div className="max-h-[32rem] overflow-auto bg-card p-4">
+        <div className="max-h-[32rem] overflow-auto py-2">
           <button
             ref={inlineRef}
             type="button"
@@ -350,7 +350,7 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
           />
         </div>
       ) : (
-        <div className="flex h-32 items-center justify-center bg-card text-xs text-muted-foreground">
+        <div className="flex h-32 items-center justify-center rounded-lg border border-border-soft text-xs text-muted-foreground">
           Drawing diagram…
         </div>
       )}

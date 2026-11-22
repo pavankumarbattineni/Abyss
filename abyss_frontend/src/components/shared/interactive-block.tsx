@@ -736,16 +736,16 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
       aria-label={fullscreen ? "Interactive view, full screen" : "Interactive view"}
       className={cn(
         "overflow-hidden font-sans text-sm leading-normal",
-        fullscreen ? FULLSCREEN_CLASS : "rounded-xl border border-border-soft",
+        fullscreen && FULLSCREEN_CLASS,
       )}
     >
       {fullscreen && actions}
       {mode === "code" ? (
-        <div className={cn("bg-card p-3", fullscreen && "min-h-0 flex-1 overflow-auto")}>
+        <div className={cn(fullscreen && "min-h-0 flex-1 overflow-auto bg-card p-3")}>
           <CodeBlock language="json" code={source} />
         </div>
       ) : (
-      <div ref={viewRef} className={cn("flex flex-col gap-5 bg-card p-3 sm:p-4", fullscreen && "min-h-0 flex-1 overflow-auto sm:p-6")}>
+      <div ref={viewRef} className={cn("flex flex-col gap-5", fullscreen && "min-h-0 flex-1 overflow-auto bg-card p-3 sm:p-6")}>
         {parsed.components.map((c, i) => (
           <section key={i} className="min-w-0">
             {(c.title || (c.cite && c.cite.length > 0)) && (

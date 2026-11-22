@@ -730,14 +730,59 @@ export function tailwindV3Shim(): string {
  */
 export const PREVIEW_BASE = '<base href="about:srcdoc">';
 
+/**
+ * The preview sits on the chat like the rest of the answer (as in Claude): its
+ * frame is transparent and follows the app's theme (the frame's color-scheme
+ * is set from it, see components/shared/code-preview.tsx). The page starts as
+ * "light dark", so one that leaves its background unset is transparent, with
+ * default text in the theme's colour and prefers-color-scheme matching the app.
+ * A page that paints its own background (a white page, a dark hero filling the
+ * screen) is switched to that background's scheme once it has rendered, so its
+ * default text stays readable on it in either app theme.
+ */
+function previewColorScheme(): string {
+  return `(function () {
+  function rgba(color) {
+    var m = /rgba?\\(([^)]+)\\)/.exec(color || "");
+    if (!m) return null;
+    var p = m[1].split(",").map(function (v) { return parseFloat(v); });
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+  function pageBackground() {
+    // The page itself, or a wrapper covering most of its width (e.g. React's root's first child).
+    var candidates = [document.documentElement, document.body];
+    var el = document.body;
+    for (var depth = 0; el && depth < 3; depth++) {
+      el = el.firstElementChild;
+      if (el && el.getBoundingClientRect().width >= innerWidth * 0.8) candidates.push(el);
+    }
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i] && rgba(getComputedStyle(candidates[i]).backgroundColor);
+      if (c && c.a > 0.5) return c;
+    }
+    return null;
+  }
+  function settle() {
+    var bg = pageBackground();
+    if (!bg) return;
+    var light = (0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b) / 255 > 0.5;
+    document.documentElement.style.colorScheme = light ? "light" : "dark";
+  }
+  document.addEventListener("DOMContentLoaded", settle);
+  addEventListener("load", function () { settle(); setTimeout(settle, 300); });
+})();`;
+}
+
 function head(channel: string, runtimeBase: string): string {
   return [
     PREVIEW_BASE,
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<meta name="color-scheme" content="light dark">',
     `<meta http-equiv="Content-Security-Policy" content="${policy(runtimeBase)}">`,
     `<script>${inlineScript(bridge(channel))}</script>`,
     `<script>${inlineScript(tailwindV3Shim())}</script>`,
+    `<script>${inlineScript(previewColorScheme())}</script>`,
   ].join("\n");
 }
 
