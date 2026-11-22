@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { AppWindow, CodeXml, Download, Maximize2, Minimize2, Play, RotateCw, TriangleAlert } from "lucide-react";
+import { AppWindow, CodeXml, Copy, Download, Play, RotateCw, TriangleAlert } from "lucide-react";
+import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui";
 import {
@@ -16,7 +17,7 @@ import {
 } from "@/lib/code-preview";
 import { cn } from "@/lib/utils";
 import { CodeBlock } from "./code-block";
-import { CopyButton } from "./copy-button";
+import { BlockActions, copyText } from "./block-actions";
 import { useCanAskToFix } from "./fix-request";
 import { FULLSCREEN_CLASS, useFullscreen } from "./use-fullscreen";
 
@@ -85,6 +86,8 @@ const freshFrame = (key: string): FrameState => ({
  */
 export function CodePreview({ kind, language, code }: CodePreviewProps) {
   const [mode, setMode] = useState<"preview" | "code">("preview");
+  // The frame follows the app's theme: a page without its own background sits on the chat.
+  const { resolvedTheme } = useTheme();
   const canAskToFix = useCanAskToFix();
   // Full screen: the card itself becomes a fixed full-viewport layer. The
   // iframe is never moved or re-created, so the running page keeps its state.
@@ -254,93 +257,52 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
     fullscreenHeight: fullscreen ? stageHeight : undefined,
   });
 
+  const actions = (
+    <BlockActions
+      label={`Live preview · ${label}`}
+      fullscreen={fullscreen}
+      onExpand={() => setFullscreen((v) => !v)}
+      items={[
+        mode === "preview"
+          ? { label: "View code", icon: CodeXml, onClick: () => setMode("code") }
+          : { label: "View preview", icon: Play, onClick: () => setMode("preview") },
+        mode === "preview" && { label: "Reload preview", icon: RotateCw, onClick: () => setReloadKey((k) => k + 1) },
+        { label: "Copy code", icon: Copy, onClick: () => copyText(code, "Code") },
+        kind === "html" && { label: "Download as HTML", icon: Download, onClick: download },
+      ]}
+    />
+  );
+
   return (
+    // No header on the block itself: its actions sit under it (see BlockActions),
+    // or form the header of the full-screen layer. The iframe's parents never
+    // change, so switching to full screen keeps the running page.
+    <div className="group/block mb-3 last:mb-0">
+    {!fullscreen && actions}
     <div
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen || undefined}
-      aria-label={fullscreen ? `Live preview (${label}), full screen` : undefined}
+      aria-label={fullscreen ? `Live preview (${label}), full screen` : `Live preview (${label})`}
       className={cn(
         "overflow-hidden font-sans text-sm leading-normal",
         fullscreen
           ? FULLSCREEN_CLASS
-          : "mb-3 rounded-lg border border-border last:mb-0",
+          : "rounded-xl",
       )}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1">
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <AppWindow className="size-3.5 shrink-0" />
-          <span className="truncate">Live preview · {label}</span>
-        </span>
-        <div className="flex items-center gap-0.5">
-          {([
-            { value: "preview", title: "Preview", Icon: Play },
-            { value: "code", title: "Code", Icon: CodeXml },
-          ] as const).map(({ value, title, Icon }) => (
-            <Button
-              key={value}
-              variant="ghost"
-              size="icon-xs"
-              aria-label={title}
-              aria-pressed={mode === value}
-              title={title}
-              onClick={() => setMode(value)}
-              className={cn("text-muted-foreground hover:text-foreground", mode === value && "bg-background text-foreground")}
-            >
-              <Icon className="size-3.5" />
-            </Button>
-          ))}
-          {mode === "preview" && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Reload preview"
-                title="Reload preview"
-                onClick={() => setReloadKey((k) => k + 1)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <RotateCw className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={fullscreen ? "Exit full screen" : "Open full screen"}
-                title={fullscreen ? "Exit full screen (Esc)" : "Open full screen"}
-                onClick={() => setFullscreen((v) => !v)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-              </Button>
-            </>
-          )}
-          {kind === "html" && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Download HTML"
-              title="Download HTML"
-              onClick={download}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Download className="size-3.5" />
-            </Button>
-          )}
-          <CopyButton label="Copy code" text={code} />
-        </div>
-      </div>
-
+      {fullscreen && actions}
       {mode === "code" ? (
-        <div className={cn("bg-card p-3", fullscreen && "min-h-0 flex-1 overflow-auto")}>
+        <div className={cn(fullscreen && "min-h-0 flex-1 overflow-auto bg-card p-3")}>
           <CodeBlock language={language} code={code} />
         </div>
       ) : (
-        <div className={cn("bg-card", fullscreen && "flex min-h-0 flex-1 flex-col")}>
+        <div className={cn(fullscreen && "flex min-h-0 flex-1 flex-col")}>
           {doc && (
             // A wide or full-screen page is laid out at its own (desktop) size
             // and scaled down to the column, so it shows whole, never clipped.
             <div
               ref={setStage}
-              className={cn("overflow-hidden bg-white", fullscreen && "min-h-0 flex-1")}
+              className={cn("overflow-hidden", fullscreen && "min-h-0 flex-1")}
               style={fullscreen ? undefined : { height: layout.displayHeight }}
             >
               <iframe
@@ -365,12 +327,17 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
                     setReloadKey((k) => k + 1);
                   }, NAVIGATION_CHECK_MS);
                 }}
-                className="block border-0 bg-white"
+                // Transparent: a page that leaves its background unset sits on the
+                // chat itself (as in Claude), its text following the app's theme
+                // (lib/code-preview.ts previewColorScheme); a page with its own
+                // background shows that.
+                className="block border-0 bg-transparent"
                 style={{
                   width: layout.frameWidth ?? "100%",
                   height: layout.frameHeight,
                   transform: layout.scale !== 1 ? `scale(${layout.scale})` : undefined,
                   transformOrigin: "0 0",
+                  colorScheme: resolvedTheme === "dark" ? "dark" : "light",
                 }}
               />
             </div>
@@ -381,7 +348,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
             </div>
           )}
           {notes.length > 0 && errors.length === 0 && !failed && (
-            <div role="status" className="flex flex-col gap-1 border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <div role="status" className="mt-2 flex flex-col gap-1 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
               {notes.map((note) => (
                 <p key={note} className="break-words">
                   {note}
@@ -390,7 +357,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
             </div>
           )}
           {(errors.length > 0 || failed) && (
-            <div role="alert" className="flex flex-col gap-2 border-t border-border bg-destructive/5 px-3 py-2 text-xs">
+            <div role="alert" className="mt-2 flex flex-col gap-2 rounded-lg bg-destructive/5 px-3 py-2 text-xs">
               <p className="flex items-center gap-1.5 font-medium text-destructive">
                 <TriangleAlert className="size-3.5 shrink-0" />
                 {errors.length ? "The preview reported a problem" : "The preview didn't finish loading"}
@@ -409,6 +376,7 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

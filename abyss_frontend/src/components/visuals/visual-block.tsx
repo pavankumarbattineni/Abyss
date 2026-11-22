@@ -1,17 +1,16 @@
 "use client";
 
-import { useMemo, useState, type ComponentType } from "react";
-import { Braces, Maximize2, Shapes, TriangleAlert } from "lucide-react";
+import { useMemo, useRef, useState, type ComponentType } from "react";
+import { Braces, Copy, Shapes, TriangleAlert } from "lucide-react";
 
 import { Button, Dialog, DialogContent, DialogTitle } from "@/components/ui";
 import { CodeBlock } from "@/components/shared/code-block";
 import { COMPOSE_EVENT } from "@/components/shared/code-preview";
-import { CopyButton } from "@/components/shared/copy-button";
+import { BlockActions, copyText } from "@/components/shared/block-actions";
 import { useCanAskToFix } from "@/components/shared/fix-request";
 import { parseVisual, sniffFormat } from "@/lib/visuals/parse";
 import { VISUAL_FORMAT_META, visualToText } from "@/lib/visuals/registry";
 import type { VisualData, VisualFormatName } from "@/lib/visuals/schemas";
-import { cn } from "@/lib/utils";
 import { BlueprintVisual } from "./blueprint";
 import { CanvasVisual } from "./canvas";
 import { CycleVisual } from "./cycle";
@@ -64,6 +63,7 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
   const [view, setView] = useState<"visual" | "data">("visual");
   const [fullscreen, setFullscreen] = useState(false);
   const canAskToFix = useCanAskToFix();
+  const drawingRef = useRef<HTMLDivElement>(null);
 
   const format = parsed?.format ?? sniffFormat(source);
   const meta = format ? VISUAL_FORMAT_META[format] : null;
@@ -115,45 +115,33 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
     (parsed.format === "sketchnotes" && typeof center === "string" && center.trim().toLowerCase() === title?.trim().toLowerCase());
   const subtitle = (parsed.data as { subtitle?: string }).subtitle;
 
-  return (
-    <figure className="mb-3 overflow-hidden rounded-xl border border-border bg-card font-sans text-sm leading-normal text-card-foreground last:mb-0">
-      <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <Shapes className="size-3.5 shrink-0" />
-          <span className="truncate">{meta?.label}</span>
-        </span>
-        <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={view === "data" ? "Show visual" : "Show data"}
-            aria-pressed={view === "data"}
-            title={view === "data" ? "Show visual" : "Show data"}
-            onClick={() => setView((v) => (v === "data" ? "visual" : "data"))}
-            className={cn("text-muted-foreground hover:text-foreground", view === "data" && "bg-background text-foreground")}
-          >
-            <Braces className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Open full screen"
-            title="Open full screen"
-            onClick={() => setFullscreen(true)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <Maximize2 className="size-3.5" />
-          </Button>
-          <CopyButton label="Copy as text" text={visualToText(parsed.data)} />
-        </div>
-      </header>
+  const name = meta?.label ?? "Visual";
+  const fileName = `${(title || name).replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "visual"}.png`;
 
+  return (
+    // No header on the visual itself: its actions sit under it (see BlockActions).
+    <div className="group/block mb-3 last:mb-0">
+    <BlockActions
+      label={name}
+      onExpand={() => setFullscreen(true)}
+      items={[
+        view === "visual"
+          ? { label: "View data", icon: Braces, onClick: () => setView("data") }
+          : { label: "View visual", icon: Shapes, onClick: () => setView("visual") },
+        { label: "Copy as text", icon: Copy, onClick: () => copyText(visualToText(parsed.data), "Text") },
+      ]}
+      image={view === "visual" ? { target: drawingRef, fileName } : undefined}
+    />
+    <figure
+      aria-label={title ? `${name}: ${title}` : name}
+      className="font-sans text-sm leading-normal text-foreground"
+    >
       {view === "data" ? (
-        <div className="p-3">
+        <div>
           <CodeBlock language="json" code={JSON.stringify(parsed.data, null, 2)} />
         </div>
       ) : (
-        <div className="p-3 sm:p-4">
+        <div ref={drawingRef} className="py-1">
           {!ownsTitle && (title || subtitle) && (
             <figcaption className="mb-3">
               {title && <p className="text-base leading-snug font-semibold text-foreground">{title}</p>}
@@ -164,6 +152,7 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
         </div>
       )}
 
+    </figure>
       <Dialog open={fullscreen} onOpenChange={setFullscreen}>
         <DialogContent className="flex h-[92dvh] w-[min(96vw,1400px)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
           <div className="border-b border-border px-4 py-3 pr-12">
@@ -175,6 +164,6 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
           </div>
         </DialogContent>
       </Dialog>
-    </figure>
+    </div>
   );
 }

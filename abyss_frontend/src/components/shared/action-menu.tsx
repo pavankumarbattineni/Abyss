@@ -18,6 +18,8 @@ interface ActionMenuProps {
   /** Accessible name of the trigger button. */
   label?: string;
   triggerClassName?: string;
+  /** Extra classes for the menu itself (e.g. a wider menu for longer labels). */
+  menuClassName?: string;
   /** Where the menu opens relative to the trigger (default: below, right-aligned). */
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
@@ -27,6 +29,7 @@ export const ActionMenu = ({
   items,
   label = "More actions",
   triggerClassName,
+  menuClassName,
   side = "bottom",
   align = "end",
 }: ActionMenuProps) => {
@@ -46,7 +49,7 @@ export const ActionMenu = ({
           <MoreVertical className="size-3.5" />
         </button>
       </PopoverTrigger>
-      <PopoverContent side={side} align={align} sideOffset={6} collisionPadding={8} className="w-40 gap-0 p-1">
+      <PopoverContent side={side} align={align} sideOffset={6} collisionPadding={8} className={cn("w-40 gap-0 p-1", menuClassName)}>
         {items.map((item) => {
           const Icon = item.icon;
           return (

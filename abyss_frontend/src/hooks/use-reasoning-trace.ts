@@ -41,7 +41,7 @@ function reasoningReducer(trace: ReasoningTrace, action: ReasoningAction): Reaso
     // The main agent handed a task to a specialist (sent right after that
     // specialist's agent_start).
     case "dispatch_decision":
-      return addDelegation(trace, mainAgentName(trace), action.data.target, action.data.reason);
+      return addDelegation(trace, mainAgentName(trace), action.data.target, action.data.reason, action.data.at);
 
     // A delegated sub-agent can run through several reasoning_start/…_token/…_end segments
     // interleaved with tool calls before its agent_end (see the market_screening_price_analyst
@@ -52,7 +52,7 @@ function reasoningReducer(trace: ReasoningTrace, action: ReasoningAction): Reaso
     // would spin forever (until the turn-ending done/error fallback) even once delegation,
     // synthesis, and the final answer have already streamed past it.
     case "reasoning_start":
-      return startThoughtSegment(trace, action.data.agent);
+      return startThoughtSegment(trace, action.data.agent, action.data.at);
 
     case "reasoning_token":
       return appendThoughtContent(trace, action.data.agent, action.data.content);
@@ -63,7 +63,7 @@ function reasoningReducer(trace: ReasoningTrace, action: ReasoningAction): Reaso
       );
 
     case "tool_start":
-      return startToolCallSegment(trace, action.data.agent_name, action.data.tool_name);
+      return startToolCallSegment(trace, action.data.agent_name, action.data.tool_name, action.data.at, action.data.input);
 
     case "tool_end":
       return endToolCallSegment(
