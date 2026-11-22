@@ -33,6 +33,16 @@ def test_delegation_section_lists_every_specialist_and_the_rules():
     assert "never mention specialists" in prompt
 
 
+def test_the_owners_routing_to_specialists_comes_first():
+    """An agent whose instructions route requests to specialists ("hand concept
+    questions to the Concepts Explainer") must do so; answering directly is
+    only the default when its instructions don't say."""
+    prompt = build_parent_prompt("Role.", SUBS, True, NOW)
+    routing = prompt.index("If your instructions above say which requests go to which specialist")
+    default = prompt.index("Otherwise answer directly by default")
+    assert routing < default
+
+
 def test_a_response_may_come_before_further_tool_calls():
     """The chat shows a turn in the order it happened (each step's activity
     between the text written before and after it), so an agent may answer what
@@ -89,10 +99,11 @@ def test_prompts_stay_within_their_size_budget():
     +~145 (parent) and ~125 (sub-agent) for the role section (in/out of role,
     mixed requests, role changes, no forced tie-ins), which replaced a one-line
     "stay within your role" rule; +~40 (parent) for transparent live-preview
-    pages."""
+    pages; +~30 each for full-URL links and +~25 (with specialists) for
+    following the owner's routing to specialists."""
     assert len(build_parent_prompt("", [], True, NOW)) < 7050
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8150  # + delegation rules
-    assert len(build_sub_agent_prompt("", True, NOW)) < 3350
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8300  # + delegation rules
+    assert len(build_sub_agent_prompt("", True, NOW)) < 3400
 
 
 def test_role_section_follows_the_agents_own_prompt_in_both_kinds():
@@ -142,3 +153,11 @@ def test_starter_agent_no_longer_mentions_scheduling():
     ]
     assert not any("schedul" in t.lower() for t in texts)
     assert len(STARTER_AGENT_SUB_AGENTS) == 3
+
+
+def test_links_are_always_full_urls():
+    """A tool can return relative paths (a docs server's file paths); as a link
+    in the chat they would point at the app itself, so both kinds of agent
+    write full URLs."""
+    assert "Links are full URLs (https://...)" in build_parent_prompt("Role.", SUBS, True, NOW)
+    assert "sources as full URLs (https://...), never relative paths" in build_sub_agent_prompt("Role.", True, NOW)
