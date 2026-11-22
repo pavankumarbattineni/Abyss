@@ -180,7 +180,7 @@ export function answerParts(content: string, timeline: TimelineItem[]): AnswerPa
   let cursor = 0;
   let lastAt = 0;
   for (const item of timeline) {
-    const at = Math.min(Math.max(item.at ?? lastAt, lastAt), content.length);
+    const at = outsideCodeBlock(content, Math.min(Math.max(item.at ?? lastAt, lastAt), content.length));
     lastAt = at;
     if (at > cursor) {
       const text = content.slice(cursor, at);
@@ -194,6 +194,19 @@ export function answerParts(content: string, timeline: TimelineItem[]): AnswerPa
   const rest = content.slice(cursor);
   if (rest.trim()) parts.push({ kind: "text", text: rest });
   return parts;
+}
+
+/** A split point never falls inside a ``` code block (a diagram, a visual, a
+ * page): one that would is moved to just after the block closes, so the block
+ * stays whole. (Older answers saved a continuation's thought mid-block.) */
+function outsideCodeBlock(content: string, at: number): number {
+  const fence = /^[ \t]*```.*$/gm;
+  let inside = false;
+  for (let match = fence.exec(content); match; match = fence.exec(content)) {
+    if (match.index >= at) return inside ? Math.min(content.length, match.index + match[0].length + 1) : at;
+    inside = !inside;
+  }
+  return inside ? content.length : at;
 }
 
 // --- Presentation helpers ------------------------------------------------------

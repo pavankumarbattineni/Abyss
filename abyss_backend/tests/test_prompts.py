@@ -99,11 +99,11 @@ def test_prompts_stay_within_their_size_budget():
     +~145 (parent) and ~125 (sub-agent) for the role section (in/out of role,
     mixed requests, role changes, no forced tie-ins), which replaced a one-line
     "stay within your role" rule; +~40 (parent) for transparent live-preview
-    pages; +~30 each for full-URL links and +~25 (with specialists) for
+    pages; +~45 each for link rules (titled, full URLs, no guessed hosts) and +~25 (with specialists) for
     following the owner's routing to specialists."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 7050
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8300  # + delegation rules
-    assert len(build_sub_agent_prompt("", True, NOW)) < 3400
+    assert len(build_parent_prompt("", [], True, NOW)) < 7100
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8350  # + delegation rules
+    assert len(build_sub_agent_prompt("", True, NOW)) < 3450
 
 
 def test_role_section_follows_the_agents_own_prompt_in_both_kinds():
@@ -158,6 +158,11 @@ def test_starter_agent_no_longer_mentions_scheduling():
 def test_links_are_always_full_urls():
     """A tool can return relative paths (a docs server's file paths); as a link
     in the chat they would point at the app itself, so both kinds of agent
-    write full URLs."""
-    assert "Links are full URLs (https://...)" in build_parent_prompt("Role.", SUBS, True, NOW)
-    assert "sources as full URLs (https://...), never relative paths" in build_sub_agent_prompt("Role.", True, NOW)
+    write full URLs -- completed only with a host the results show (a guessed
+    host like docs.langsmith.com didn't exist), with words as the link text."""
+    parent = build_parent_prompt("Role.", SUBS, True, NOW)
+    assert "Links as [short title](https://full-url)" in parent and "not the URL" in parent
+    assert "never guess a host" in parent
+    sub = build_sub_agent_prompt("Role.", True, NOW)
+    assert "sources as full URLs (https://...) on a site address the results show" in sub
+    assert "never relative paths or guessed hosts" in sub

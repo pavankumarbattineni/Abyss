@@ -96,9 +96,12 @@ class StreamProjector:
         self._call_filters: dict[str, CallTextFilter] = {}
         self._labels: dict[str, str] = {}
         self._last_run: dict[str, str] = {}          # agent label → its latest model call's run_id
-        self._continuing: dict[str, tuple[str, bool]] = {}  # label → (tail, in_code) for its next call
+        self._continuing: dict[str, tuple[str, bool, str]] = {}  # label → (tail, in_code, removed line) for its next call
+        # label → where in the answer its current reply began: a continuation's
+        # steps belong with that reply, not in the middle of its text.
+        self._reply_at: dict[str, int] = {}
         self._seam_filters: dict[str, SeamFilter] = {}
-        self._run_seams: dict[str, tuple[str, bool]] = {}  # run_id → the seam it continues at
+        self._run_seams: dict[str, tuple[str, bool, str]] = {}  # run_id → the seam it continues at
         self._call_start: dict[str, int] = {}  # label → len(content_tokens) when its model call began
         self._is_final: dict[str, bool] = {}
         self._turn_start: dict[str, int] = {}        # run_id → len(content_tokens) at turn start
@@ -132,6 +135,14 @@ class StreamProjector:
     def answer_length(self) -> int:
         """Characters of answer text so far: where a step starting now sits in it."""
         return sum(len(token) for token in self.content_tokens)
+
+    def _thought_at(self, run_id: str, label: str) -> int:
+        """Where a thought begins in the answer. A continuation of a cut-off or
+        failed reply is the same reply: its thinking goes with that reply's
+        start, never into the middle of its text (e.g. inside a code block)."""
+        if run_id in self._run_seams:
+            return self._reply_at.get(label, self.answer_length())
+        return self.answer_length()
 
     def handle(self, event: dict) -> None:
         kind = event["event"]
@@ -228,7 +239,7 @@ class StreamProjector:
                     self._take_back(line)
                     text = text[: len(text) - len(line)]
                 tail, in_code = seam_tail(text), in_open_code_block(text)
-                self._continuing[label] = (tail, in_code)
+                self._continuing[label] = (tail, in_code, line)
                 shown = {"text": text, "line": line, "tail": tail, "in_code": in_code}
         resolve_resume(request_id, shown)
 
@@ -241,12 +252,14 @@ class StreamProjector:
         if run_id is None or not self._is_final.get(run_id):
             return  # a specialist's text is never shown
         self._flush_run(run_id)
-        # The continuation's start is cleaned like the joined reply (clean_seam).
-        self._continuing[label] = (tail, in_code)
+        # The continuation's start is cleaned like the joined reply (clean_seam),
+        # and the removed line put back if the model skips it -- only a line
+        # that was actually taken off the chat.
         start = self._turn_start.get(run_id, 0)
-        if not line or not "".join(self.content_tokens[start:]).endswith(line):
-            return
-        self._take_back(line)
+        shown = bool(line) and "".join(self.content_tokens[start:]).endswith(line)
+        self._continuing[label] = (tail, in_code, line if shown else "")
+        if shown:
+            self._take_back(line)
 
     def abort(self) -> None:
         """Close open reasoning blocks after a cancel. Records steps only — nothing is emitted."""
@@ -329,6 +342,8 @@ class StreamProjector:
             if label in self._continuing:
                 self._run_seams[run_id] = self._continuing.pop(label)
                 self._seam_filters[run_id] = SeamFilter(*self._run_seams[run_id])
+            else:
+                self._reply_at[label] = self.answer_length()
         label = self._labels[run_id]
 
         # Providers with native reasoning stream a list of content blocks; plain
@@ -350,7 +365,7 @@ class StreamProjector:
             self._reasoning_start[run_id] = time.monotonic()
             self._reasoning_agent[run_id] = label
             self._native_open.add(run_id)
-            self._reasoning_at[run_id] = self.answer_length()
+            self._reasoning_at[run_id] = self._thought_at(run_id, label)
             self._emit("reasoning_start", {"agent": label, "at": self._reasoning_at[run_id]})
         if text:
             self._reasoning_buffers[run_id].append(text)
@@ -373,7 +388,7 @@ class StreamProjector:
                 if sc.event == "start":
                     self._reasoning_start[run_id] = time.monotonic()
                     self._reasoning_agent[run_id] = label
-                    self._reasoning_at[run_id] = self.answer_length()
+                    self._reasoning_at[run_id] = self._thought_at(run_id, label)
                     self._emit("reasoning_start", {"agent": label, "at": self._reasoning_at[run_id]})
                 elif sc.event == "end":
                     self._close_reasoning(run_id, label, sc.truncated)
