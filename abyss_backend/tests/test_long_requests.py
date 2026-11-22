@@ -420,3 +420,68 @@ def test_provider_outages_are_recognised_from_their_text():
     for text in ("503 UNAVAILABLE", "Error code: 529 - overloaded", "Service Unavailable"):
         assert classify_llm_error(_Unavailable(text))[0] == "provider_unavailable", text
     assert classify_llm_error(_Unavailable("15030 tokens used"))[0] is None
+
+
+def test_a_removed_line_the_model_skipped_is_put_back():
+    from abyss_agents.middleware import restore_skipped_line
+
+    line = '    {"from": "Orchestration & Runtime (LangGraph)",\n'
+    # Carried on with the next line (seen in production): the line comes back.
+    assert restore_skipped_line(line, '    "to": "Providers",\n') == line + '    "to": "Providers",\n'
+    # Carried on mid-line: "...the Hel" + "lo world".
+    assert restore_skipped_line("It said Hel", "lo world") == "It said Hello world"
+    # Wrote the line again, as asked: left alone (indentation may differ).
+    assert restore_skipped_line(line, '{"from": "Orchestration & Runtime (LangGraph)", "to": "x"}') == (
+        '{"from": "Orchestration & Runtime (LangGraph)", "to": "x"}'
+    )
+    # Nothing to put back, or nothing written yet.
+    assert restore_skipped_line("\n", "two") == "two"
+    assert restore_skipped_line(line, "") == ""
+
+
+_FLOWS = (
+    '```visual\n{\n  "flows": [\n'
+    '    {"from": "A", "to": "B", "label": "powered by"},\n'
+    '    {"from": "Orchestration & Runtime (LangGraph)",\n'
+)
+_SKIPPING_CONTINUATION = '    "to": "Foundational LLM Providers",\n    "label": "queries"\n  }]\n}\n```'
+_EXPECTED = _FLOWS + _SKIPPING_CONTINUATION
+
+
+async def test_a_continuation_that_skips_the_removed_line_still_gives_the_whole_reply():
+    replies = [_cut(_FLOWS), AIMessage(_SKIPPING_CONTINUATION, response_metadata={"finish_reason": "stop"})]
+    calls = []
+
+    async def handler(request):
+        calls.append(1)
+        return SimpleNamespace(result=[replies[len(calls) - 1]])
+
+    response = await ContinueCutOffAnswer(4).awrap_model_call(Request(messages=[HumanMessage("q")]), handler)
+    assert response.result[0].content == _EXPECTED
+
+
+def test_the_chat_shows_the_skipped_line_too_and_keeps_the_thought_out_of_the_code():
+    events = []
+    projector = StreamProjector(events.append)
+    _stream(projector, "run-1", "Intro.\n\n" + _FLOWS)
+    projector.handle({
+        "event": "on_custom_event", "name": CONTINUE_EVENT, "run_id": "x",
+        "metadata": {"langgraph_node": "model", "lc_agent_name": PARENT_AGENT_NAME},
+        "data": {"rewind": '    {"from": "Orchestration & Runtime (LangGraph)",\n', "in_code": True,
+                 "tail": '    {"from": "A", "to": "B", "label": "powered by"},\n'},
+    })
+    # The continuation thinks first (as Gemini does), then skips the removed line.
+    _stream(projector, "run-2", "<reasoning>Completing the visual.</reasoning>" + _SKIPPING_CONTINUATION)
+    projector.finish()
+    assert "".join(projector.content_tokens) == "Intro.\n\n" + _EXPECTED
+    # Shown live exactly as saved.
+    shown = ""
+    for event in events:
+        if event["event_type"] == "token":
+            shown += event["data"]["content"]
+        elif event["event_type"] == "answer_rewind":
+            shown = shown[: len(shown) - len(event["data"]["text"])]
+    assert shown == "Intro.\n\n" + _EXPECTED
+    # The continuation's thought sits with its reply's start, not inside the visual block.
+    thought = next(s for s in projector.reasoning_steps if s["content"] == "Completing the visual.")
+    assert thought["at"] == 0

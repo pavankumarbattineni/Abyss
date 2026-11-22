@@ -35,6 +35,9 @@ const cases = [
   ["a position past the text (taken back by a rewind) stays last", "Short.", [step("a", 0), step("b", 40)], "S[a] T(Short.) S[b]"],
   ["live: a step started before any text", "", [step("a", 0)], "S[a]"],
   ["a step without a position stays with the one before it", twoParts, [step("a", 0), step("b", 9), step("c")], "S[a] T(Part one.) S[b,c] T(Part two.)"],
+  // A cut-off reply's continuation once saved its thought mid-block: the block must stay whole.
+  ["a step inside a code block waits until the block closes", "Hi.\n```visual\n{\n}\n```\nAfter.", [step("a", 0), step("b", 14)], "S[a] T(Hi.\n```visual\n{\n}\n```) S[b] T(After.)"],
+  ["a step inside a block left open goes after it", "```js\nx", [step("a", 7)], "T(```js\nx) S[a]"],
 ];
 for (const [name, content, steps, expected] of cases) {
   assert.equal(shape(answerParts(content, steps)), expected, name);

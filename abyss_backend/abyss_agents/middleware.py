@@ -313,12 +313,40 @@ def seam_tail(text: str) -> str:
     return "".join(lines)
 
 
-def clean_seam(text: str, tail: str, in_code: bool) -> str:
+# How much of a removed line a continuation must start with to count as
+# writing it again (see restore_skipped_line).
+_REWRITE_PREFIX_CHARS = 12
+
+
+def restore_skipped_line(line: str, text: str) -> str:
+    """The continuation, with the removed unfinished line put back in front of
+    it when the model went on without writing that line again.
+
+    The model is asked to rewrite the line it was cut off in (see
+    unfinished_line), but sometimes takes the quoted line as already written
+    and carries on after it -- or mid-way through it. Either way, putting the
+    line back gives the reply the model meant: "...the Hel" + "lo world", or a
+    JSON object's skipped `{"from": ...,` line followed by its next keys.
+    """
+    head = line.strip()[:_REWRITE_PREFIX_CHARS]
+    body = text.lstrip()
+    if not head or not body:
+        return text
+    n = min(len(head), len(body))
+    return text if body[:n] == head[:n] else line + text
+
+
+def clean_seam(text: str, tail: str, in_code: bool, line: str = "") -> str:
     """A continuation's text without what it should not repeat: a new
     ```lang fence when it is already inside a code block (a closing fence
     names no language, so it is kept), then lines that repeat the end of the
     reply so far (`tail`, see seam_tail) -- models sometimes restart a line
-    or two early."""
+    or two early. The removed unfinished `line` is put back when the model
+    skipped it (restore_skipped_line)."""
+    return restore_skipped_line(line, _without_repeats(text, tail, in_code))
+
+
+def _without_repeats(text: str, tail: str, in_code: bool) -> str:
     if in_code:
         match = _REOPENED_FENCE.match(text)
         if match:
@@ -340,9 +368,10 @@ class SeamFilter:
     lines, as many as the seam can affect, and gives the same text as
     clean_seam on the whole reply."""
 
-    def __init__(self, tail: str, in_code: bool) -> None:
+    def __init__(self, tail: str, in_code: bool, line: str = "") -> None:
         self._tail = tail
         self._in_code = in_code
+        self._line = line
         self._lines_needed = len(tail.splitlines()) + (1 if in_code else 0)
         self._max_held = len(tail) + 400
         self._held = ""
@@ -362,18 +391,18 @@ class SeamFilter:
             return ""
         self._decided = True
         held, self._held = self._held, ""
-        return clean_seam(held, self._tail, self._in_code)
+        return clean_seam(held, self._tail, self._in_code, self._line)
 
 
-def _with_clean_seam(message: AIMessage, tail: str, in_code: bool) -> AIMessage:
+def _with_clean_seam(message: AIMessage, tail: str, in_code: bool, line: str = "") -> AIMessage:
     content = message.content
     if isinstance(content, str):
-        return message.model_copy(update={"content": clean_seam(content, tail, in_code)})
+        return message.model_copy(update={"content": clean_seam(content, tail, in_code, line)})
     blocks = list(content)
     first = next((i for i, b in enumerate(blocks) if isinstance(b, dict) and b.get("type") == "text"), None)
     if first is None:
         return message
-    blocks[first] = {**blocks[first], "text": clean_seam(str(blocks[first].get("text", "")), tail, in_code)}
+    blocks[first] = {**blocks[first], "text": clean_seam(str(blocks[first].get("text", "")), tail, in_code, line)}
     return message.model_copy(update={"content": blocks})
 
 
@@ -455,7 +484,7 @@ class ContinueCutOffAnswer(AgentMiddleware):
             if rest is None:
                 # Nothing came back: keep the reply as it was, line and all.
                 return response
-            response.result[index] = join_replies(partial, _with_clean_seam(rest, tail, in_code))
+            response.result[index] = join_replies(partial, _with_clean_seam(rest, tail, in_code, line))
         return response
 
 
@@ -546,7 +575,7 @@ class RestartFailedReply(AgentMiddleware):
             await _dispatch(CALL_START_EVENT, {})
         current = request
         partial: AIMessage | None = None
-        tail, in_code = "", False
+        tail, in_code, line = "", False, ""
         for attempt, delay in enumerate((*self.delays, None), start=1):
             try:
                 response = await handler(current)
@@ -559,7 +588,7 @@ class RestartFailedReply(AgentMiddleware):
                 shown = await _shown_by_failed_call() if self.visible else None
                 if shown and shown.get("text"):
                     partial = AIMessage(shown["text"])
-                    tail, in_code = shown.get("tail", ""), bool(shown.get("in_code"))
+                    tail, in_code, line = shown.get("tail", ""), bool(shown.get("in_code")), shown.get("line", "")
                     note = resume_note(shown.get("line", ""), in_code)
                     current = request.override(messages=[*request.messages, partial, system_note(note)])
                 else:
@@ -573,7 +602,9 @@ class RestartFailedReply(AgentMiddleware):
                 None,
             )
             if index is not None:
-                response.result[index] = join_replies(partial, _with_clean_seam(response.result[index], tail, in_code))
+                response.result[index] = join_replies(
+                    partial, _with_clean_seam(response.result[index], tail, in_code, line)
+                )
             return response
         raise AssertionError("unreachable")
 
