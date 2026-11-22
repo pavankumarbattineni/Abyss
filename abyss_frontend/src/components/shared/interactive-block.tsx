@@ -8,10 +8,9 @@ import {
   ChevronDown,
   CircleCheck,
   CodeXml,
+  Copy,
   Info,
   LayoutDashboard,
-  Maximize2,
-  Minimize2,
   Play,
   RotateCcw,
   TriangleAlert,
@@ -31,8 +30,8 @@ import {
   YAxis,
 } from "recharts";
 
-import { CodeBlock, tableToTsv } from "@/components/shared/code-block";
-import { CopyButton } from "@/components/shared/copy-button";
+import { CodeBlock } from "@/components/shared/code-block";
+import { BlockActions, TableActions, copyText } from "./block-actions";
 import { FULLSCREEN_CLASS, useFullscreen } from "./use-fullscreen";
 import { Button } from "@/components/ui/button";
 import {
@@ -158,10 +157,7 @@ function TableView({ c }: { c: TableComponent }) {
     setSort((s) => (s?.col !== col ? { col, dir: 1 } : s.dir === 1 ? { col, dir: -1 } : null));
 
   return (
-    <div>
-      <div className="-mt-1 mb-1 flex justify-end">
-        <CopyButton label="Copy table" getText={() => (ref.current ? tableToTsv(ref.current) : "")} />
-      </div>
+    <div className="group/table relative">
       <div className="max-h-96 overflow-auto rounded-lg border border-border">
         <table ref={ref} className="w-full border-collapse text-sm">
           <thead className="sticky top-0 bg-muted">
@@ -208,6 +204,7 @@ function TableView({ c }: { c: TableComponent }) {
           </tbody>
         </table>
       </div>
+      <TableActions table={ref} hoverGroup="table" />
     </div>
   );
 }
@@ -688,6 +685,7 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
   const [mode, setMode] = useState<"preview" | "code">("preview");
   // Full screen keeps the same components mounted (calculator inputs, sorting).
   const [fullscreen, setFullscreen] = useFullscreen();
+  const viewRef = useRef<HTMLDivElement>(null);
 
   if (isStreaming) {
     return (
@@ -710,58 +708,42 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
     );
   }
 
+  const actions = (
+    <BlockActions
+      label="Interactive view"
+      fullscreen={fullscreen}
+      onExpand={() => setFullscreen((v) => !v)}
+      items={[
+        mode === "preview"
+          ? { label: "View JSON", icon: CodeXml, onClick: () => setMode("code") }
+          : { label: "View preview", icon: Play, onClick: () => setMode("preview") },
+        { label: "Copy as text", icon: Copy, onClick: () => copyText(interactiveBlockToText(parsed), "Text") },
+      ]}
+      // The rendered view as an image: only while it's shown (not the JSON).
+      image={mode === "preview" ? { target: viewRef, fileName: "interactive-view.png" } : undefined}
+    />
+  );
+
   return (
+    // Same layout as a live preview: no header; actions under the block, or
+    // the header of the full-screen layer (inputs and sorting stay as they are).
+    <div className="group/block relative mb-3 last:mb-0">
     <div
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen || undefined}
-      aria-label={fullscreen ? "Interactive view, full screen" : undefined}
+      aria-label={fullscreen ? "Interactive view, full screen" : "Interactive view"}
       className={cn(
         "overflow-hidden font-sans text-sm leading-normal",
-        fullscreen ? FULLSCREEN_CLASS : "mb-3 rounded-lg border border-border last:mb-0",
+        fullscreen ? FULLSCREEN_CLASS : "rounded-xl border border-border-soft",
       )}
     >
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted px-3 py-1">
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-          <LayoutDashboard className="size-3.5" />
-          Interactive view
-        </span>
-        <div className="flex items-center gap-0.5">
-          {([
-            { value: "preview", label: "Preview", Icon: Play },
-            { value: "code", label: "Code", Icon: CodeXml },
-          ] as const).map(({ value, label, Icon }) => (
-            <Button
-              key={value}
-              variant="ghost"
-              size="icon-xs"
-              aria-label={label}
-              aria-pressed={mode === value}
-              title={label}
-              onClick={() => setMode(value)}
-              className={cn("text-muted-foreground hover:text-foreground", mode === value && "bg-background text-foreground")}
-            >
-              <Icon className="size-3.5" />
-            </Button>
-          ))}
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={fullscreen ? "Exit full screen" : "Open full screen"}
-            title={fullscreen ? "Exit full screen (Esc)" : "Open full screen"}
-            onClick={() => setFullscreen((v) => !v)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {fullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-          </Button>
-          <CopyButton label="Copy as text" text={interactiveBlockToText(parsed)} />
-        </div>
-      </div>
+      {fullscreen && actions}
       {mode === "code" ? (
         <div className={cn("bg-card p-3", fullscreen && "min-h-0 flex-1 overflow-auto")}>
           <CodeBlock language="json" code={source} />
         </div>
       ) : (
-      <div className={cn("flex flex-col gap-5 bg-card p-3 sm:p-4", fullscreen && "min-h-0 flex-1 overflow-auto sm:p-6")}>
+      <div ref={viewRef} className={cn("flex flex-col gap-5 bg-card p-3 sm:p-4", fullscreen && "min-h-0 flex-1 overflow-auto sm:p-6")}>
         {parsed.components.map((c, i) => (
           <section key={i} className="min-w-0">
             {(c.title || (c.cite && c.cite.length > 0)) && (
@@ -787,6 +769,8 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
         )}
       </div>
       )}
+    </div>
+    {!fullscreen && actions}
     </div>
   );
 }

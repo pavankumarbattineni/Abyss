@@ -4,6 +4,7 @@ import { useMemo, useRef, type ReactNode } from "react";
 
 import { CopyButton } from "@/components/shared/copy-button";
 import { highlightCode } from "@/lib/highlight";
+import { TableActions } from "./block-actions";
 
 const LANGUAGE_LABELS: Record<string, string> = {
   js: "JavaScript",
@@ -98,34 +99,19 @@ export function CodeBlock({ language, code, note }: CodeBlockProps) {
   );
 }
 
-/** Tab-separated rows read from a rendered table -- pastes cleanly into
- * spreadsheets and reads fine as plain text. */
-export function tableToTsv(table: HTMLTableElement): string {
-  return Array.from(table.rows)
-    .map((row) =>
-      Array.from(row.cells)
-        .map((c) => (c.innerText ?? c.textContent ?? "").replace(/\s+/g, " ").trim())
-        .join("\t")
-    )
-    .join("\n");
-}
+export { tableToTsv } from "./table-text";
 
-/** A Markdown table with a small "Copy table" control above it. */
+/** A Markdown table; its menu sits under it and appears on hover (see BlockActions). */
 export function CopyableTable({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLTableElement>(null);
   return (
-    <div className="mb-3 last:mb-0">
-      <div className="flex justify-end font-sans">
-        <CopyButton
-          label="Copy table"
-          getText={() => (ref.current ? tableToTsv(ref.current) : "")}
-        />
-      </div>
+    <div className="group/block relative mb-3 last:mb-0">
       <div className="overflow-x-auto">
         <table ref={ref} className="w-full border-collapse">
           {children}
         </table>
       </div>
+      <TableActions table={ref} />
     </div>
   );
 }

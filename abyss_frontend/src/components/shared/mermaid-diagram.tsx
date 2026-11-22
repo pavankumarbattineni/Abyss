@@ -3,12 +3,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import {
-  Check,
   CircleAlert,
   CodeXml,
   Copy,
   Download,
-  Maximize2,
   Minus,
   Plus,
   RotateCcw,
@@ -18,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cleanMermaidSource } from "@/lib/mermaid-source";
-import { cn } from "@/lib/utils";
+import { BlockActions, copyText } from "./block-actions";
 
 type Mermaid = typeof import("mermaid").default;
 
@@ -161,7 +159,6 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
   const reactId = useId();
   const [view, setView] = useState<"diagram" | "code">("diagram");
   const [state, setState] = useState<RenderState>({ status: "rendering" });
-  const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [zoom, setZoom] = useState(1);
   const scratchRef = useRef<HTMLDivElement>(null);
@@ -264,15 +261,6 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
   const shownSource = effective.status === "ready" ? effective.source : code.trim();
   const showCode = view === "code" || effective.status === "waiting";
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shownSource);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard can be unavailable (permissions/insecure context).
-    }
-  };
 
   const handleDownload = () => {
     if (effective.status !== "ready") return;
@@ -294,80 +282,20 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
     setExpanded(true);
   };
 
+  const ready = effective.status === "ready" && !showCode;
+
   return (
-    // font-sans: the card's buttons and labels are UI (Inter), even though
-    // the card sits inside the serif response text.
-    <div className="relative mb-3 overflow-hidden rounded-lg border border-border font-sans last:mb-0">
+    // No header on the card: its actions sit under it (see BlockActions).
+    // font-sans: the card's labels are UI (Inter), even though the card sits
+    // inside the serif response text.
+    <div className="group/block relative mb-3 last:mb-0">
+    <div className="relative overflow-hidden rounded-xl border border-border-soft font-sans">
       {/* Off-screen scratch space Mermaid measures/draws in (see render()). */}
       <div
         ref={scratchRef}
         aria-hidden
         className="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden"
       />
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2 py-1.5">
-        <div role="group" aria-label="Show as" className="inline-flex gap-0.5">
-          {(
-            [
-              ["diagram", "Diagram", Workflow],
-              ["code", "Code", CodeXml],
-            ] as const
-          ).map(([value, label, Icon]) => {
-            const active = (value === "code") === showCode;
-            return (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setView(value)}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                  active
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-background hover:text-foreground"
-                )}
-              >
-                <Icon className="size-3.5" />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-0.5">
-          {effective.status === "ready" && !showCode && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Download as SVG"
-                title="Download as SVG"
-                onClick={handleDownload}
-              >
-                <Download className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Open full size"
-                title="Open full size"
-                onClick={openExpanded}
-              >
-                <Maximize2 className="size-3.5" />
-              </Button>
-            </>
-          )}
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={copied ? "Copied" : "Copy Mermaid code"}
-            title={copied ? "Copied" : "Copy Mermaid code"}
-            onClick={() => void handleCopy()}
-          >
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-          </Button>
-        </div>
-      </div>
-
       {effective.status === "waiting" && (
         <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
           The diagram appears when the answer finishes.
@@ -413,6 +341,21 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
         </div>
       )}
 
+    </div>
+    <BlockActions
+      label="Diagram"
+      onExpand={effective.status === "ready" ? openExpanded : undefined}
+      items={[
+        effective.status !== "waiting" &&
+          (showCode
+            ? { label: "View diagram", icon: Workflow, onClick: () => setView("diagram") }
+            : { label: "View code", icon: CodeXml, onClick: () => setView("code") }),
+        { label: "Copy Mermaid code", icon: Copy, onClick: () => copyText(shownSource, "Mermaid code") },
+      ]}
+      // The on-screen drawing (the corrected frame, see fitToContent).
+      image={ready ? { target: inlineRef, fileName: "diagram.png" } : undefined}
+      moreItems={[ready && { label: "Download as SVG", icon: Download, onClick: handleDownload }]}
+    />
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent className="flex h-[85vh] max-w-[calc(100%-2rem)] flex-col gap-3 sm:max-w-5xl">
           <div className="flex items-center gap-1 pr-8">

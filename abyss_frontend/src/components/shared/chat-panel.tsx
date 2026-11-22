@@ -364,9 +364,11 @@ export function ChatPanel({
                     <div
                       className={cn(
                         "min-w-0 wrap-break-word",
+                        // The question in a compact bubble; the answer directly on the page (no card),
+                        // as in ChatGPT and Claude. pt-1 lines its first line up with the avatar.
                         message.role === "user"
-                          ? "max-w-full overflow-x-auto rounded-2xl rounded-tr-none bg-accent px-4 py-2.5 text-sm text-accent-foreground"
-                          : "w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground",
+                          ? "max-w-full overflow-x-auto rounded-2xl bg-accent px-4 py-2 text-sm text-accent-foreground"
+                          : "w-full pt-1 text-foreground",
                       )}
                     >
                       {message.role === "assistant" ? (
@@ -420,7 +422,7 @@ export function ChatPanel({
                       name={agent?.name ?? "Agent"}
                       className="size-8 shrink-0 text-xs @max-md:hidden"
                     />
-                    <div className="min-w-0 w-full rounded-2xl bg-muted/40 px-4 py-3 text-foreground wrap-break-word">
+                    <div className="min-w-0 w-full pt-1 text-foreground wrap-break-word">
                       <ReasoningPanel trace={reasoningTrace} isStreaming={true} agentNames={agentNames} />
                       {streamingContent && <MarkdownContent content={streamingContent} isStreaming />}
                       {pendingApprovals.length > 0 ? (
@@ -571,7 +573,8 @@ function MessageMeta({ message }: { message: Message }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-1 px-1 text-xs text-muted-foreground",
+        "flex items-center gap-1 text-xs text-muted-foreground",
+        isUser ? "px-1" : "-ml-1.5",
         isUser &&
           "opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
       )}

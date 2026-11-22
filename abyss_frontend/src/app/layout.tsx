@@ -41,11 +41,13 @@ export default async function RootLayout({
       className="h-full antialiased"
     >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* Browser extensions (e.g. rtrvr.ai) tag this link before React
-            hydrates; that attribute difference is harmless. */}
-        <link rel="stylesheet" href={GOOGLE_FONTS_URL} suppressHydrationWarning />
+            hydrates; that attribute difference is harmless. crossOrigin lets
+            "Copy as image" (lib/block-export.ts) read the font rules and embed
+            the fonts in the image; Google Fonts allows any origin. */}
+        <link rel="stylesheet" href={GOOGLE_FONTS_URL} crossOrigin="anonymous" suppressHydrationWarning />
       </head>
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <NuqsAdapter>
