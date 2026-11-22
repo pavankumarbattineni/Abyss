@@ -1,4 +1,4 @@
-import type { AgentRun, ReasoningStep, ReasoningTrace, TimelineItem } from "@/types";
+import type { AgentRun, AnswerPart, ReasoningStep, ReasoningTrace, TimelineItem } from "@/types";
 
 // A turn's reasoning as one chronological timeline across all agents (main
 // agent thinks -> delegates -> the specialist thinks / calls tools -> main
@@ -53,8 +53,8 @@ export function settleAllLanes(
   return { ...trace, agents, timeline };
 }
 
-export function startThoughtSegment(trace: ReasoningTrace, agentName: string): ReasoningTrace {
-  return push(trace, agentName, { kind: "thought", id: nextId(trace, "thought"), agent: agentName, content: "" });
+export function startThoughtSegment(trace: ReasoningTrace, agentName: string, at?: number): ReasoningTrace {
+  return push(trace, agentName, { kind: "thought", id: nextId(trace, "thought"), agent: agentName, content: "", at });
 }
 
 /** Appends streamed text to this agent's latest thought (starting one if a
@@ -78,14 +78,17 @@ export function addDelegation(
   agentName: string,
   target: string,
   task: string,
+  at?: number,
 ): ReasoningTrace {
-  return push(trace, agentName, { kind: "delegation", id: nextId(trace, "delegation"), agent: agentName, target, task });
+  return push(trace, agentName, { kind: "delegation", id: nextId(trace, "delegation"), agent: agentName, target, task, at });
 }
 
 export function startToolCallSegment(
   trace: ReasoningTrace,
   agentName: string,
   toolName: string,
+  at?: number,
+  input?: string,
 ): ReasoningTrace {
   return push(trace, agentName, {
     kind: "tool_call",
@@ -93,6 +96,8 @@ export function startToolCallSegment(
     agent: agentName,
     toolName,
     status: "running",
+    at,
+    input: input || undefined,
   });
 }
 
@@ -128,9 +133,10 @@ export function applyReasoningStep(trace: ReasoningTrace, step: ReasoningStep): 
         agent: step.agent,
         content: step.content,
         durationMs: step.duration_ms || undefined,
+        at: step.at,
       });
     case "dispatch_decision":
-      return updateAgent(addDelegation(trace, step.agent, step.target, step.reason), step.target, (run) => ({
+      return updateAgent(addDelegation(trace, step.agent, step.target, step.reason, step.at), step.target, (run) => ({
         ...run,
         isDelegated: true,
       }));
@@ -144,6 +150,7 @@ export function applyReasoningStep(trace: ReasoningTrace, step: ReasoningStep): 
         input: step.input,
         output: step.output,
         durationMs: step.duration_ms || undefined,
+        at: step.at,
       });
     default:
       return trace;
@@ -156,6 +163,37 @@ export function applyReasoningStep(trace: ReasoningTrace, step: ReasoningStep): 
  * showing a finished message wrap the result in settleAllLanes. */
 export function buildReasoningTrace(steps: ReasoningStep[]): ReasoningTrace {
   return steps.reduce(applyReasoningStep, EMPTY_REASONING_TRACE);
+}
+
+/**
+ * An answer as it happened, in order: text the agent wrote, and between the
+ * pieces of text the steps it took at that point (thinking, tool calls,
+ * specialists' work). Each step's `at` is where in the text it began; steps
+ * at the same point form one activity group. A step without `at` (messages
+ * saved before steps recorded it, or a specialist's step) stays with the one
+ * before it -- so an old message shows its steps before its text, as it did.
+ * Text that is only whitespace (the blank line joining two parts) doesn't
+ * split a group.
+ */
+export function answerParts(content: string, timeline: TimelineItem[]): AnswerPart[] {
+  const parts: AnswerPart[] = [];
+  let cursor = 0;
+  let lastAt = 0;
+  for (const item of timeline) {
+    const at = Math.min(Math.max(item.at ?? lastAt, lastAt), content.length);
+    lastAt = at;
+    if (at > cursor) {
+      const text = content.slice(cursor, at);
+      cursor = at;
+      if (text.trim()) parts.push({ kind: "text", text });
+    }
+    const last = parts.at(-1);
+    if (last?.kind === "activity") last.items.push(item);
+    else parts.push({ kind: "activity", items: [item] });
+  }
+  const rest = content.slice(cursor);
+  if (rest.trim()) parts.push({ kind: "text", text: rest });
+  return parts;
 }
 
 // --- Presentation helpers ------------------------------------------------------

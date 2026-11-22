@@ -31,7 +31,7 @@ import { CopyButton } from "./copy-button";
 import { FixRequestContext } from "./fix-request";
 import { MarkdownContent } from "./markdown-content";
 import { RelativeTime } from "./relative-time";
-import { ReasoningPanel } from "./reasoning-panel";
+import { AnswerTimeline } from "./answer-timeline";
 import { COMPOSE_EVENT } from "./code-preview";
 import { useFormatMenu } from "./format-menu";
 import { ToolApprovalPanel } from "./tool-approval-panel";
@@ -373,27 +373,23 @@ export function ChatPanel({
                     >
                       {message.role === "assistant" ? (
                         <>
-                          {message.reasoning ? (
-                            <ReasoningPanel
-                              trace={settleAllLanes(
-                                buildReasoningTrace(message.reasoning.steps),
-                                "succeeded",
-                              )}
+                          {/* The answer as it happened: text and, where they were taken, its steps.
+                              Only the latest answer offers "Ask the agent to fix it" (see fix-request.ts). */}
+                          <FixRequestContext.Provider value={!isStreaming && index === lastAnswerIndex}>
+                            <AnswerTimeline
+                              content={message.content}
+                              trace={
+                                message.reasoning
+                                  ? settleAllLanes(buildReasoningTrace(message.reasoning.steps), "succeeded")
+                                  : // Just finished, before the saved copy (with its steps) is loaded.
+                                    !isStreaming && index === messages.length - 1
+                                    ? reasoningTrace
+                                    : EMPTY_REASONING_TRACE
+                              }
                               isStreaming={false}
                               agentNames={agentNames}
                             />
-                          ) : (
-                            !isStreaming &&
-                            index === messages.length - 1 && (
-                              <ReasoningPanel trace={reasoningTrace} isStreaming={false} agentNames={agentNames} />
-                            )
-                          )}
-                          {message.content && (
-                            // Only the latest answer offers "Ask the agent to fix it" (see fix-request.ts).
-                            <FixRequestContext.Provider value={!isStreaming && index === lastAnswerIndex}>
-                              <MarkdownContent content={message.content} />
-                            </FixRequestContext.Provider>
-                          )}
+                          </FixRequestContext.Provider>
                           {message.is_partial && (
                             <div
                               className={cn(
@@ -423,8 +419,13 @@ export function ChatPanel({
                       className="size-8 shrink-0 text-xs @max-md:hidden"
                     />
                     <div className="min-w-0 w-full pt-1 text-foreground wrap-break-word">
-                      <ReasoningPanel trace={reasoningTrace} isStreaming={true} agentNames={agentNames} />
-                      {streamingContent && <MarkdownContent content={streamingContent} isStreaming />}
+                      {/* Built up live, in order: each step appears where the agent takes it, text continues below. */}
+                      <AnswerTimeline
+                        content={streamingContent}
+                        trace={reasoningTrace}
+                        isStreaming
+                        agentNames={agentNames}
+                      />
                       {pendingApprovals.length > 0 ? (
                         <ToolApprovalPanel
                           interrupts={pendingApprovals}
@@ -432,7 +433,8 @@ export function ChatPanel({
                           onSubmit={(approvals) => onResolveApproval?.(approvals)}
                         />
                       ) : (
-                        !streamingContent && (
+                        !streamingContent &&
+                        reasoningTrace.timeline.length === 0 && (
                           <div className="flex items-center gap-1 py-1">
                             <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" />
                             <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground delay-150" />

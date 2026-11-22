@@ -379,7 +379,8 @@ async def test_the_chat_keeps_what_a_failed_call_showed_and_continues_it():
     # The next try rewrites the line (a reopened fence and a repeated line are dropped).
     _stream(projector, "run-2", "```html\n<p>half done</p>\n</div>\n```")
     projector.finish()
-    assert "".join(projector.content_tokens) == "Earlier text.\n```html\n<div>\n<p>half done</p>\n</div>\n```"
+    # A new call's text starts a new paragraph after the earlier call's (the retry joins seamlessly).
+    assert "".join(projector.content_tokens) == "Earlier text.\n\n```html\n<div>\n<p>half done</p>\n</div>\n```"
     seen = "Earlier text.\n"
     for event in events:
         if event["event_type"] == "token":

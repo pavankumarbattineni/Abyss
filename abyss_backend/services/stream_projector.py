@@ -16,6 +16,15 @@ stamps from its `name=`):
       (approval rejected, or skipped on an unattended run)
     parent model turn after        → synthesis_start
       sub-agents returned
+
+Where each step happened: every step (thought, tool call, hand-off to a
+specialist) carries `at`, the length of the answer text when it began -- in
+its live event and in the saved step log. The chat splits the answer at
+these points and shows each step's activity between the text written before
+and after it, so a turn reads in the order it happened (think, search,
+answer part one, search again, answer part two) live and after a reload.
+Text from separate model calls of the turn is joined with a blank line, so
+the parts stay separate paragraphs.
 """
 from __future__ import annotations
 
@@ -46,6 +55,8 @@ logger = logging.getLogger(__name__)
 # Graph nodes whose tool-result messages can include calls that never ran.
 _TOOL_RESULT_NODES = ("tools",)
 _HITL_NODE_SUFFIX = ".after_model"
+# A running tool call's input, as sent live (the full input is saved with the step).
+_INPUT_PREVIEW_CHARS = 500
 
 
 def _is_top_level(checkpoint_ns: str) -> bool:
@@ -95,9 +106,12 @@ class StreamProjector:
         self._reasoning_start: dict[str, float] = {}
         self._reasoning_agent: dict[str, str] = {}
         self._native_open: set[str] = set()          # run_ids with an open native reasoning block
+        self._reasoning_at: dict[str, int] = {}      # run_id → answer length when its thought began
+        self._answer_started: set[str] = set()       # model calls that already wrote answer text
 
         self._tool_start: dict[str, float] = {}
         self._tool_input: dict[str, str | None] = {}
+        self._tool_at: dict[str, int] = {}
         self._seen_tool_call_ids: set[str] = set()
 
         self._completed_sub_agents: list[str] = []
@@ -114,6 +128,10 @@ class StreamProjector:
             + len(self.reasoning_steps)
             + self._reasoning_token_count
         )
+
+    def answer_length(self) -> int:
+        """Characters of answer text so far: where a step starting now sits in it."""
+        return sum(len(token) for token in self.content_tokens)
 
     def handle(self, event: dict) -> None:
         kind = event["event"]
@@ -152,6 +170,7 @@ class StreamProjector:
                     "step": "thought",
                     "content": "".join(buf),
                     "partial": True,
+                    "at": self._reasoning_at.get(run_id, self.answer_length()),
                 })
         return steps
 
@@ -201,7 +220,8 @@ class StreamProjector:
         run_id = self._last_run.get(label)
         if run_id is not None and self._is_final.get(run_id):
             self._flush_run(run_id)
-            text = "".join(self.content_tokens[self._call_start.get(label, len(self.content_tokens)):])
+            # Without the paragraph break that joined this call to earlier text.
+            text = "".join(self.content_tokens[self._call_start.get(label, len(self.content_tokens)):]).lstrip("\n")
             if text:
                 line = unfinished_line(AIMessage(text))
                 if line:
@@ -239,6 +259,7 @@ class StreamProjector:
                 "content": "".join(self._reasoning_buffers.get(run_id, [])),
                 "duration_ms": int((time.monotonic() - start) * 1000) if start else 0,
                 "truncated": True,
+                "at": self._reasoning_at.pop(run_id, self.answer_length()),
             })
         for run_id, splitter in self._splitters.items():
             label = self._labels.get(run_id, "unknown")
@@ -254,6 +275,7 @@ class StreamProjector:
                             "content": "".join(self._reasoning_buffers.get(run_id, [])),
                             "duration_ms": int((time.monotonic() - start) * 1000) if start else 0,
                             "truncated": True,
+                            "at": self._reasoning_at.pop(run_id, self.answer_length()),
                         })
 
     # ── internals ────────────────────────────────────────────────────────
@@ -271,6 +293,7 @@ class StreamProjector:
             "content": "".join(self._reasoning_buffers.get(run_id, [])),
             "duration_ms": int((time.monotonic() - start) * 1000) if start else 0,
             "truncated": truncated,
+            "at": self._reasoning_at.pop(run_id, self.answer_length()),
         })
         self._reasoning_buffers[run_id] = []
         self._emit("reasoning_end", {"agent": label, "truncated": truncated})
@@ -327,7 +350,8 @@ class StreamProjector:
             self._reasoning_start[run_id] = time.monotonic()
             self._reasoning_agent[run_id] = label
             self._native_open.add(run_id)
-            self._emit("reasoning_start", {"agent": label})
+            self._reasoning_at[run_id] = self.answer_length()
+            self._emit("reasoning_start", {"agent": label, "at": self._reasoning_at[run_id]})
         if text:
             self._reasoning_buffers[run_id].append(text)
             self._reasoning_token_count += 1
@@ -349,7 +373,8 @@ class StreamProjector:
                 if sc.event == "start":
                     self._reasoning_start[run_id] = time.monotonic()
                     self._reasoning_agent[run_id] = label
-                    self._emit("reasoning_start", {"agent": label})
+                    self._reasoning_at[run_id] = self.answer_length()
+                    self._emit("reasoning_start", {"agent": label, "at": self._reasoning_at[run_id]})
                 elif sc.event == "end":
                     self._close_reasoning(run_id, label, sc.truncated)
                 elif sc.text:
@@ -368,9 +393,18 @@ class StreamProjector:
         visible = call_filter.feed(text)
         if flush:
             visible += call_filter.flush()
-        if visible:
-            self.content_tokens.append(visible)
-            self._emit("token", {"content": visible})
+        if not visible:
+            return
+        if run_id not in self._answer_started:
+            self._answer_started.add(run_id)
+            # A new model call of the turn starts a new part of the answer: keep
+            # it a separate paragraph from the text before it (its own steps sit
+            # in between). A continuation of a cut-off or failed call joins
+            # seamlessly instead (see SeamFilter).
+            if run_id not in self._run_seams and self.content_tokens:
+                visible = _paragraph_break("".join(self.content_tokens[-2:]), visible) + visible
+        self.content_tokens.append(visible)
+        self._emit("token", {"content": visible})
 
     def _on_model_end(self, event: dict) -> None:
         message = event.get("data", {}).get("output")
@@ -381,21 +415,18 @@ class StreamProjector:
             self.output_tokens += usage.get("output_tokens") or 0
             self.cache_read_tokens += (usage.get("input_token_details") or {}).get("cache_read") or 0
 
-        # A parent turn that only calls specialists has nothing user-facing to
-        # say yet; drop any text it leaked so it isn't persisted as the answer.
         run_id = event.get("run_id", "")
         if run_id in self._seam_filters:  # a one-line continuation: release what was held
             self._on_text(run_id, self._labels[run_id], self._seam_filters.pop(run_id).flush(), filtered=True)
         if run_id in self._labels:
             self._close_native_reasoning(run_id, self._labels[run_id])
-        if (
-            run_id in self._turn_start
-            and self._is_final.get(run_id)
-            and isinstance(message, AIMessage)
-            and message.tool_calls
-            and all(tc["name"] in self.sub_agent_names for tc in message.tool_calls)
-        ):
-            del self.content_tokens[self._turn_start[run_id]:]
+        # Text the main agent writes before calling tools or specialists (what
+        # it is about to do, or the part of the answer it already has) stays
+        # where it was written: the chat shows the turn step by step. So the
+        # call's held-back tail is released now, before its tool calls and the
+        # next call's text -- not when the whole turn ends.
+        if run_id in self._splitters:
+            self._flush_run(run_id)
 
     def _on_tool_start(self, event: dict, label: str, ns: str) -> None:
         name = event.get("name", "")
@@ -406,8 +437,9 @@ class StreamProjector:
             args = raw_in if isinstance(raw_in, dict) else {}
             task = args.get("task", "")
             self._tool_start[run_id] = time.monotonic()
-            self._emit("agent_start", {"agent_name": name})
-            self._emit("dispatch_decision", {"target": name, "reason": task})
+            at = self.answer_length()
+            self._emit("agent_start", {"agent_name": name, "at": at})
+            self._emit("dispatch_decision", {"target": name, "reason": task, "at": at})
             self.reasoning_steps.append({
                 "agent": PARENT_AGENT_NAME,
                 "step": "dispatch_decision",
@@ -415,6 +447,7 @@ class StreamProjector:
                 "reason": task,
                 "duration_ms": 0,
                 "truncated": False,
+                "at": at,
             })
             return
 
@@ -426,7 +459,10 @@ class StreamProjector:
                 self._tool_input[run_id] = json.dumps(raw_in)
             except Exception:
                 self._tool_input[run_id] = str(raw_in)
-        self._emit("tool_start", {"tool_name": name, "agent_name": label})
+        self._tool_at[run_id] = self.answer_length()
+        # The input shows what is being looked up while it runs (capped: a preview, not a payload).
+        preview = (self._tool_input[run_id] or "")[:_INPUT_PREVIEW_CHARS]
+        self._emit("tool_start", {"tool_name": name, "agent_name": label, "at": self._tool_at[run_id], "input": preview})
 
     def _on_tool_end(self, event: dict, label: str, ns: str) -> None:
         name = event.get("name", "")
@@ -454,6 +490,7 @@ class StreamProjector:
             "output": output_str,
             "duration_ms": duration_ms,
             "truncated": False,
+            "at": self._tool_at.pop(run_id, self.answer_length()),
         })
         self._emit("tool_end", {"tool_name": name, "agent_name": label, "output": output_str})
 
@@ -479,7 +516,8 @@ class StreamProjector:
             self._seen_tool_call_ids.add(msg.tool_call_id)
             text = extract_tool_output(msg) or ""
             tool_name = msg.name or ""
-            self._emit("tool_start", {"tool_name": tool_name, "agent_name": label})
+            at = self.answer_length()
+            self._emit("tool_start", {"tool_name": tool_name, "agent_name": label, "at": at})
             self._emit("tool_end", {"tool_name": tool_name, "agent_name": label, "output": text})
             self.reasoning_steps.append({
                 "agent": label,
@@ -489,4 +527,12 @@ class StreamProjector:
                 "output": text,
                 "duration_ms": 0,
                 "truncated": False,
+                "at": at,
             })
+
+
+def _paragraph_break(before: str, text: str) -> str:
+    """What goes between earlier answer text and a new part so they are
+    separate paragraphs: nothing if a blank line is already there."""
+    gap = len(before) - len(before.rstrip("\n")) + len(text) - len(text.lstrip("\n"))
+    return "\n" * max(0, 2 - gap)

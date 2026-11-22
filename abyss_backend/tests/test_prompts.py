@@ -29,8 +29,26 @@ def test_delegation_section_lists_every_specialist_and_the_rules():
     assert "**research_specialist**: Finds sources." in prompt
     assert "**writer_specialist**: Drafts text." in prompt
     assert f"at most {MAX_PARALLEL_TASKS} per turn" in prompt
-    assert "your whole action that turn" in prompt  # no answer text while delegating
+    assert "write only what you can already answer" in prompt  # then the rest from the results
     assert "never mention specialists" in prompt
+
+
+def test_a_response_may_come_before_further_tool_calls():
+    """The chat shows a turn in the order it happened (each step's activity
+    between the text written before and after it), so an agent may answer what
+    it already can and then look up more -- or research everything first and
+    answer once; both read correctly. Neither is forced."""
+    prompt = build_parent_prompt("Role.", [], True, NOW)
+    assert "the part of it you can already give -- and/or make the tool call(s)" in prompt
+    assert "no text in between" not in prompt
+    assert "part by part" not in prompt
+    # A reasoning block alone still isn't a turn.
+    assert "Never end a turn with only a reasoning block." in prompt
+
+
+def test_live_previews_blend_into_the_chat():
+    prompt = build_parent_prompt("Role.", [], True, NOW)
+    assert "page background transparent" in prompt and "prefers-color-scheme" in prompt
 
 
 def test_no_delegation_section_without_specialists():
@@ -70,9 +88,10 @@ def test_prompts_stay_within_their_size_budget():
     for the libraries live previews serve offline (three, gsap, chart.js...);
     +~145 (parent) and ~125 (sub-agent) for the role section (in/out of role,
     mixed requests, role changes, no forced tie-ins), which replaced a one-line
-    "stay within your role" rule."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 6750
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 7900  # + delegation rules
+    "stay within your role" rule; +~40 (parent) for transparent live-preview
+    pages."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 7050
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8150  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 3350
 
 

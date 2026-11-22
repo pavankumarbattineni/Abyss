@@ -1,6 +1,6 @@
 export interface StreamAgentStartEvent {
   type: "agent_start";
-  data: { agent_name: string };
+  data: { agent_name: string; at?: number };
 }
 
 export interface StreamAgentEndEvent {
@@ -11,12 +11,12 @@ export interface StreamAgentEndEvent {
 /** The main agent handed a task to a specialist (a sub-agent). */
 export interface StreamDispatchDecisionEvent {
   type: "dispatch_decision";
-  data: { target: string; reason: string };
+  data: { target: string; reason: string; at?: number };
 }
 
 export interface StreamToolStartEvent {
   type: "tool_start";
-  data: { tool_name: string; agent_name: string };
+  data: { tool_name: string; agent_name: string; at?: number; input?: string };
 }
 
 export interface StreamToolEndEvent {
@@ -26,7 +26,7 @@ export interface StreamToolEndEvent {
 
 export interface StreamReasoningStartEvent {
   type: "reasoning_start";
-  data: { agent: string };
+  data: { agent: string; at?: number };
 }
 
 export interface StreamReasoningTokenEvent {
@@ -174,6 +174,8 @@ export interface ReasoningThoughtStep {
   content: string;
   duration_ms: number;
   truncated: boolean;
+  /** Length of the answer text when this step began: where it sits in the answer (see lib/reasoning answerParts). */
+  at?: number;
 }
 
 export interface ReasoningToolCallStep {
@@ -184,6 +186,8 @@ export interface ReasoningToolCallStep {
   output: string;
   duration_ms: number;
   truncated: boolean;
+  /** Length of the answer text when this step began: where it sits in the answer (see lib/reasoning answerParts). */
+  at?: number;
 }
 
 export interface ReasoningDispatchStep {
@@ -193,6 +197,8 @@ export interface ReasoningDispatchStep {
   reason: string;
   duration_ms: number;
   truncated: boolean;
+  /** Length of the answer text when this step began: where it sits in the answer (see lib/reasoning answerParts). */
+  at?: number;
 }
 
 export type ReasoningStep = ReasoningThoughtStep | ReasoningToolCallStep | ReasoningDispatchStep;
