@@ -101,17 +101,17 @@ export function CodeBlock({ language, code, note }: CodeBlockProps) {
 
 export { tableToTsv } from "./table-text";
 
-/** A Markdown table; its menu sits under it and appears on hover (see BlockActions). */
+/** A Markdown table; its menu sits in a row above it, right-aligned, and appears on hover (see BlockActions). */
 export function CopyableTable({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLTableElement>(null);
   return (
-    <div className="group/block relative mb-3 last:mb-0">
+    <div className="group/block mb-3 last:mb-0">
+      <TableActions table={ref} />
       <div className="overflow-x-auto">
         <table ref={ref} className="w-full border-collapse">
           {children}
         </table>
       </div>
-      <TableActions table={ref} />
     </div>
   );
 }

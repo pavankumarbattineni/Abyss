@@ -120,7 +120,18 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
 
   return (
     // No header on the visual itself: its actions sit under it (see BlockActions).
-    <div className="group/block relative mb-3 last:mb-0">
+    <div className="group/block mb-3 last:mb-0">
+    <BlockActions
+      label={name}
+      onExpand={() => setFullscreen(true)}
+      items={[
+        view === "visual"
+          ? { label: "View data", icon: Braces, onClick: () => setView("data") }
+          : { label: "View visual", icon: Shapes, onClick: () => setView("visual") },
+        { label: "Copy as text", icon: Copy, onClick: () => copyText(visualToText(parsed.data), "Text") },
+      ]}
+      image={view === "visual" ? { target: drawingRef, fileName } : undefined}
+    />
     <figure
       aria-label={title ? `${name}: ${title}` : name}
       className="overflow-hidden rounded-xl border border-border-soft bg-card font-sans text-sm leading-normal text-card-foreground"
@@ -142,17 +153,6 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
       )}
 
     </figure>
-    <BlockActions
-      label={name}
-      onExpand={() => setFullscreen(true)}
-      items={[
-        view === "visual"
-          ? { label: "View data", icon: Braces, onClick: () => setView("data") }
-          : { label: "View visual", icon: Shapes, onClick: () => setView("visual") },
-        { label: "Copy as text", icon: Copy, onClick: () => copyText(visualToText(parsed.data), "Text") },
-      ]}
-      image={view === "visual" ? { target: drawingRef, fileName } : undefined}
-    />
       <Dialog open={fullscreen} onOpenChange={setFullscreen}>
         <DialogContent className="flex h-[92dvh] w-[min(96vw,1400px)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
           <div className="border-b border-border px-4 py-3 pr-12">

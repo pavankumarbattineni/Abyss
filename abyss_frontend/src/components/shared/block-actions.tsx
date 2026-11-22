@@ -16,10 +16,14 @@ type MaybeItem = ActionMenuItem | false | null | undefined;
 /**
  * The actions of a rich block in an answer (live preview, interactive view,
  * visual, diagram, table), shown as in ChatGPT and Claude: the block itself
- * carries no header; in its top-right corner floats an always-visible Expand
- * button, with a "more" menu beside it that appears while the block is
- * hovered or focused (always on touch screens). Wrap the block and this bar
- * in a `relative` element with the `group/block` class.
+ * carries no header. Just above its top-right corner sit an always-visible
+ * Expand button and, beside it, a "more" menu that appears while the block is
+ * hovered or focused (always on touch screens). Render this bar first, then
+ * the block, inside an element with the `group/block` class.
+ *
+ * The bar takes a slim row of its own rather than floating over the block:
+ * over a block it would hide what's under it -- a page's own navigation or
+ * scrollbar in a live preview, a node of a wide diagram, a table's header.
  *
  * In full screen the bar becomes the layer's header instead: the block's
  * name on the left, the menu and "Exit full screen" on the right.
@@ -43,18 +47,13 @@ interface BlockActionsProps {
 }
 
 // Shown while the block is hovered or has focus, while open, and always on
-// touch screens. display, not opacity: a hidden menu takes no room beside the
-// Expand button. Static class names, so Tailwind generates both variants.
+// touch screens. It keeps its room while hidden, so nothing shifts on hover.
+// Static class names, so Tailwind generates both variants.
 const REVEAL = {
   block:
-    "hidden group-hover/block:flex group-focus-within/block:flex data-[state=open]:flex [@media(hover:none)]:flex",
+    "opacity-0 transition-opacity group-hover/block:opacity-100 group-focus-within/block:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100",
   table:
-    "hidden group-hover/table:flex group-focus-within/table:flex data-[state=open]:flex [@media(hover:none)]:flex",
-};
-// A bar with only the menu (tables) appears and disappears as a whole.
-const REVEAL_BAR = {
-  block: "hidden group-hover/block:flex group-focus-within/block:flex has-[[data-state=open]]:flex [@media(hover:none)]:flex",
-  table: "hidden group-hover/table:flex group-focus-within/table:flex has-[[data-state=open]]:flex [@media(hover:none)]:flex",
+    "opacity-0 transition-opacity group-hover/table:opacity-100 group-focus-within/table:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100",
 };
 
 export function BlockActions({
@@ -99,11 +98,7 @@ export function BlockActions({
         "items-center gap-2 font-sans",
         fullscreen
           ? "flex shrink-0 justify-between border-b border-border bg-muted px-3 py-1"
-          : // A small floating bar in the block's top-right corner (as in Claude).
-            cn(
-              "absolute top-2 right-2 z-10 rounded-lg border border-border-soft bg-background/85 p-0.5 shadow-sm backdrop-blur-sm",
-              onExpand ? "flex" : REVEAL_BAR[hoverGroup],
-            ),
+          : "mb-1 flex h-7 justify-end",
         className,
       )}
     >
@@ -114,7 +109,7 @@ export function BlockActions({
             items={visibleItems}
             label={`${label}: more actions`}
             menuClassName="w-auto min-w-44"
-            triggerClassName={cn(!fullscreen && onExpand && REVEAL[hoverGroup])}
+            triggerClassName={cn(!fullscreen && REVEAL[hoverGroup])}
           />
         )}
         {onExpand && (
@@ -138,14 +133,17 @@ export function BlockActions({
 export function TableActions({
   table,
   hoverGroup = "block",
+  className,
 }: {
   table: RefObject<HTMLTableElement | null>;
   hoverGroup?: "block" | "table";
+  className?: string;
 }) {
   return (
     <BlockActions
       label="Table"
       hoverGroup={hoverGroup}
+      className={className}
       items={[
         {
           label: "Copy table",

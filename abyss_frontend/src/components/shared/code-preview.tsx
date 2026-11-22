@@ -274,7 +274,8 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
     // No header on the block itself: its actions sit under it (see BlockActions),
     // or form the header of the full-screen layer. The iframe's parents never
     // change, so switching to full screen keeps the running page.
-    <div className="group/block relative mb-3 last:mb-0">
+    <div className="group/block mb-3 last:mb-0">
+    {!fullscreen && actions}
     <div
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen || undefined}
@@ -368,7 +369,6 @@ export function CodePreview({ kind, language, code }: CodePreviewProps) {
         </div>
       )}
     </div>
-    {!fullscreen && actions}
     </div>
   );
 }

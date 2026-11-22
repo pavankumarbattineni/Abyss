@@ -157,7 +157,9 @@ function TableView({ c }: { c: TableComponent }) {
     setSort((s) => (s?.col !== col ? { col, dir: 1 } : s.dir === 1 ? { col, dir: -1 } : null));
 
   return (
-    <div className="group/table relative">
+    <div className="group/table">
+      {/* Titled: on the title's line (title row + its margin = 2.25rem), instead of an empty row under it. */}
+      <TableActions table={ref} hoverGroup="table" className={c.title ? "-mt-9 mb-2" : undefined} />
       <div className="max-h-96 overflow-auto rounded-lg border border-border">
         <table ref={ref} className="w-full border-collapse text-sm">
           <thead className="sticky top-0 bg-muted">
@@ -204,7 +206,6 @@ function TableView({ c }: { c: TableComponent }) {
           </tbody>
         </table>
       </div>
-      <TableActions table={ref} hoverGroup="table" />
     </div>
   );
 }
@@ -727,7 +728,8 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
   return (
     // Same layout as a live preview: no header; actions under the block, or
     // the header of the full-screen layer (inputs and sorting stay as they are).
-    <div className="group/block relative mb-3 last:mb-0">
+    <div className="group/block mb-3 last:mb-0">
+    {!fullscreen && actions}
     <div
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen || undefined}
@@ -770,7 +772,6 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
       </div>
       )}
     </div>
-    {!fullscreen && actions}
     </div>
   );
 }

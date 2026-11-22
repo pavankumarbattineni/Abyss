@@ -288,7 +288,21 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
     // No header on the card: its actions sit under it (see BlockActions).
     // font-sans: the card's labels are UI (Inter), even though the card sits
     // inside the serif response text.
-    <div className="group/block relative mb-3 last:mb-0">
+    <div className="group/block mb-3 last:mb-0">
+    <BlockActions
+      label="Diagram"
+      onExpand={effective.status === "ready" ? openExpanded : undefined}
+      items={[
+        effective.status !== "waiting" &&
+          (showCode
+            ? { label: "View diagram", icon: Workflow, onClick: () => setView("diagram") }
+            : { label: "View code", icon: CodeXml, onClick: () => setView("code") }),
+        { label: "Copy Mermaid code", icon: Copy, onClick: () => copyText(shownSource, "Mermaid code") },
+      ]}
+      // The on-screen drawing (the corrected frame, see fitToContent).
+      image={ready ? { target: inlineRef, fileName: "diagram.png" } : undefined}
+      moreItems={[ready && { label: "Download as SVG", icon: Download, onClick: handleDownload }]}
+    />
     <div className="relative overflow-hidden rounded-xl border border-border-soft font-sans">
       {/* Off-screen scratch space Mermaid measures/draws in (see render()). */}
       <div
@@ -342,20 +356,6 @@ export function MermaidDiagram({ code, isStreaming = false }: MermaidDiagramProp
       )}
 
     </div>
-    <BlockActions
-      label="Diagram"
-      onExpand={effective.status === "ready" ? openExpanded : undefined}
-      items={[
-        effective.status !== "waiting" &&
-          (showCode
-            ? { label: "View diagram", icon: Workflow, onClick: () => setView("diagram") }
-            : { label: "View code", icon: CodeXml, onClick: () => setView("code") }),
-        { label: "Copy Mermaid code", icon: Copy, onClick: () => copyText(shownSource, "Mermaid code") },
-      ]}
-      // The on-screen drawing (the corrected frame, see fitToContent).
-      image={ready ? { target: inlineRef, fileName: "diagram.png" } : undefined}
-      moreItems={[ready && { label: "Download as SVG", icon: Download, onClick: handleDownload }]}
-    />
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent className="flex h-[85vh] max-w-[calc(100%-2rem)] flex-col gap-3 sm:max-w-5xl">
           <div className="flex items-center gap-1 pr-8">
