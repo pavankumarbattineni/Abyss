@@ -15,20 +15,31 @@ import html
 import json
 import logging
 import re
+import time
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from langchain_core.tools import tool
 
+from abyss_agents import web_images
+
 logger = logging.getLogger(__name__)
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
-# Wikimedia asks API clients for a descriptive User-Agent; this one names the
-# client only (no user, account or deployment details).
-USER_AGENT = "EducationalChatImageSearch/1.0 (python-httpx; image lookups for chat answers)"
+# Wikimedia's User-Agent policy asks API clients for "name/version (contact)
+# library": requests without contact information get throttled or refused,
+# above all from shared cloud servers. The contact is the app's public
+# repository -- no user, account or deployment details.
+USER_AGENT = "AbyssImageSearch/1.1 (https://github.com/pavankumarbattineni/Abyss) python-httpx"
 TIMEOUT_SECONDS = 10.0
 THUMB_WIDTH = 800
-MAX_RESULTS = 6
+MAX_RESULTS = 8
+# Searches running at once: a burst of many is what Wikimedia throttles.
+_CONCURRENCY = 3
+# Successful searches are reused for a while (the same subjects come up again).
+_CACHE_SECONDS = 6 * 3600
+_CACHE_MAX = 500
+_cache: dict[tuple[str, int], tuple[float, list[dict]]] = {}
 _ALLOWED_HOSTS = {"upload.wikimedia.org", "thumb.wikimedia.org"}
 _TAGS = re.compile(r"<[^>]+>")
 
@@ -70,6 +81,37 @@ def _clean_url(url: str) -> str | None:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
+# Words that describe a picture rather than its subject: they don't make a result relevant.
+_GENERIC = {
+    "the", "and", "for", "with", "from", "image", "images", "photo", "photos", "picture", "pictures",
+    "portrait", "diagram", "illustration", "drawing", "map", "view", "movie", "film", "films", "series",
+    "show", "tv", "set", "scene", "scenes", "location", "locations", "filming", "actor", "actress",
+    "cast", "character", "characters", "official", "poster", "still", "real", "famous",
+}
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower().replace("_", " ")) if len(w) >= 3 or w.isdigit()}
+
+
+def relevant(query: str, results: list[dict], limit: int) -> list[dict]:
+    """Only results whose title or description names the query's subject (one of
+    its distinctive words), most matching words first -- so an image is never
+    unrelated to what was searched. Order is kept among equals (Commons' own
+    ranking)."""
+    subject = _words(query) - _GENERIC
+    if not subject:
+        return results[:limit]
+    stem = lambda w: w[:6] if len(w) >= 6 else w  # noqa: E731 -- "mitochondrion" ~ "mitochondria"
+    wanted = {stem(w) for w in subject}
+    scored = []
+    for i, r in enumerate(results):
+        hits = len(wanted & {stem(w) for w in _words(f"{r.get('title', '')} {r.get('description', '')}")})
+        if hits:
+            scored.append((-hits, i, r))
+    return [r for _, _, r in sorted(scored)][:limit]
+
+
 def parse_results(payload: dict) -> list[dict]:
     """The API's pages -> what the `image` visual needs, best match first."""
     pages = (payload.get("query") or {}).get("pages") or []
@@ -98,7 +140,8 @@ def parse_results(payload: dict) -> list[dict]:
     return results
 
 
-async def _search(query: str, limit: int) -> list[dict]:
+async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[dict]:
+    # More candidates than needed: unrelated ones are dropped (relevant()).
     params = {
         "action": "query",
         "format": "json",
@@ -107,40 +150,76 @@ async def _search(query: str, limit: int) -> list[dict]:
         # Photos, drawings and diagrams only (no PDFs, audio or video).
         "gsrsearch": f"{query} filetype:bitmap|drawing",
         "gsrnamespace": "6",
-        "gsrlimit": str(limit),
+        "gsrlimit": str(min(2 * limit, 20)),
         "prop": "imageinfo",
         "iiprop": "url|extmetadata|size|mime",
         "iiurlwidth": str(THUMB_WIDTH),
         "iiextmetadatafilter": "Artist|LicenseShortName|ImageDescription|ObjectName",
     }
-    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
-        response = await get_with_retry(client, COMMONS_API, params)
-        return parse_results(response.json())
+    response = await get_with_retry(client, COMMONS_API, params)
+    return relevant(query, parse_results(response.json()), limit)
 
 
 MAX_QUERIES = 5
+# A subject with fewer relevant Wikimedia images than this gets web images too.
+WEB_TOP_UP_BELOW = 2
 
 
-async def _search_safely(query: str, limit: int) -> list[dict] | None:
-    try:
-        return await _search(query, limit)
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("search_images failed: %s", type(exc).__name__)
-        return None
+async def _web_safely(client: httpx.AsyncClient, gate: asyncio.Semaphore, query: str, limit: int) -> list[dict] | None:
+    key = ("web:" + query.lower(), limit)
+    hit = _cache.get(key)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    async with gate:
+        try:
+            results = relevant(query, await web_images.web_search(client, query, 2 * limit), limit)
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("web image search failed (%s)", _describe(exc))
+            return None
+    _cache[key] = (time.monotonic() + _CACHE_SECONDS, results)
+    return results
+
+
+def _describe(exc: Exception) -> str:
+    """What went wrong, for the log: the HTTP status (429 throttled, 403 refused...) or the error type."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
+
+
+async def _search_safely(client: httpx.AsyncClient, gate: asyncio.Semaphore, query: str, limit: int) -> list[dict] | None:
+    key = (query.lower(), limit)
+    hit = _cache.get(key)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    async with gate:
+        try:
+            results = await _search(client, query, limit)
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("search_images failed (%s) for a %d-word query", _describe(exc), len(query.split()))
+            return None
+    if len(_cache) >= _CACHE_MAX:
+        _cache.clear()
+    _cache[key] = (time.monotonic() + _CACHE_SECONDS, results)
+    return results
 
 
 @tool("search_images")
 async def search_images(queries: list[str], limit: int = 3) -> str:
     """Find real images (photos, diagrams, illustrations) on Wikimedia Commons.
 
-    Use it when seeing the real thing helps: an organism, a place, a landmark,
-    an artwork, an instrument, a historical photo, a labelled anatomical or
-    scientific diagram. `queries`: one to five searches at once, each a few
-    English keywords naming one subject (e.g. ["mitochondrion diagram",
-    "Taj Mahal"]) -- one per section that needs an image. Returns up to `limit`
-    (1-6) images per query, best match first, each with src, page, author and
-    license: show them with ```visual {"format":"image"} blocks, copying those
-    fields exactly.
+    Use it when seeing the real thing helps: a place, landmark, person,
+    organism, artwork, object, historical photo, or a labelled diagram.
+    `queries`: one to five searches at once, each a few English keywords
+    naming one subject (e.g. ["mitochondrion diagram", "Taj Mahal"]) -- one
+    per subject. Commons has openly licensed photos, not film or TV stills or
+    posters: for a film, series, book or game search what has real photos --
+    its lead actors, filming locations and sets, premieres or conventions, its
+    author (e.g. ["Daniel Radcliffe", "Alnwick Castle", "Hobbiton movie set"]).
+    Returns up to `limit` (1-8) images per query, best match first, each with
+    src, page, author and license (and `source`, the site, for web images):
+    show them with ```visual {"format":"image"} blocks, copying those fields
+    exactly.
     """
     if isinstance(queries, str):
         queries = [queries]
@@ -149,7 +228,17 @@ async def search_images(queries: list[str], limit: int = 3) -> str:
     if not cleaned:
         return "Give one or more searches, each a few keywords describing an image."
     limit = max(1, min(MAX_RESULTS, int(limit or 3)))
-    found = await asyncio.gather(*(_search_safely(q, limit) for q in cleaned))
+    gate = asyncio.Semaphore(_CONCURRENCY)
+    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
+        found = await asyncio.gather(*(_search_safely(client, gate, q, limit) for q in cleaned))
+        # Too few Wikimedia images for a subject (films, characters, products...):
+        # topped up from the web image search, when it's configured.
+        if web_images.brave_api_key():
+            thin = [i for i, r in enumerate(found) if r is not None and len(r) < WEB_TOP_UP_BELOW or r is None]
+            extra = await asyncio.gather(*(_web_safely(client, gate, cleaned[i], limit) for i in thin))
+            for i, more in zip(thin, extra):
+                if more:
+                    found[i] = ((found[i] or []) + more)[: max(limit, len(found[i] or []))]
     if all(r is None for r in found):
         return "Image search is unavailable right now. Answer without images."
     if len(cleaned) == 1:

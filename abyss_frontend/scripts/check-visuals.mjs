@@ -97,6 +97,10 @@ assert.equal(m.splitInlineFenceJson('```python x = {}\n```'), '```python x = {}\
 const bare = m.parseVisual(JSON.stringify([{ src: "https://upload.wikimedia.org/a.png", author: "A", license: "CC0" }, { src: "https://thumb.wikimedia.org/b.png" }]));
 assert.ok(bare.ok && bare.format === "image" && bare.data.images.length === 2, JSON.stringify(bare));
 assert.ok(!m.parseVisual(JSON.stringify({ src: "https://evil.example.com/a.png" })).ok);
+// A signed web image (through the server's proxy) is accepted, with its site credited.
+const web = m.parseVisual(JSON.stringify({ format: "image", src: "abyss-image:aHR0cHM6Ly9pbWcuZXhhbXBsZS5jb20vaHAuanBn.c2lnbmF0dXJl", source: "example.com" }));
+assert.ok(web.ok && web.data.images[0].source === "example.com", JSON.stringify(web));
+assert.ok(!m.parseVisual(JSON.stringify({ format: "image", src: "abyss-image:not a token" })).ok);
 // The list under another name, or after a {"format":"image"} header, too.
 const items = m.parseVisual(JSON.stringify({ format: "image", items: [{ src: "https://upload.wikimedia.org/a.png" }] }));
 assert.ok(items.ok && items.data.images.length === 1, JSON.stringify(items));

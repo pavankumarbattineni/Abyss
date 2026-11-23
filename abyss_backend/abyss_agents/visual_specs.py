@@ -278,10 +278,11 @@ _FORMATS: tuple[VisualFormat, ...] = (
         "image",
         "real photos or illustrations from Wikimedia Commons",
         '{"format":"image","title"?,"src","page","alt","caption"?,"author","license"} or, '
-        'for 2-4 related images side by side, {"format":"image","title"?,"images":'
+        'for a gallery of 2-8 images of one subject, {"format":"image","title"?,"images":'
         '[{"src","page","alt","caption"?,"author","license"}]}\n'
-        "- Only from the search_images tool: copy src, page, author and license exactly "
-        "as it returned them. Never invent or guess an image URL. Put each image in the "
+        "- Only from the search_images tool: copy src, page, author, license (and source) "
+        "exactly as it returned them; show only images whose title shows they are of the "
+        "subject. Never invent or guess an image URL. Put each image in the "
         "section it illustrates.",
     ),
 )

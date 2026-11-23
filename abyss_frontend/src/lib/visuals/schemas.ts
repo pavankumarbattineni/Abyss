@@ -538,8 +538,15 @@ export const mapSchema = z.object({
 
 /** Only Wikimedia's servers: an image found with the search_images tool, never an arbitrary URL. */
 export const WIKIMEDIA_IMAGE = /^https:\/\/(upload|thumb)\.wikimedia\.org\//;
+/** A web image search_images found, loaded through the server's image proxy (signed by the server). */
+export const PROXIED_IMAGE = /^abyss-image:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const wikimediaImage = z.object({
-  src: z.string().trim().regex(WIKIMEDIA_IMAGE, "the image must come from Wikimedia (upload. or thumb.wikimedia.org)"),
+  src: z
+    .string()
+    .trim()
+    .refine((src) => WIKIMEDIA_IMAGE.test(src) || PROXIED_IMAGE.test(src), "the image must come from search_images (Wikimedia or the image proxy)"),
+  /** The site a web image comes from (credited instead of Wikimedia Commons). */
+  source: optText,
   page: z.string().trim().url().optional().catch(undefined),
   alt: optText,
   caption: optText,
@@ -547,7 +554,7 @@ const wikimediaImage = z.object({
   license: optText,
 });
 export type WikimediaImage = z.output<typeof wikimediaImage>;
-/** One image (its fields at the top level) or a gallery of up to 4 ("images"). */
+/** One image (its fields at the top level) or a gallery of up to 8 ("images"; a carousel past 4). */
 export const imageSchema = z
   .object({
     ...base,
@@ -559,9 +566,10 @@ export const imageSchema = z
     caption: z.string().optional(),
     author: z.string().optional(),
     license: z.string().optional(),
+    source: z.string().optional(),
   })
   .transform((d, ctx) => {
-    if (d.images) return { title: d.title, format: d.format, images: d.images.slice(0, 4) };
+    if (d.images) return { title: d.title, format: d.format, images: d.images.slice(0, 8) };
     const one = wikimediaImage.safeParse(d);
     if (!one.success) {
       for (const issue of one.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });

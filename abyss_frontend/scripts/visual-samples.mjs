@@ -129,6 +129,18 @@ export const SAMPLES = {
       { src: "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1a/x.svg/960px-x.svg.png", caption: "Diagram", author: "B", license: "CC BY-SA 4.0" },
     ],
   },
+  image_carousel: {
+    format: "image",
+    title: "Six photos (a carousel)",
+    images: [
+      { src: "https://upload.wikimedia.org/wikipedia/commons/a/a0/P0.jpg", caption: "Photo 0", author: "A", license: "CC0" },
+      { src: "https://upload.wikimedia.org/wikipedia/commons/a/a1/P1.jpg", caption: "Photo 1", author: "A", license: "CC0" },
+      { src: "https://upload.wikimedia.org/wikipedia/commons/a/a2/P2.jpg", caption: "Photo 2", author: "A", license: "CC0" },
+      { src: "https://upload.wikimedia.org/wikipedia/commons/a/a3/P3.jpg", caption: "Photo 3", author: "A", license: "CC0" },
+      { src: "https://upload.wikimedia.org/wikipedia/commons/a/a4/P4.jpg", caption: "Photo 4", author: "A", license: "CC0" },
+      { src: "https://upload.wikimedia.org/wikipedia/commons/a/a5/P5.jpg", caption: "Photo 5", author: "A", license: "CC0" },
+    ],
+  },
   image: {
     format: "image",
     src: "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1a/Schema_mitochondrion_basic.svg/960px-Schema_mitochondrion_basic.svg.png",

@@ -109,9 +109,10 @@ def test_prompts_stay_within_their_size_budget():
     question, image galleries per section, find_places and parallel tool calls;
     +~45 (parent) for showing images of real, visible subjects per section;
     +~30 (with specialists) to present their results like any answer, and +~35
-    (sub-agent) to include the concrete data behind its findings."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 9150
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 10550  # + delegation rules
+    (sub-agent) to include the concrete data behind its findings; +~40 (parent) as
+    the image rule widened to films, series, books, games, products and brands."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 9300
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 10700  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 3650
 
 

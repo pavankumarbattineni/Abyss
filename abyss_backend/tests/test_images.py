@@ -1,13 +1,22 @@
 """search_images: Wikimedia Commons results -> the `image` visual's fields."""
 import asyncio
 import json
+import re
 
 import httpx
+import pytest
 
 from abyss_agents import images
 from abyss_agents.images import _clean_url, parse_results, search_images
 
 _REAL_CLIENT = httpx.AsyncClient
+
+
+@pytest.fixture(autouse=True)
+def _fresh_cache():
+    images._cache.clear()
+    yield
+    images._cache.clear()
 
 PAYLOAD = {
     "query": {
@@ -79,7 +88,7 @@ def test_tool_sends_only_the_keywords_and_returns_json(monkeypatch):
     out = json.loads(_run(monkeypatch, handler, limit=50))
     assert len(out) == 2
     assert seen["params"]["gsrsearch"].startswith("mitochondrion ")
-    assert seen["params"]["gsrlimit"] == "6"  # capped
+    assert seen["params"]["gsrlimit"] == "16"  # 2 x the capped 8, then filtered
     assert "@" not in seen["agent"]
 
 
@@ -95,8 +104,40 @@ def test_several_queries_run_together_and_come_back_grouped(monkeypatch):
     def handler(request):
         q = dict(request.url.params)["gsrsearch"]
         seen.append(q)
-        return httpx.Response(200, json=PAYLOAD if q.startswith("heart") else {})
+        return httpx.Response(200, json=PAYLOAD if q.startswith("mitochondrion") else {})
 
-    out = json.loads(_run(monkeypatch, handler, queries=["heart", "kidney", "heart", ""]))
-    assert list(out) == ["heart", "kidney"] and len(seen) == 2  # no repeats, no blanks
-    assert len(out["heart"]) == 2 and "no images found" in out["kidney"]
+    out = json.loads(_run(monkeypatch, handler, queries=["mitochondrion", "kidney", "mitochondrion", ""]))
+    assert list(out) == ["mitochondrion", "kidney"] and len(seen) == 2  # no repeats, no blanks
+    assert len(out["mitochondrion"]) == 2 and "no images found" in out["kidney"]
+
+
+def test_a_repeated_search_is_served_from_the_cache(monkeypatch):
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(200, json=PAYLOAD)
+
+    _run(monkeypatch, handler)
+    _run(monkeypatch, handler)
+    assert len(calls) == 1
+
+
+def test_the_user_agent_follows_wikimedias_policy():
+    # name/version (contact) library -- the contact is the app's public repository.
+    assert re.match(r"^\S+/\S+ \(https://\S+\) python-httpx$", images.USER_AGENT)
+
+
+def test_only_results_about_the_subject_are_kept_best_first():
+    from abyss_agents.images import relevant
+
+    results = [
+        {"title": "Sunset over a lake", "description": "Generic landscape"},
+        {"title": "Daniel Radcliffe 2009", "description": "Actor at a premiere"},
+        {"title": "Daniel Radcliffe as Harry Potter", "description": "Harry Potter film promotion"},
+        {"title": "Movie set photo", "description": "A film set"},
+    ]
+    kept = relevant("Daniel Radcliffe Harry Potter movie", results, 5)
+    assert [r["title"] for r in kept] == ["Daniel Radcliffe as Harry Potter", "Daniel Radcliffe 2009"]
+    # Generic words alone ("movie set photo") never make an image relevant.
+    assert relevant("movie set photo", results, 5) == results[:5]  # nothing distinctive to check: unfiltered
