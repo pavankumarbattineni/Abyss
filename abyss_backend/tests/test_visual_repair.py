@@ -127,3 +127,26 @@ def test_every_provider_model_has_a_request_timeout():
             llm = PROVIDERS[provider].build(model, "sk-dummy-key-for-tests", native)
             timeout = getattr(llm, "default_request_timeout", None) or getattr(llm, "timeout", None) or getattr(llm, "request_timeout", None)
             assert timeout == MODEL_REQUEST_TIMEOUT_SECONDS, (provider, native, timeout)
+
+
+def test_bare_search_results_count_as_an_image_visual():
+    bare = [{"src": "https://upload.wikimedia.org/a.png", "author": "A", "license": "CC0"}]
+    assert check_block("visual", json.dumps(bare)) == ([], "image")
+    assert check_block("visual", json.dumps({"src": "https://evil.example.com/a.png"}))[0]  # unsafe host still fails
+
+
+def test_json_on_the_fence_line_is_moved_to_its_own_line_without_a_model_call():
+    one_line = 'Intro\n```visual {"format":"plot","functions":[{"y":"x"}]}```\nEnd'
+    opening = 'Intro\n```visual {"format":"plot","functions":[{"y":"x"}]}\n```\nEnd'
+    for text in (one_line, opening):
+        fixed, llm = run(text, [])
+        assert llm.configs == []  # no model call
+        assert '```visual\n{"format":"plot"' in fixed
+        assert [b.errors for b in find_blocks(fixed)] == [()]
+
+
+def test_image_lists_under_other_names_or_after_a_header_count_as_images():
+    src = "https://upload.wikimedia.org/a.png"
+    assert check_block("visual", json.dumps({"format": "image", "items": [{"src": src}]})) == ([], "image")
+    header_then_list = '{"format":"image"}\n' + json.dumps([{"src": src}, {"src": src}])
+    assert check_block("visual", header_then_list) == ([], "image")

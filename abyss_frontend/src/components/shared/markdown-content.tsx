@@ -16,6 +16,7 @@ import { INTERACTIVE_LANGUAGE, looksLikeInteractiveJson } from "@/lib/interactiv
 import { WIKIMEDIA_IMAGE } from "@/lib/visuals/schemas";
 import { looksLikeVisualJson, VISUAL_LANGUAGE } from "@/lib/visuals/parse";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
+import { splitInlineFenceJson } from "@/lib/visuals/fences";
 import { cn } from "@/lib/utils";
 import { CodeBlock, CopyableTable } from "./code-block";
 import { CodePreview } from "./code-preview";
@@ -269,7 +270,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   isStreaming = false,
   className,
 }: MarkdownContentProps) {
-  const source = normalizeMathDelimiters(content);
+  const source = normalizeMathDelimiters(splitInlineFenceJson(content));
   const unfinishedFrom = !isStreaming && endsInOpenCodeBlock(source) ? source.trimEnd().length : null;
   return (
     // Agent response typography, as in Trench: Source Serif 4 at a reading

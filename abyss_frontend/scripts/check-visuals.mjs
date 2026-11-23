@@ -34,6 +34,7 @@ const entry = [
   'export { parseVisual } from "@/lib/visuals/parse";',
   'export { visualToText } from "@/lib/visuals/registry";',
   'export { VISUAL_SCHEMAS } from "@/lib/visuals/schemas";',
+  'export { splitInlineFenceJson } from "@/lib/visuals/fences";',
   'export { parseInteractiveBlock, interactiveBlockToText, histogramBins, quartiles } from "@/lib/interactive";',
   'export { renderToStaticMarkup } from "react-dom/server";',
   'export { createElement } from "react";',
@@ -86,6 +87,21 @@ for (const [spec, field] of rejects) {
   const parsed = m.parseVisual(JSON.stringify(spec));
   assert.ok(!parsed.ok && parsed.errors.some((e) => e.startsWith(field)), `should reject ${JSON.stringify(spec)}: ${JSON.stringify(parsed)}`);
 }
+
+// JSON written on the fence line is moved onto its own line.
+assert.equal(m.splitInlineFenceJson('x\n```visual {"format":"plot"}```\ny'), 'x\n```visual\n{"format":"plot"}\n```\ny');
+assert.equal(m.splitInlineFenceJson('```visual {"a":1}\n```'), '```visual\n{"a":1}\n```');
+assert.equal(m.splitInlineFenceJson('```python x = {}\n```'), '```python x = {}\n```');
+
+// search_images results pasted bare (no "format") still draw as images; unsafe hosts still fail.
+const bare = m.parseVisual(JSON.stringify([{ src: "https://upload.wikimedia.org/a.png", author: "A", license: "CC0" }, { src: "https://thumb.wikimedia.org/b.png" }]));
+assert.ok(bare.ok && bare.format === "image" && bare.data.images.length === 2, JSON.stringify(bare));
+assert.ok(!m.parseVisual(JSON.stringify({ src: "https://evil.example.com/a.png" })).ok);
+// The list under another name, or after a {"format":"image"} header, too.
+const items = m.parseVisual(JSON.stringify({ format: "image", items: [{ src: "https://upload.wikimedia.org/a.png" }] }));
+assert.ok(items.ok && items.data.images.length === 1, JSON.stringify(items));
+const headed = m.parseVisual('{"format":"image"}\n' + JSON.stringify([{ src: "https://upload.wikimedia.org/a.png" }]));
+assert.ok(headed.ok && headed.data.images.length === 1, JSON.stringify(headed));
 
 // Lenient: a misspelt molecule key still draws; an entry with no structure is dropped.
 const typo = m.parseVisual(JSON.stringify({ format: "molecule", molecules: [{ smiles: "O" }, { smils: "C", name: "Methane" }, { name: "nothing" }] }));

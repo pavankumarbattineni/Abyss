@@ -22,14 +22,14 @@ from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from abyss_agents.visual_check import INTERACTIVE_LANGUAGE, check_block, find_blocks
+from abyss_agents.visual_check import INTERACTIVE_LANGUAGE, check_block, fence_fixes, find_blocks
 from abyss_agents.visual_specs import spec_for
 
 logger = logging.getLogger(__name__)
 
 REPAIR_EVENT = "abyss_block_repair"
 INTERNAL_TAG = "abyss_internal"
-MAX_REPAIRS = 2
+MAX_REPAIRS = 4
 
 _SYSTEM = (
     "You fix one broken JSON block from a chat answer so the app can draw it. "
@@ -49,6 +49,14 @@ def _strip_fence(text: str) -> str:
         text = text.split("\n", 1)[1] if "\n" in text else ""
         text = text.rsplit("```", 1)[0]
     return text.strip()
+
+
+async def _tell_chat(old: str, new: str) -> None:
+    """Swap the text in the chat too (stream projector -> answer_replace)."""
+    try:
+        await adispatch_custom_event(REPAIR_EVENT, {"old": old, "new": new})
+    except RuntimeError:  # no run to tell (direct call, tests)
+        pass
 
 
 class VisualRepairMiddleware(AgentMiddleware):
@@ -88,7 +96,12 @@ class VisualRepairMiddleware(AgentMiddleware):
         message = response.result[index]
         if message.tool_calls:  # not the final answer yet
             return response
-        text = _text_of(message)
+        text = original = _text_of(message)
+        # JSON written on the fence line: moved onto its own line (no model call).
+        for old, new in fence_fixes(text):
+            if old in text:
+                text = text.replace(old, new, 1)
+                await _tell_chat(old, new)
         broken = [b for b in find_blocks(text) if b.errors][:MAX_REPAIRS]
         for block in broken:
             fixed = await self._repair(block)
@@ -96,10 +109,7 @@ class VisualRepairMiddleware(AgentMiddleware):
                 continue
             text = text.replace(block.text, fixed, 1)
             logger.info("Repaired a %s block", block.format or block.language)
-            try:
-                await adispatch_custom_event(REPAIR_EVENT, {"old": block.text, "new": fixed})
-            except RuntimeError:  # no run to tell (direct call, tests)
-                pass
-        if broken and text != _text_of(message):
+            await _tell_chat(block.text, fixed)
+        if text != original:
             response.result[index] = message.model_copy(update={"content": text})
         return response

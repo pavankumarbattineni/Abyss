@@ -35,7 +35,15 @@ def lenient_json(source: str):
     """Small models' usual slips, as the frontend forgives them: smart quotes, trailing commas."""
     cleaned = source.strip().replace("“", '"').replace("”", '"')
     cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # A small header object then a list -- {"format":"image"} followed by
+        # search results -- is one visual: the list goes under "images".
+        split = re.match(r"^(\{[^{}]*\})\s*(\[.*\])$", cleaned, re.S)
+        if not split:
+            raise
+        return {**json.loads(split.group(1)), "images": json.loads(split.group(2))}
 
 
 def _is_num(v) -> bool:
@@ -176,12 +184,33 @@ def _check_interactive(data) -> list[str]:
     return errors
 
 
+def bare_images(data) -> dict | None:
+    """search_images results pasted as they came -- an image object or a list of
+    them, without "format" -- as the image visual they mean (the chat draws
+    them so too); None for anything else."""
+    def is_image(v) -> bool:
+        return isinstance(v, dict) and "format" not in v and isinstance(v.get("src"), str)
+
+    if isinstance(data, list) and data and all(is_image(v) for v in data):
+        return {"format": "image", "images": data}
+    if is_image(data):
+        return {"format": "image", "images": [data]}
+    if isinstance(data, dict) and data.get("format") == "image" and not data.get("images") and not data.get("src"):
+        # The image list under another name ("items", "queries"...): whichever list holds images.
+        key = next((k for k, v in data.items() if isinstance(v, list) and v and all(is_image(i) for i in v)), None)
+        if key:
+            return {**data, "images": data[key]}
+    return None
+
+
 def check_block(language: str, source: str) -> tuple[list[str], str | None]:
     """(errors, format) for one block's JSON; no errors means the chat can draw it."""
     try:
         data = lenient_json(source)
     except (json.JSONDecodeError, ValueError) as exc:
         return [f"invalid JSON: {exc}"], None
+    if language != INTERACTIVE_LANGUAGE:
+        data = bare_images(data) or data
     if language == INTERACTIVE_LANGUAGE:
         return _check_interactive(data), None
     if not isinstance(data, dict):
@@ -190,6 +219,28 @@ def check_block(language: str, source: str) -> tuple[list[str], str | None]:
     if fmt not in FORMATS:
         return [f"unknown format {fmt!r}; use one of {', '.join(FORMATS)}"], None
     return _check_visual(data), fmt
+
+
+# JSON written on the fence line ("```visual {...}", even with the closing
+# fence on the same line): Markdown reads it as the fence's label and the
+# block renders empty. Same rules as abyss_frontend/src/lib/visuals/fences.ts.
+_ONE_LINE = re.compile(r"^([ \t]*)```(visual|trench-ui)[ \t]+([{\[].*?)[ \t]*```[ \t]*$", re.M)
+_OPENING = re.compile(r"^([ \t]*)```(visual|trench-ui)[ \t]+([{\[].*)$", re.M)
+
+
+def fence_fixes(text: str) -> list[tuple[str, str]]:
+    """(old, new) line rewrites that move fence-line JSON onto its own line, in order."""
+    fixes: list[tuple[str, str]] = []
+    for m in _ONE_LINE.finditer(text or ""):
+        indent, lang, body = m.groups()
+        fixes.append((m.group(0), f"{indent}```{lang}\n{body}\n{indent}```"))
+    rest = text or ""
+    for old, new in fixes:
+        rest = rest.replace(old, new, 1)
+    for m in _OPENING.finditer(rest):
+        indent, lang, body = m.groups()
+        fixes.append((m.group(0), f"{indent}```{lang}\n{body}"))
+    return fixes
 
 
 def find_blocks(text: str) -> list[Block]:
