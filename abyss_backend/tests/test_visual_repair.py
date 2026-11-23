@@ -116,3 +116,14 @@ def test_the_chat_swaps_a_repaired_block_and_never_shows_the_hidden_call():
         elif event["event_type"] == "answer_replace":
             shown = shown.replace(event["data"]["old"], event["data"]["new"], 1)
     assert shown == "".join(projector.content_tokens) and "SECRET" not in shown
+
+
+def test_every_provider_model_has_a_request_timeout():
+    from constants import MODEL_REQUEST_TIMEOUT_SECONDS
+    from utils.llm_providers import PROVIDERS
+
+    for provider, model in (("openai", "gpt-5-mini"), ("anthropic", "claude-sonnet-4-5"), ("google", "gemini-3.5-flash")):
+        for native in (False, True):
+            llm = PROVIDERS[provider].build(model, "sk-dummy-key-for-tests", native)
+            timeout = getattr(llm, "default_request_timeout", None) or getattr(llm, "timeout", None) or getattr(llm, "request_timeout", None)
+            assert timeout == MODEL_REQUEST_TIMEOUT_SECONDS, (provider, native, timeout)
