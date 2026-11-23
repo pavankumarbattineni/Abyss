@@ -210,7 +210,7 @@ export function MapVisual({ data }: { data: MapData }) {
     return {
       land: countries.features.map((f) => path(f) ?? ""),
       shaded: shaded.map(({ r, f }) => (f ? { r, d: path(f) ?? "", c: path.centroid(f) } : null)),
-      paths: paths.map((p) => ({ ...p, d: p.coords.length > 1 ? (path({ type: "LineString", coordinates: p.coords }) ?? "") : "", mid: p.coords.length > 1 ? projection(p.coords[Math.floor((p.coords.length - 1) / 2)]) : null })),
+      paths: paths.map((p) => ({ ...p, d: p.coords.length > 1 ? (path({ type: "LineString", coordinates: p.coords }) ?? "") : "" })),
       routes: data.routes.map((r) => ({
         r,
         d: path({ type: "LineString", coordinates: [[r.from[1], r.from[0]], [r.to[1], r.to[0]]] }) ?? "",
@@ -423,14 +423,6 @@ export function MapVisual({ data }: { data: MapData }) {
                 </text>
               ) : null;
             })}
-            {model.paths.map((p, i) => {
-              const m = p.label && visible(p.group) ? at(p.mid) : null;
-              return m ? (
-                <text key={`pl${i}`} x={m.x} y={m.y + 18} textAnchor="middle" fontSize={11} fontStyle="italic" className="pointer-events-none fill-muted-foreground" paintOrder="stroke" stroke="var(--background)" strokeWidth={3}>
-                  {p.label}
-                </text>
-              ) : null;
-            })}
             {shownPlaces.map(({ p, i, pos }, n) => {
               const spot = labels[n];
               const active = selected === i;
@@ -509,7 +501,7 @@ export function MapVisual({ data }: { data: MapData }) {
         </div>
       )}
 
-      {(data.groups.length > 0 || model.valued || model.missing.length > 0) && (
+      {(data.groups.length > 0 || model.valued || model.missing.length > 0 || data.paths.some((p) => p.label)) && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           {data.groups.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Show or hide groups">
@@ -539,6 +531,21 @@ export function MapVisual({ data }: { data: MapData }) {
                 );
               })}
             </div>
+          )}
+          {/* Route names live here, not on the map, so they never cover places. */}
+          {data.paths.some((p) => p.label && visible(p.group)) && (
+            <span className="flex flex-wrap items-center gap-3">
+              {data.paths.map((p, i) =>
+                p.label && visible(p.group) ? (
+                  <span key={i} className="flex items-center gap-1.5">
+                    <svg width="18" height="6" aria-hidden>
+                      <line x1="0" x2="18" y1="3" y2="3" stroke={colorOf(p.group)} strokeWidth="2.4" strokeDasharray={p.dashed ? "4 3" : undefined} />
+                    </svg>
+                    {p.label}
+                  </span>
+                ) : null,
+              )}
+            </span>
           )}
           {model.valued && (
             <span className="flex items-center gap-2">

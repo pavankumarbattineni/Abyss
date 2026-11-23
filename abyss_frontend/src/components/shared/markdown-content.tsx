@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, memo, useContext } from "react";
+import { createContext, memo, useContext, useState } from "react";
+import { Globe } from "lucide-react";
 import dynamic from "next/dynamic";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -136,6 +137,28 @@ function FencedBlock({ node, isStreaming, ...props }: { node?: unknown; isStream
   return <pre {...props} className="mb-3 last:mb-0" />;
 }
 
+/** The site an external http(s) link points to ("en.wikipedia.org"), or null. */
+function siteOf(href: string | undefined): string | null {
+  if (!href || !/^https?:\/\//i.test(href)) return null;
+  try {
+    return new URL(href).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+/** A cited site's icon, loaded from that site itself (no third-party icon service);
+ * a globe when it has none. */
+function SiteIcon({ site }: { site: string }) {
+  const [failed, setFailed] = useState(false);
+  const box = "mr-1 inline-block size-3.5 -translate-y-px align-middle";
+  if (failed) return <Globe aria-hidden className={cn(box, "text-muted-foreground")} />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- a tiny remote icon
+    <img src={`https://${site}/favicon.ico`} alt="" aria-hidden loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className={cn(box, "rounded-[3px]")} />
+  );
+}
+
 function buildComponents(isStreaming: boolean): Components {
   return {
     // Images only from Wikimedia (found with the search_images tool); any other
@@ -162,17 +185,22 @@ function buildComponents(isStreaming: boolean): Components {
         </span>
       );
     },
-    a: ({ href, children, ...props }) => (
-      <a
-        {...props}
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        className="text-sage-text underline underline-offset-2 hover:text-foreground"
-      >
-        {children}
-      </a>
-    ),
+    a: ({ href, children, ...props }) => {
+      const site = siteOf(href);
+      return (
+        <a
+          {...props}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          title={site ?? undefined}
+          className="text-sage-text underline underline-offset-2 hover:text-foreground"
+        >
+          {site && <SiteIcon site={site} />}
+          {children}
+        </a>
+      );
+    },
     p: ({ ...props }) => <p {...props} className="mb-3 last:mb-0" />,
     ul: ({ ...props }) => <ul {...props} className="mb-3 list-disc pl-5 last:mb-0" />,
     ol: ({ ...props }) => <ol {...props} className="mb-3 list-decimal pl-5 last:mb-0" />,

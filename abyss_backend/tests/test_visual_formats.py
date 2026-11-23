@@ -113,3 +113,9 @@ def test_requested_format_keeps_its_short_answer_rule():
     system = _run([HumanMessage("/plot y = x^2")])
     assert "at most 2 short sentences" in system and '"format":"plot"' in system
     assert "at most 2 short sentences" not in spec_for("plot")
+
+
+def test_several_specs_in_one_call():
+    both = get_visual_format.invoke({"name": "map, image"})
+    assert '"format":"map"' in both and '"format":"image"' in both
+    assert "Unknown format 'pie'" in get_visual_format.invoke({"name": "plot, pie"})

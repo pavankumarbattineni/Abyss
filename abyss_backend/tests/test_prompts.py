@@ -103,10 +103,11 @@ def test_prompts_stay_within_their_size_budget():
     following the owner's routing to specialists; +~270 (parent) for the
     science/geo visual formats: 12 more names, which format fits what is being
     explained, the search_images rule, four more chart types, mhchem chemistry and the note that native
-    graphs are interactive."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 8450
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 9700  # + delegation rules
-    assert len(build_sub_agent_prompt("", True, NOW)) < 3450
+    graphs are interactive; +~110 (parent) for composing each answer for its
+    question, image galleries per section, find_places and parallel tool calls."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 9000
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 10250  # + delegation rules
+    assert len(build_sub_agent_prompt("", True, NOW)) < 3500
 
 
 def test_role_section_follows_the_agents_own_prompt_in_both_kinds():
