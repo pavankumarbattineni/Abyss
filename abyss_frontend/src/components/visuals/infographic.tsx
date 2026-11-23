@@ -114,7 +114,7 @@ export function InfographicVisual({ data }: { data: InfographicData }) {
         })}
       </div>
       {data.takeaways.length > 0 && (
-        <div className="rounded-xl border border-primary/30 bg-primary/8 p-3.5">
+        <div className="rounded-xl border border-border bg-muted/50 p-3.5">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-sage-text">KEY TAKEAWAYS</p>
           <ul className="mt-2 space-y-1.5">
             {data.takeaways.map((t) => (

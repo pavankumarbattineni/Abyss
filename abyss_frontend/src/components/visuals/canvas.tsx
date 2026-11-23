@@ -10,7 +10,7 @@ export function CanvasVisual({ data }: { data: CanvasData }) {
     <div className="@container">
       <div className="grid gap-2.5 @2xl:grid-cols-3">
         {/* Centre first in the DOM so phones read it first; placed in the middle on wide screens. */}
-        <div className="order-first flex flex-col items-center justify-center rounded-2xl bg-primary px-4 py-6 text-center text-primary-foreground @2xl:order-none @2xl:col-start-2 @2xl:row-span-2 @2xl:row-start-1">
+        <div className="order-first flex flex-col items-center justify-center rounded-2xl border border-foreground/20 bg-muted px-4 py-6 text-center text-foreground @2xl:order-none @2xl:col-start-2 @2xl:row-span-2 @2xl:row-start-1">
           <p className="text-[11px] font-semibold tracking-[0.16em] opacity-80">CORE</p>
           <p className="mt-1 text-lg leading-snug font-semibold">{data.center.label}</p>
           {data.center.detail && <p className="mt-1.5 text-[13px] leading-relaxed opacity-85">{data.center.detail}</p>}

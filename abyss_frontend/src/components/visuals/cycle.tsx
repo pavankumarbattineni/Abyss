@@ -44,7 +44,7 @@ export function CycleVisual({ data }: { data: CycleData }) {
         ))}
         {data.center && (
           <g>
-            <circle cx={C} cy={C} r={74} className="fill-primary/10" />
+            <circle cx={C} cy={C} r={74} className="fill-muted" />
             {wrapText(data.center, 16, 3).map((line, i, lines) => (
               <text
                 key={i}
@@ -112,7 +112,7 @@ export function CycleVisual({ data }: { data: CycleData }) {
               aria-pressed={active === i}
               className={cn(
                 "flex w-full gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
-                active === i ? "bg-primary/12" : "hover:bg-muted/60",
+                active === i ? "bg-muted" : "hover:bg-muted/60",
               )}
             >
               <span className="grid size-6 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">

@@ -159,9 +159,9 @@ function TreeDrawing({
                 strokeWidth={1.25}
                 className={cn(
                   isRoot
-                    ? "fill-primary stroke-primary"
+                    ? "fill-card stroke-foreground/60"
                     : item.depth === 1
-                      ? "fill-primary/12 stroke-primary/60"
+                      ? "fill-muted stroke-border"
                       : "fill-card stroke-border",
                 )}
               />
@@ -173,7 +173,7 @@ function TreeDrawing({
                   dy="0.35em"
                   fontSize={FONT}
                   className={cn(
-                    isRoot ? "fill-primary-foreground font-semibold" : item.depth === 1 ? "fill-foreground font-semibold" : "fill-foreground",
+                    isRoot ? "fill-foreground font-semibold" : item.depth === 1 ? "fill-foreground font-semibold" : "fill-foreground",
                   )}
                 >
                   {line}
@@ -219,14 +219,14 @@ function Outline({
         aria-expanded={hasKids ? open : undefined}
         className={cn(
           "my-1 flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left",
-          depth === 0 ? "bg-primary text-primary-foreground" : depth === 1 ? "bg-primary/10 font-semibold" : "hover:bg-muted",
+          depth === 0 ? "border border-foreground/30 bg-card font-semibold" : depth === 1 ? "bg-muted font-semibold" : "hover:bg-muted",
         )}
       >
         {hasKids && <ChevronRight className={cn("mt-0.5 size-3.5 shrink-0 transition-transform", open && "rotate-90")} />}
         <span className="min-w-0">
           <span className="block leading-snug">{node.label}</span>
           {node.detail && (
-            <span className={cn("block text-xs font-normal", depth === 0 ? "text-primary-foreground/80" : "text-muted-foreground")}>
+            <span className={cn("block text-xs font-normal", "text-muted-foreground")}>
               {node.detail}
             </span>
           )}
