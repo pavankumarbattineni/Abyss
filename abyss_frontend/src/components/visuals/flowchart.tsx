@@ -7,32 +7,36 @@ import type { FlowchartData } from "@/lib/visuals/schemas";
 import { cn } from "@/lib/utils";
 import { ArrowMarker, SvgStage } from "./stage";
 
-const FONT = 13;
-const LINE = 17;
-const DETAIL = 11;
-const DETAIL_LINE = 14;
+const FONT = 14;
+const LINE = 18;
+const DETAIL = 11.5;
+const DETAIL_LINE = 15;
 
 type Kind = FlowchartData["nodes"][number]["kind"];
 
 function measure(label: string, detail: string | undefined, kind: Kind) {
-  const lines = wrapText(label, kind === "decision" ? 16 : 22, 3);
-  const details = detail ? wrapText(detail, 30, 2) : [];
+  const lines = wrapText(label, kind === "decision" ? 16 : 30, 3);
+  const details = detail ? wrapText(detail, 46, 2) : [];
   const textW = Math.max(...lines.map((l) => textWidth(l, FONT)), ...details.map((l) => textWidth(l, DETAIL)));
   const textH = lines.length * LINE + (details.length ? 4 + details.length * DETAIL_LINE : 0);
-  if (kind === "decision") return { lines, details, width: Math.max(130, textW * 1.5 + 36), height: Math.max(84, textH * 1.6 + 30) };
-  return { lines, details, width: Math.max(kind === "start" || kind === "end" ? 110 : 140, textW + 32), height: textH + 22 };
+  if (kind === "decision") return { lines, details, width: Math.max(140, textW * 1.5 + 40), height: Math.max(88, textH * 1.6 + 32) };
+  // Roomy cards: generous padding around a centred title and its subtitle.
+  return { lines, details, width: Math.max(170, textW + 48), height: textH + 30 };
 }
 
-// Plain shapes: start/end are told apart by their pill shape and a stronger
-// outline, not a coloured fill behind their text.
-const SHAPE_CLASS: Record<Kind, string> = {
-  start: "fill-card stroke-foreground/60",
-  end: "fill-card stroke-foreground/60",
-  process: "fill-card stroke-border",
-  decision: "fill-highlight-soft stroke-highlight",
-  io: "fill-muted stroke-border",
-  subprocess: "fill-card stroke-border",
+// Soft tinted cards, one hue per kind of step (mixed into the card colour, so
+// they read in light and dark themes), with a faint edge of the same hue
+// instead of a hard border. Text stays the normal foreground on every tint.
+const TINT: Record<Kind, string> = {
+  start: "var(--viz-1)",
+  end: "var(--viz-1)",
+  process: "var(--viz-3)",
+  decision: "var(--viz-4)",
+  io: "var(--viz-7)",
+  subprocess: "var(--viz-5)",
 };
+const tintFill = (kind: Kind) => `color-mix(in oklab, ${TINT[kind]} 13%, var(--card))`;
+const tintEdge = (kind: Kind) => `color-mix(in oklab, ${TINT[kind]} 32%, var(--card))`;
 
 /**
  * dagre routes edges to a node's bounding box; for a diamond, move the end
@@ -49,7 +53,11 @@ function toDiamondEdge(center: Point, toward: Point, w: number, h: number): Poin
 export function FlowchartVisual({ data }: { data: FlowchartData }) {
   const markerId = useId().replace(/:/g, "");
   const layout = useMemo(() => {
-    const sized = data.nodes.map((node) => ({ ...node, ...measure(node.label, node.detail, node.kind) }));
+    const measured = data.nodes.map((node) => ({ ...node, ...measure(node.label, node.detail, node.kind) }));
+    // Cards share one width (the widest, within reason) so the chart reads as
+    // an even column; decision diamonds keep their own size.
+    const cardWidth = Math.min(360, Math.max(0, ...measured.filter((n) => n.kind !== "decision").map((n) => n.width)));
+    const sized = measured.map((n) => (n.kind === "decision" ? n : { ...n, width: Math.max(n.width, cardWidth) }));
     const graph = layoutGraph({
       nodes: sized.map((n) => ({ id: n.id, width: n.width, height: n.height })),
       edges: data.edges,
@@ -82,8 +90,8 @@ export function FlowchartVisual({ data }: { data: FlowchartData }) {
         <g key={i}>
           <path
             d={smoothPath(edge.points)}
-            className="fill-none stroke-muted-foreground/70"
-            strokeWidth={1.5}
+            className="fill-none stroke-muted-foreground/60"
+            strokeWidth={1.25}
             markerEnd={`url(#${markerId})`}
           />
           {edge.label && edge.labelAt && (
@@ -114,17 +122,17 @@ export function FlowchartVisual({ data }: { data: FlowchartData }) {
           ) : node.kind === "io" ? (
             <polygon points={`${-w / 2 + 12},${-h / 2} ${w / 2},${-h / 2} ${w / 2 - 12},${h / 2} ${-w / 2},${h / 2}`} />
           ) : (
-            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={onPrimary ? h / 2 : 10} />
+            <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={onPrimary ? h / 2 : 12} />
           );
         const textTop = -((node.lines.length * LINE + (node.details.length ? 4 + node.details.length * DETAIL_LINE : 0)) / 2);
         return (
           <g key={node.id} transform={`translate(${pos.x},${pos.y})`}>
             {node.detail && <title>{node.detail}</title>}
-            <g className={SHAPE_CLASS[node.kind]} strokeWidth={1.5}>
+            <g fill={tintFill(node.kind)} stroke={tintEdge(node.kind)} strokeWidth={1}>
               {shape}
             </g>
             {node.kind === "subprocess" && (
-              <g className="stroke-border" strokeWidth={1.5}>
+              <g stroke={tintEdge(node.kind)} strokeWidth={1}>
                 <line x1={-w / 2 + 9} y1={-h / 2} x2={-w / 2 + 9} y2={h / 2} />
                 <line x1={w / 2 - 9} y1={-h / 2} x2={w / 2 - 9} y2={h / 2} />
               </g>
@@ -136,7 +144,7 @@ export function FlowchartVisual({ data }: { data: FlowchartData }) {
                 dy="0.35em"
                 textAnchor="middle"
                 fontSize={FONT}
-                className={cn("font-medium", onPrimary ? "fill-primary-foreground" : "fill-foreground")}
+                className={cn("font-semibold", onPrimary ? "fill-primary-foreground" : "fill-foreground")}
               >
                 {line}
               </text>

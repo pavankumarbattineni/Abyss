@@ -28,9 +28,9 @@ def test_fatal_problems_are_reported_with_the_field():
     assert "unknown format" in check_block("visual", '{"format":"pie"}')[0][0]
     assert check_block("visual", '{"format":"venn","sets":[{"id":"a","label":"A"}]}')[0] == ["sets: needs at least 2 items"]
     assert "lat and lon" in check_block("visual", '{"format":"map","places":[{"name":"Rome"}]}')[0][0]
-    assert "Wikimedia" in check_block("visual", '{"format":"image","src":"https://example.com/a.png"}')[0][0]
+    assert "image URL from search_images" in check_block("visual", '{"format":"image","src":"https://example.com/a.png"}')[0][0]
     gallery = {"format": "image", "images": [{"src": "https://upload.wikimedia.org/a.png"}, {"src": "http://x/b.png"}]}
-    assert check_block("visual", json.dumps(gallery))[0] == ["images.1.src: must be a Wikimedia URL from search_images"]
+    assert check_block("visual", json.dumps(gallery))[0] == ["images.1.src: must be an image URL from search_images"]
     assert "unknown 'donut'" in check_block("trench-ui", '{"version":1,"components":[{"type":"donut"}]}')[0][0]
 
 

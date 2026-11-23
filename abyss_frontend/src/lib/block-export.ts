@@ -18,15 +18,52 @@ function backgroundOf(node: HTMLElement): string {
   return getComputedStyle(document.body).backgroundColor || "#ffffff";
 }
 
-export async function nodeToPng(node: HTMLElement): Promise<Blob> {
-  const blob = await toBlob(node, {
-    pixelRatio: Math.max(2, window.devicePixelRatio || 1),
-    backgroundColor: backgroundOf(node),
-    // Controls marked data-export-skip (e.g. a table's sort arrows) stay out of the image.
-    filter: (n) => !(n instanceof HTMLElement && n.dataset.exportSkip !== undefined),
+// What an SVG element's look depends on that comes from CSS classes and theme
+// variables (fill-foreground, stroke-border, var(--background), font-medium...).
+const SVG_PAINT = [
+  "fill", "fill-opacity", "stroke", "stroke-opacity", "stroke-width", "opacity",
+  "font-family", "font-size", "font-weight", "font-style", "color",
+] as const;
+
+/**
+ * html-to-image copies HTML elements' computed styles but not SVG ones, and
+ * the exported image has no stylesheet: SVG text would fall back to black and
+ * theme-variable colours wouldn't resolve (dark labels on a dark background).
+ * So each SVG element gets its on-screen values written on itself for the
+ * export; the returned function puts the original style attributes back.
+ */
+export function inlineSvgPaint(node: HTMLElement): () => void {
+  const saved: [Element, string | null][] = [];
+  node.querySelectorAll<SVGElement>("svg, svg *").forEach((el) => {
+    saved.push([el, el.getAttribute("style")]);
+    const computed = getComputedStyle(el);
+    for (const property of SVG_PAINT) {
+      const value = computed.getPropertyValue(property);
+      if (value) el.style.setProperty(property, value);
+    }
   });
-  if (!blob) throw new Error("The image couldn't be created.");
-  return blob;
+  return () => {
+    for (const [el, style] of saved) {
+      if (style === null) el.removeAttribute("style");
+      else el.setAttribute("style", style);
+    }
+  };
+}
+
+export async function nodeToPng(node: HTMLElement): Promise<Blob> {
+  const restore = inlineSvgPaint(node);
+  try {
+    const blob = await toBlob(node, {
+      pixelRatio: Math.max(2, window.devicePixelRatio || 1),
+      backgroundColor: backgroundOf(node),
+      // Controls marked data-export-skip (e.g. a table's sort arrows) stay out of the image.
+      filter: (n) => !(n instanceof HTMLElement && n.dataset.exportSkip !== undefined),
+    });
+    if (!blob) throw new Error("The image couldn't be created.");
+    return blob;
+  } finally {
+    restore();
+  }
 }
 
 export function downloadBlob(blob: Blob, filename: string) {

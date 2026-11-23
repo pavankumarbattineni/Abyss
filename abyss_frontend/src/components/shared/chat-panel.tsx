@@ -34,6 +34,7 @@ import { RelativeTime } from "./relative-time";
 import { AnswerTimeline } from "./answer-timeline";
 import { COMPOSE_EVENT } from "./code-preview";
 import { useFormatMenu } from "./format-menu";
+import { readDraft, writeDraft } from "@/lib/drafts";
 import { ToolApprovalPanel } from "./tool-approval-panel";
 
 interface ChatPanelProps {
@@ -55,6 +56,8 @@ interface ChatPanelProps {
   pendingApprovals?: StreamToolInterrupt[];
   isResolvingApproval?: boolean;
   onResolveApproval?: (approvals: ToolApprovalPayload[]) => void;
+  /** Keeps the unsent draft for this conversation across re-mounts (lib/drafts). */
+  draftKey?: string;
 }
 
 // The reading column: 48rem, widening when the chat itself has room (the app
@@ -90,8 +93,18 @@ export function ChatPanel({
   pendingApprovals = [],
   isResolvingApproval = false,
   onResolveApproval,
+  draftKey,
 }: ChatPanelProps) {
-  const [draft, setDraft] = useState<string>("");
+  // The unsent draft: typing is always allowed -- also while an answer is on
+  // its way (only sending waits for it) -- and kept per conversation, so a
+  // new thread moving to its own URL doesn't lose what was typed meanwhile.
+  const [draft, setDraft] = useState<string>(() => readDraft(draftKey));
+  const [draftFor, setDraftFor] = useState(draftKey);
+  if (draftFor !== draftKey) {
+    setDraftFor(draftKey);
+    setDraft(readDraft(draftKey));
+  }
+  useEffect(() => writeDraft(draftKey, draft), [draftKey, draft]);
   const [spacerHeight, setSpacerHeight] = useState<number>(0);
   const hasThread = messages !== undefined;
   // The newest saved answer: the only one whose previews/visuals offer "Ask the agent to fix it".

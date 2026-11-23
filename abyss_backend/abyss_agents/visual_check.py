@@ -15,6 +15,7 @@ import re
 from dataclasses import dataclass
 
 from abyss_agents.visual_specs import FORMATS, VISUAL_LANGUAGE
+from abyss_agents.web_images import TOKEN_PREFIX, verify_image_token
 
 INTERACTIVE_LANGUAGE = "trench-ui"
 WIKIMEDIA_IMAGE = re.compile(r"^https://(upload|thumb)\.wikimedia\.org/")
@@ -146,8 +147,10 @@ def _check_visual(data: dict) -> list[str]:
             errors.append("images: needs at least one image")
         for i, img in enumerate(images):
             src = img.get("src", "") if isinstance(img, dict) else ""
-            if not WIKIMEDIA_IMAGE.match(str(src).strip()):
-                errors.append(f"{'images.' + str(i) + '.' if 'images' in data else ''}src: must be a Wikimedia URL from search_images")
+            src = str(src).strip()
+            # Wikimedia, or a web image search_images signed (made-up tokens fail the check).
+            if not (WIKIMEDIA_IMAGE.match(src) or (src.startswith(TOKEN_PREFIX) and verify_image_token(src))):
+                errors.append(f"{'images.' + str(i) + '.' if 'images' in data else ''}src: must be an image URL from search_images")
     return errors
 
 
