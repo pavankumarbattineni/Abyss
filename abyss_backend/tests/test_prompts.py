@@ -29,7 +29,9 @@ def test_delegation_section_lists_every_specialist_and_the_rules():
     assert "**research_specialist**: Finds sources." in prompt
     assert "**writer_specialist**: Drafts text." in prompt
     assert f"at most {MAX_PARALLEL_TASKS} per turn" in prompt
-    assert "write only what you can already answer" in prompt  # then the rest from the results
+    # One short line before delegating, then the answer once (no answer written twice).
+    assert "not the answer. Write the answer once, after the results are in" in prompt
+    assert "The results are your material, not the answer" in prompt
     assert "never mention specialists" in prompt
 
 
