@@ -1,12 +1,19 @@
-"""The `search_images` tool: real images from Wikimedia Commons for the `image` visual.
+"""The `search_images` tool: real images for the `image` visual.
 
-The model never invents image URLs: it searches Commons here and puts a result
-in an ```visual {"format":"image"} block, which the frontend loads straight
-from Wikimedia's servers (only upload./thumb.wikimedia.org are accepted --
-abyss_frontend/src/lib/visuals/schemas.ts). Every result carries the author
-and licence its open licence asks to be credited.
+Two sources, searched at the same time for every subject:
+  - Wikimedia Commons: openly licensed photos, drawings and diagrams, each with
+    the author and licence it asks to be credited. The frontend loads them
+    straight from upload./thumb.wikimedia.org.
+  - The web (Brave Search, abyss_agents/web_images.py), when configured:
+    posters, stills, products -- what Commons doesn't have. They are credited
+    to their site and loaded through the signed image proxy.
+Results alternate between the two, best match first, and only images whose
+title or description names the subject are kept (relevant()).
 
-Only the search words leave the server: no user or conversation data.
+The model never invents image URLs: the frontend accepts only Wikimedia
+addresses and tokens this server signed (abyss_frontend/src/lib/visuals/schemas.ts,
+abyss_agents/visual_check.py). Only the search words leave the server: no user
+or conversation data.
 """
 from __future__ import annotations
 
@@ -16,12 +23,14 @@ import json
 import logging
 import re
 import time
+from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from langchain_core.tools import tool
 
 from abyss_agents import web_images
+from abyss_agents.http_retry import describe, get_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +42,9 @@ COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 USER_AGENT = "AbyssImageSearch/1.1 (https://github.com/pavankumarbattineni/Abyss) python-httpx"
 TIMEOUT_SECONDS = 10.0
 THUMB_WIDTH = 800
+MAX_QUERIES = 5
 MAX_RESULTS = 8
-# Searches running at once: a burst of many is what Wikimedia throttles.
+# Searches running at once per source: a burst of many is what gets throttled.
 _CONCURRENCY = 3
 # Successful searches are reused for a while (the same subjects come up again).
 _CACHE_SECONDS = 6 * 3600
@@ -42,28 +52,6 @@ _CACHE_MAX = 500
 _cache: dict[tuple[str, int], tuple[float, list[dict]]] = {}
 _ALLOWED_HOSTS = {"upload.wikimedia.org", "thumb.wikimedia.org"}
 _TAGS = re.compile(r"<[^>]+>")
-
-
-_RETRY_STATUSES = {429, 500, 502, 503, 504}
-
-
-async def get_with_retry(client: httpx.AsyncClient, url: str, params: dict, tries: int = 3) -> httpx.Response:
-    """GET that waits and tries again when Wikimedia throttles a burst (429)
-    or has a passing server error; raises after the last try."""
-    for attempt in range(tries):
-        try:
-            response = await client.get(url, params=params)
-            if response.status_code not in _RETRY_STATUSES or attempt == tries - 1:
-                response.raise_for_status()
-                return response
-            wait = response.headers.get("retry-after", "")
-            delay = min(float(wait), 3.0) if wait.replace(".", "", 1).isdigit() else 0.6 * 2**attempt
-        except httpx.TransportError:
-            if attempt == tries - 1:
-                raise
-            delay = 0.6 * 2**attempt
-        await asyncio.sleep(delay)
-    raise httpx.HTTPError("unreachable")
 
 
 def _plain(value: object, limit: int) -> str:
@@ -97,8 +85,8 @@ def _words(text: str) -> set[str]:
 def relevant(query: str, results: list[dict], limit: int) -> list[dict]:
     """Only results whose title or description names the query's subject (one of
     its distinctive words), most matching words first -- so an image is never
-    unrelated to what was searched. Order is kept among equals (Commons' own
-    ranking)."""
+    unrelated to what was searched. Order is kept among equals (the source's
+    own ranking)."""
     subject = _words(query) - _GENERIC
     if not subject:
         return results[:limit]
@@ -112,8 +100,16 @@ def relevant(query: str, results: list[dict], limit: int) -> list[dict]:
     return [r for _, _, r in sorted(scored)][:limit]
 
 
+def interleave(first: list[dict], second: list[dict], limit: int) -> list[dict]:
+    """first[0], second[0], first[1], second[1], ... -- up to `limit`, the rest of the longer list after."""
+    out: list[dict] = []
+    for i in range(max(len(first), len(second))):
+        out.extend(x[i] for x in (first, second) if i < len(x))
+    return out[:limit]
+
+
 def parse_results(payload: dict) -> list[dict]:
-    """The API's pages -> what the `image` visual needs, best match first."""
+    """The Commons API's pages -> what the `image` visual needs, best match first."""
     pages = (payload.get("query") or {}).get("pages") or []
     pages = sorted(pages, key=lambda p: p.get("index", 0))
     results: list[dict] = []
@@ -140,7 +136,7 @@ def parse_results(payload: dict) -> list[dict]:
     return results
 
 
-async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[dict]:
+async def _commons(client: httpx.AsyncClient, query: str, limit: int) -> list[dict]:
     # More candidates than needed: unrelated ones are dropped (relevant()).
     params = {
         "action": "query",
@@ -160,66 +156,66 @@ async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[dic
     return relevant(query, parse_results(response.json()), limit)
 
 
-MAX_QUERIES = 5
-def interleave(first: list[dict], second: list[dict], limit: int) -> list[dict]:
-    """first[0], second[0], first[1], second[1], ... -- up to `limit`, the rest of the longer list after."""
-    out: list[dict] = []
-    for i in range(max(len(first), len(second))):
-        out.extend(x[i] for x in (first, second) if i < len(x))
-    return out[:limit]
+async def _web(client: httpx.AsyncClient, query: str, limit: int) -> list[dict]:
+    return relevant(query, await web_images.web_search(client, query, 2 * limit), limit)
 
 
-async def _web_safely(client: httpx.AsyncClient, gate: asyncio.Semaphore, query: str, limit: int) -> list[dict] | None:
-    key = ("web:" + query.lower(), limit)
-    hit = _cache.get(key)
-    if hit and hit[0] > time.monotonic():
-        return hit[1]
-    async with gate:
-        try:
-            results = relevant(query, await web_images.web_search(client, query, 2 * limit), limit)
-        except (httpx.HTTPError, ValueError) as exc:
-            logger.warning("web image search failed (%s)", _describe(exc))
-            return None
-    _cache[key] = (time.monotonic() + _CACHE_SECONDS, results)
-    return results
-
-
-def _describe(exc: Exception) -> str:
-    """What went wrong, for the log: the HTTP status (429 throttled, 403 refused...) or the error type."""
-    if isinstance(exc, httpx.HTTPStatusError):
-        return f"HTTP {exc.response.status_code}"
-    return type(exc).__name__
-
-
-async def _search_safely(client: httpx.AsyncClient, gate: asyncio.Semaphore, query: str, limit: int) -> list[dict] | None:
-    key = (query.lower(), limit)
-    hit = _cache.get(key)
-    if hit and hit[0] > time.monotonic():
-        return hit[1]
-    async with gate:
-        try:
-            results = await _search(client, query, limit)
-        except (httpx.HTTPError, ValueError) as exc:
-            logger.warning("search_images failed (%s) for a %d-word query", _describe(exc), len(query.split()))
-            return None
+def _remember(key: tuple[str, int], results: list[dict]) -> None:
+    """Cache a search, keeping at most _CACHE_MAX: expired entries go first, then the oldest."""
     if len(_cache) >= _CACHE_MAX:
-        _cache.clear()
+        now = time.monotonic()
+        for stale in [k for k, (expires, _) in _cache.items() if expires <= now]:
+            del _cache[stale]
+        while len(_cache) >= _CACHE_MAX:
+            del _cache[next(iter(_cache))]
     _cache[key] = (time.monotonic() + _CACHE_SECONDS, results)
+
+
+Search = Callable[[httpx.AsyncClient, str, int], Awaitable[list[dict]]]
+
+
+async def _cached(source: str, search: Search, client: httpx.AsyncClient, gate: asyncio.Semaphore,
+                  query: str, limit: int) -> list[dict] | None:
+    """One source's results for one query: from the cache, or searched under the
+    source's concurrency gate. None when the source failed (logged, never raised)."""
+    key = (f"{source}:{query.lower()}", limit)
+    hit = _cache.get(key)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    async with gate:
+        try:
+            results = await search(client, query, limit)
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("%s image search failed (%s) for a %d-word query", source, describe(exc), len(query.split()))
+            return None
+    _remember(key, results)
     return results
+
+
+async def _all(source: str, search: Search, client: httpx.AsyncClient, queries: list[str], limit: int) -> list:
+    gate = asyncio.Semaphore(_CONCURRENCY)  # each source has its own: one never waits for the other
+    return await asyncio.gather(*(_cached(source, search, client, gate, q, limit) for q in queries))
+
+
+def _merge(commons: list[dict] | None, web: list[dict] | None, limit: int) -> list[dict] | None:
+    """Both sources alternating (Commons first); None only when every source failed."""
+    if commons is None and web is None:
+        return None
+    return interleave(commons or [], web or [], limit)
 
 
 @tool("search_images")
 async def search_images(queries: list[str], limit: int = 3) -> str:
-    """Find real images (photos, diagrams, illustrations) on Wikimedia Commons.
+    """Find real images (photos, diagrams, illustrations, and -- where web image
+    search is on -- posters and stills).
 
     Use it when seeing the real thing helps: a place, landmark, person,
     organism, artwork, object, historical photo, or a labelled diagram.
     `queries`: one to five searches at once, each a few English keywords
     naming one subject (e.g. ["mitochondrion diagram", "Taj Mahal"]) -- one
-    per subject. Commons has openly licensed photos, not film or TV stills or
-    posters: for a film, series, book or game search what has real photos --
-    its lead actors, filming locations and sets, premieres or conventions, its
-    author (e.g. ["Daniel Radcliffe", "Alnwick Castle", "Hobbiton movie set"]).
+    per subject. For a film, series, book or game, search the work itself and
+    also what has real photos: its lead actors, filming locations and sets,
+    its author (e.g. ["Harry Potter film", "Daniel Radcliffe", "Alnwick Castle"]).
     Returns up to `limit` (1-8) images per query, best match first, each with
     src, page, author and license (and `source`, the site, for web images):
     show them with ```visual {"format":"image"} blocks, copying those fields
@@ -232,23 +228,18 @@ async def search_images(queries: list[str], limit: int = 3) -> str:
     if not cleaned:
         return "Give one or more searches, each a few keywords describing an image."
     limit = max(1, min(MAX_RESULTS, int(limit or 3)))
-    gate = asyncio.Semaphore(_CONCURRENCY)
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
-        found = await asyncio.gather(*(_search_safely(client, gate, q, limit) for q in cleaned))
-        # With the web image search configured, every subject gets both sources,
-        # alternating: Wikimedia's openly licensed photos (a film's actors,
-        # sets, making-of) and the web's (its posters, stills, characters) --
-        # Wikimedia alone often has only things around a subject, not it.
+        searches = [_all("commons", _commons, client, cleaned, limit)]
         if web_images.brave_api_key():
-            extra = await asyncio.gather(*(_web_safely(client, gate, q, limit) for q in cleaned))
-            for i, more in enumerate(extra):
-                if more:
-                    found[i] = interleave(found[i] or [], more, limit)
+            searches.append(_all("web", _web, client, cleaned, limit))
+        by_source = await asyncio.gather(*searches)
+    web = by_source[1] if len(by_source) > 1 else [None] * len(cleaned)
+    found = [_merge(c, w, limit) for c, w in zip(by_source[0], web)]
     if all(r is None for r in found):
         return "Image search is unavailable right now. Answer without images."
     if len(cleaned) == 1:
         if not found[0]:
-            return f'No images found on Wikimedia Commons for "{cleaned[0]}". Try other keywords, or answer without an image.'
+            return f'No images found for "{cleaned[0]}". Try other keywords, or answer without an image.'
         return json.dumps(found[0], ensure_ascii=False)
     out = {q: (r or "no images found -- try other keywords or skip this image") for q, r in zip(cleaned, found)}
     return json.dumps(out, ensure_ascii=False)

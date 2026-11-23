@@ -15,7 +15,8 @@ import logging
 import httpx
 from langchain_core.tools import tool
 
-from abyss_agents.images import TIMEOUT_SECONDS, USER_AGENT, get_with_retry
+from abyss_agents.http_retry import get_with_retry
+from abyss_agents.images import TIMEOUT_SECONDS, USER_AGENT
 
 logger = logging.getLogger(__name__)
 

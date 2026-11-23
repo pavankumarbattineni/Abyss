@@ -1,9 +1,10 @@
-"""Web image search (Brave Search API), the fallback behind Wikimedia Commons.
+"""Web image search (Brave Search API), the second source of search_images.
 
-Wikimedia only has openly licensed photos -- no film or TV stills, posters,
-characters, products or brands. When it has fewer than two relevant images
-for a subject, search_images (abyss_agents/images.py) adds web results from
-here, credited to the site they come from.
+Wikimedia Commons only has openly licensed photos -- no film or TV stills,
+posters, characters, products or brands. With a key configured,
+search_images (abyss_agents/images.py) searches here at the same time as
+Commons for every subject and alternates the two; results are credited to
+the site they come from.
 
 A web image is never loaded by the reader's browser from its own site: its
 address is wrapped in a token signed with the server's secret
@@ -25,6 +26,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from abyss_agents.http_retry import get_with_retry
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -112,14 +114,14 @@ def parse_brave(payload: dict) -> list[dict]:
 
 
 async def web_search(client: httpx.AsyncClient, query: str, count: int) -> list[dict]:
-    """Up to `count` web images for `query` (strict safe search); [] when not configured."""
+    """Up to `count` web images for `query` (strict safe search), retried when throttled; [] when not configured."""
     key = brave_api_key()
     if not key:
         return []
-    response = await client.get(
+    response = await get_with_retry(
+        client,
         BRAVE_IMAGES_API,
         params={"q": query, "count": str(min(max(count, 1), 20)), "safesearch": "strict"},
         headers={"X-Subscription-Token": key, "Accept": "application/json"},
     )
-    response.raise_for_status()
     return parse_brave(response.json())
