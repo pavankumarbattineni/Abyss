@@ -31,7 +31,9 @@ interface PickerModel {
  * The model for all of the user's agents and chats, chosen in the chat box.
  * The choice is saved on the user (PATCH /auth/setting), so every chat --
  * any agent, any thread, the builder's chat -- shows and uses the same model.
- * Default runs on the platform's key; every other model is BYOK and can be
+ * Default (and Default - 1 / Default - 2) run on the platform's key; every
+ * other model is BYOK -- including the Gemini models behind the defaults, under
+ * their own names -- and can be
  * picked once its provider's key is saved in Provider Secrets.
  */
 export function ModelPicker() {
@@ -47,6 +49,10 @@ export function ModelPicker() {
   });
 
   const withKey = new Set(credentials.map((credential) => credential.provider_id));
+  // The platform's models -- Default, Default - 1, Default - 2 -- on its own key.
+  const defaults = catalog.find((provider) => provider.provider_id === DEFAULT_MODEL_ID)?.models ?? [
+    { id: DEFAULT_MODEL_ID, model_name: DEFAULT_MODEL_ID, display_name: "Default" },
+  ];
   const byok: PickerModel[] = catalog
     .filter((provider) => provider.provider_id !== DEFAULT_MODEL_ID)
     .flatMap((provider) =>
@@ -60,7 +66,8 @@ export function ModelPicker() {
     // Models the user can use now come first, right after Default.
     .sort((a, b) => Number(b.hasKey) - Number(a.hasKey));
   const value = user?.llm_model_id ?? DEFAULT_MODEL_ID;
-  const selectedName = byok.find((model) => model.id === value)?.name ?? "Default";
+  const selectedName =
+    defaults.find((model) => model.id === value)?.display_name ?? byok.find((model) => model.id === value)?.name ?? "Default";
   const missingKeys = byok.some((model) => !model.hasKey);
 
   const { mutate: selectModel, isPending } = useMutation({
@@ -93,7 +100,11 @@ export function ModelPicker() {
         <SelectValue>{selectedName}</SelectValue>
       </SelectTrigger>
       <SelectContent align="start" className="max-h-80 w-64">
-        <SelectItem value={DEFAULT_MODEL_ID}>Default</SelectItem>
+        {defaults.map((model) => (
+          <SelectItem key={model.id} value={model.id}>
+            {model.display_name}
+          </SelectItem>
+        ))}
         {byok.map((model) => (
           <SelectItem
             key={model.id}

@@ -7,7 +7,7 @@ model by appending it here or with a plain INSERT.
 """
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 # <reasoning> prompt protocol, which works on any model; switch one to
 # "native" only after testing it.
 PLATFORM_DEFAULT = ("google", "gemini-3.5-flash-lite")
+# The platform's extra models, offered as "Default - 1" / "Default - 2" on its
+# key (provider_models.platform_slot; migration 0010). Chosen 2026-11-23 for
+# working tool calls with native reasoning on the platform's Gemini key.
+PLATFORM_SLOTS: dict[int, tuple[str, str]] = {
+    1: ("google", "gemini-3.5-flash"),
+    2: ("google", "gemini-3-flash-preview"),
+}
 
 CATALOG: dict[str, tuple[str, list[tuple[str, str]]]] = {
     # Chat Completions models whose tool calling works with Abyss's agents.
@@ -75,7 +82,8 @@ CATALOG: dict[str, tuple[str, list[tuple[str, str]]]] = {
 # Models tested with the provider's own (native) reasoning. With the <reasoning>
 # prompt protocol, Gemini 3.5 Flash-Lite sometimes wrote tool calls as text or
 # stopped after its reasoning, so specialists were skipped (migration 0006).
-NATIVE_REASONING_MODELS = {"gemini-3.5-flash-lite"}
+# All three platform models (Default, Default - 1, Default - 2) use it.
+NATIVE_REASONING_MODELS = {"gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3-flash-preview"}
 
 # Input context windows (tokens) for catalog models LangChain has no profile
 # for -- the selected model's window sets when a conversation is summarized
@@ -132,6 +140,19 @@ async def seed_catalog(session: AsyncSession) -> int:
                 .on_conflict_do_nothing(constraint="uq_provider_models_provider_model")
             )
             added += result.rowcount or 0
+    # Fill an empty "Default - n" slot (an operator's own choice is kept).
+    for slot, (provider, model_name) in PLATFORM_SLOTS.items():
+        taken = await session.scalar(select(ProviderModel.id).where(ProviderModel.platform_slot == slot))
+        if taken is None:
+            await session.execute(
+                update(ProviderModel)
+                .where(
+                    ProviderModel.provider_id == provider_ids[provider],
+                    ProviderModel.model_name == model_name,
+                    ProviderModel.platform_slot.is_(None),
+                )
+                .values(platform_slot=slot)
+            )
     await session.commit()
     if added:
         logger.info("Seeded %d LLM catalog model(s)", added)

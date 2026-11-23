@@ -40,6 +40,9 @@ class User(BasicModel):
         ForeignKey("provider_models.id", ondelete="SET NULL", name="fk_users_llm_model_id_provider_models"),
         nullable=True,
     )
+    # With llm_model_id NULL: which platform model -- NULL/0 "Default", 1
+    # "Default - 1", 2 "Default - 2" (provider_models.platform_slot).
+    llm_default_slot: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
 class Provider(BasicModel):
@@ -65,6 +68,11 @@ class ProviderModel(BasicModel):
     reasoning_mode: Mapped[str] = mapped_column(
         String(10), default="prompt", server_default="prompt", nullable=False
     )
+    # Extra platform models offered as "Default - 1" / "Default - 2": they run
+    # on the platform's key like the default (users.llm_default_slot picks
+    # one). NULL for every other model. The same model stays in the BYOK list
+    # under its own name.
+    platform_slot: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     provider: Mapped["Provider"] = relationship("Provider")
 
@@ -77,6 +85,12 @@ class ProviderModel(BasicModel):
             "is_platform_default",
             unique=True,
             postgresql_where=text("is_platform_default = true"),
+        ),
+        Index(
+            "uq_provider_models_platform_slot",
+            "platform_slot",
+            unique=True,
+            postgresql_where=text("platform_slot IS NOT NULL"),
         ),
     )
 
