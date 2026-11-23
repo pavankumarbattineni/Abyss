@@ -33,6 +33,28 @@ _ALLOWED_HOSTS = {"upload.wikimedia.org", "thumb.wikimedia.org"}
 _TAGS = re.compile(r"<[^>]+>")
 
 
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
+
+
+async def get_with_retry(client: httpx.AsyncClient, url: str, params: dict, tries: int = 3) -> httpx.Response:
+    """GET that waits and tries again when Wikimedia throttles a burst (429)
+    or has a passing server error; raises after the last try."""
+    for attempt in range(tries):
+        try:
+            response = await client.get(url, params=params)
+            if response.status_code not in _RETRY_STATUSES or attempt == tries - 1:
+                response.raise_for_status()
+                return response
+            wait = response.headers.get("retry-after", "")
+            delay = min(float(wait), 3.0) if wait.replace(".", "", 1).isdigit() else 0.6 * 2**attempt
+        except httpx.TransportError:
+            if attempt == tries - 1:
+                raise
+            delay = 0.6 * 2**attempt
+        await asyncio.sleep(delay)
+    raise httpx.HTTPError("unreachable")
+
+
 def _plain(value: object, limit: int) -> str:
     """Wikimedia metadata is HTML: tags stripped, entities decoded, whitespace folded."""
     text = html.unescape(_TAGS.sub(" ", str(value or "")))
@@ -92,8 +114,7 @@ async def _search(query: str, limit: int) -> list[dict]:
         "iiextmetadatafilter": "Artist|LicenseShortName|ImageDescription|ObjectName",
     }
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
-        response = await client.get(COMMONS_API, params=params)
-        response.raise_for_status()
+        response = await get_with_retry(client, COMMONS_API, params)
         return parse_results(response.json())
 
 

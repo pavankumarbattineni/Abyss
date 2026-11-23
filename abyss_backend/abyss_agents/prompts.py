@@ -218,7 +218,9 @@ _SUB_AGENT_OUTPUT = (
     "- Put every finding in your final message, under short `##` headings, "
     "with no preamble and without addressing the user. Never end without a "
     "result: if you found nothing, say what you checked.\n"
-    "- Complete but concise; never truncate.\n"
+    "- Complete but concise; never truncate. Include the concrete data behind "
+    "your findings (values with units, structures, places with their country, "
+    "dates) -- the main agent presents them.\n"
     "- If a tool failed or returned nothing, say so under that heading. Never "
     "fill a gap with an estimate or placeholder -- the main agent can't tell it "
     "from a real finding.\n"
@@ -258,7 +260,9 @@ def _delegation_instruction(sub_agent_options: list[dict]) -> str:
         "Then write the single final answer yourself: merge and deduplicate the "
         "results, prefer the more specific or recent finding when they conflict, "
         "note any gap briefly, and never mention specialists, tools or how the "
-        "work was divided."
+        "work was divided. The results are your material, not the answer: "
+        "compose it like any answer, with the visuals, images and maps that "
+        "would explain it."
     )
 
 

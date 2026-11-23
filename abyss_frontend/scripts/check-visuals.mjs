@@ -125,6 +125,10 @@ const block = m.parseInteractiveBlock(
 );
 assert.ok(block && block.skipped === 0, `trench-ui: ${JSON.stringify(block)}`);
 assert.equal(block.components.length, 4);
+// Tables as models also write them: columns as {key, label}, rows as objects.
+const objTable = m.parseInteractiveBlock(JSON.stringify({ version: 1, components: [{ type: "table",
+  columns: [{ key: "p", label: "Property" }, { key: "s", label: "Series" }], rows: [{ p: "R", s: "12 Ω" }] }] }));
+assert.deepEqual([objTable.components[0].columns, objTable.components[0].rows], [["Property", "Series"], [["R", "12 Ω"]]]);
 assert.ok(m.interactiveBlockToText(block).includes("Trials"));
 assert.deepEqual(m.histogramBins([0, 1, 2, 3], 2).map((b) => b.count), [2, 2]);
 assert.deepEqual(m.quartiles([1, 2, 3, 4, 5]), { min: 1, q1: 2, median: 3, q3: 4, max: 5 });

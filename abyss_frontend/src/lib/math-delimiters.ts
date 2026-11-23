@@ -82,6 +82,11 @@ export function normalizeMathDelimiters(content: string): string {
   // split() with a capture group puts code segments at the odd indices.
   return content
     .split(CODE_SEGMENT)
-    .map((segment, i) => (i % 2 === 1 ? segment : convertMath(segment)))
+    .map((segment, i) => (i % 2 === 1 ? segment : fixMathSlips(convertMath(segment))))
     .join("");
+}
+
+/** Slips inside math that KaTeX rejects: a doubled superscript ("Li^^{+}"). */
+function fixMathSlips(text: string): string {
+  return text.replace(/\$\$[\s\S]+?\$\$/g, (math) => math.replace(/\^\s*\^/g, "^"));
 }

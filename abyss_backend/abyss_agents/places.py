@@ -15,32 +15,64 @@ import logging
 import httpx
 from langchain_core.tools import tool
 
-from abyss_agents.images import TIMEOUT_SECONDS, USER_AGENT
+from abyss_agents.images import TIMEOUT_SECONDS, USER_AGENT, get_with_retry
 
 logger = logging.getLogger(__name__)
 
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 MAX_PLACES = 25
-_CONCURRENCY = 5
+_CONCURRENCY = 3
 
 
 def parse_place(name: str, payload: dict) -> dict | None:
     """The first search hit that has coordinates -> {name, lat, lon, article, description}."""
     pages = sorted((payload.get("query") or {}).get("pages") or [], key=lambda p: p.get("index", 0))
-    for page in pages:
-        coords = page.get("coordinates") or []
-        if coords and coords[0].get("globe", "earth") == "earth":
-            return {
-                "name": name,
-                "lat": round(float(coords[0]["lat"]), 4),
-                "lon": round(float(coords[0]["lon"]), 4),
-                "article": page.get("title", ""),
-                "description": page.get("description", ""),
-            }
+    return next((place for page in pages if (place := _found(name, page))), None)
+
+
+def _found(name: str, page: dict) -> dict | None:
+    coords = page.get("coordinates") or []
+    if coords and coords[0].get("globe", "earth") == "earth":
+        return {
+            "name": name,
+            "lat": round(float(coords[0]["lat"]), 4),
+            "lon": round(float(coords[0]["lon"]), 4),
+            "article": page.get("title", ""),
+            "description": page.get("description", ""),
+        }
     return None
 
 
-async def _lookup(client: httpx.AsyncClient, gate: asyncio.Semaphore, name: str) -> dict | None:
+def parse_titles(names: list[str], payload: dict) -> dict[str, dict]:
+    """A batched exact-title lookup -> {name: place} for the names whose article has coordinates."""
+    query = payload.get("query") or {}
+    # Follow the title normalisation and redirects ("Constantinople" -> its article).
+    target = {n: n for n in names}
+    for step in ("normalized", "redirects"):
+        moves = {m["from"]: m["to"] for m in query.get(step) or []}
+        target = {n: moves.get(t, t) for n, t in target.items()}
+    pages = {p.get("title"): p for p in query.get("pages") or []}
+    out = {}
+    for name, title in target.items():
+        place = _found(name, pages.get(title) or {})
+        if place:
+            out[name] = place
+    return out
+
+
+async def _by_titles(client: httpx.AsyncClient, names: list[str]) -> dict[str, dict]:
+    params = {
+        "action": "query", "format": "json", "formatversion": "2", "redirects": "1",
+        "titles": "|".join(names), "prop": "coordinates|description",
+    }
+    try:
+        return parse_titles(names, (await get_with_retry(client, WIKIPEDIA_API, params)).json())
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("find_places title lookup failed: %s", type(exc).__name__)
+        return {}
+
+
+async def _by_search(client: httpx.AsyncClient, gate: asyncio.Semaphore, name: str) -> dict | None:
     params = {
         "action": "query", "format": "json", "formatversion": "2",
         "generator": "search", "gsrsearch": name, "gsrlimit": "3",
@@ -48,11 +80,9 @@ async def _lookup(client: httpx.AsyncClient, gate: asyncio.Semaphore, name: str)
     }
     async with gate:
         try:
-            response = await client.get(WIKIPEDIA_API, params=params)
-            response.raise_for_status()
-            return parse_place(name, response.json())
+            return parse_place(name, (await get_with_retry(client, WIKIPEDIA_API, params)).json())
         except (httpx.HTTPError, ValueError) as exc:
-            logger.warning("find_places lookup failed: %s", type(exc).__name__)
+            logger.warning("find_places search failed: %s", type(exc).__name__)
             return None
 
 
@@ -72,9 +102,14 @@ async def find_places(names: list[str]) -> str:
     cleaned = [n for n in cleaned if n][:MAX_PLACES]
     if not cleaned:
         return "Give one or more place names."
+    # One request for every exact title (most names), then a search for each miss --
+    # few requests, so Wikipedia doesn't throttle a burst.
     gate = asyncio.Semaphore(_CONCURRENCY)
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
-        found = await asyncio.gather(*(_lookup(client, gate, n) for n in cleaned))
+        exact = await _by_titles(client, cleaned)
+        misses = [n for n in cleaned if n not in exact]
+        searched = dict(zip(misses, await asyncio.gather(*(_by_search(client, gate, n) for n in misses))))
+    found = [exact.get(n) or searched.get(n) for n in cleaned]
     if all(f is None for f in found):
         return "No coordinates found (or the lookup is unavailable). Leave unknown places off the map."
     return json.dumps(

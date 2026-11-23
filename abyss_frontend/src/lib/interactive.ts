@@ -49,12 +49,29 @@ const metricCards = z.object({
   ).min(1),
 });
 
-const table = z.object({
-  ...base,
-  type: z.literal("table"),
-  columns: list(text).min(1),
-  rows: list(list(z.union([z.string(), z.number(), z.boolean(), z.null()]))),
-});
+const tableCell = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+/** A column as models write it: "Name", or {key?, label|header|title|name}. */
+const column = z.union([
+  z.object({ key: z.string().optional(), label: z.string().optional(), header: z.string().optional(), title: z.string().optional(), name: z.string().optional() }),
+  text,
+]);
+const table = z
+  .object({
+    ...base,
+    type: z.literal("table"),
+    columns: list(column).min(1),
+    // Rows as arrays of cells, or as objects keyed by the columns' keys/labels.
+    rows: list(z.union([list(tableCell), z.record(z.string(), tableCell)])),
+  })
+  .transform(({ columns, rows, ...rest }) => {
+    const keys = columns.map((c) => (typeof c === "string" ? c : (c.key ?? c.label ?? c.header ?? c.title ?? c.name ?? "")));
+    const labels = columns.map((c) => (typeof c === "string" ? c : (c.label ?? c.header ?? c.title ?? c.name ?? c.key ?? "")));
+    return {
+      ...rest,
+      columns: labels,
+      rows: rows.map((row) => (Array.isArray(row) ? row : keys.map((k, i) => row[k] ?? row[labels[i]] ?? null))),
+    };
+  });
 
 const series = z.object({ name: text, data: list(z.union([num, z.null()])) });
 const cartesian = {

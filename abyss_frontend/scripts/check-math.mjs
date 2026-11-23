@@ -23,6 +23,7 @@ const { normalizeMathDelimiters: norm } = await import(
 );
 
 const cases = [
+  ["doubled superscript slip", "Ions: $\\text{Li}^^{+}$ move", "Ions: $$\\text{Li}^{+}$$ move"],
   // Single-dollar inline math, as models write it most.
   ["inline $...$", "The slope is $m = \\frac{dy}{dx}$ here.", "The slope is $$m = \\frac{dy}{dx}$$ here."],
   ["one-letter variables", "Let $A$ act on $\\mathbf{v}$.", "Let $$A$$ act on $$\\mathbf{v}$$."],
