@@ -99,10 +99,10 @@ def test_prompts_stay_within_their_size_budget():
     +~145 (parent) and ~125 (sub-agent) for the role section (in/out of role,
     mixed requests, role changes, no forced tie-ins), which replaced a one-line
     "stay within your role" rule; +~40 (parent) for transparent live-preview
-    pages; +~45 each for link rules (titled, full URLs, no guessed hosts) and +~25 (with specialists) for
+    pages; +~35 for math notation and subgraph-title quoting; +~45 each for link rules (titled, full URLs, no guessed hosts) and +~25 (with specialists) for
     following the owner's routing to specialists."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 7100
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8350  # + delegation rules
+    assert len(build_parent_prompt("", [], True, NOW)) < 7250
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8500  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 3450
 
 
@@ -166,3 +166,14 @@ def test_links_are_always_full_urls():
     sub = build_sub_agent_prompt("Role.", True, NOW)
     assert "sources as full URLs (https://...) on a site address the results show" in sub
     assert "never relative paths or guessed hosts" in sub
+
+
+def test_math_and_format_suggestions_are_written_the_way_the_chat_renders_them():
+    r"""Inline $...$ is rendered as math (money stays prose only as \$5), a
+    format suggestion inside a ```visual block showed as a broken visual, and
+    an unquoted subgraph title like `subgraph Anode (negative)` broke Mermaid."""
+    prompt = build_parent_prompt("Role.", [], True, NOW)
+    assert "Math in LaTeX: $...$ inline, $$...$$ on their own lines" in prompt
+    assert r"write money as \$5" in prompt
+    assert "in a sentence, never in a block" in prompt
+    assert "labels and subgraph titles short and quote any" in prompt

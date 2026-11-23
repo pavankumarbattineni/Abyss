@@ -58,11 +58,27 @@ function convertMath(text: string): string {
       // Remaining \[ ... \] (mid-line) and all \( ... \) -> inline math.
       .replace(/\\\[([\s\S]+?)\\\]/g, (_match, body: string) => `$$${escapeSpecials(body.trim())}$$`)
       .replace(/\\\(([\s\S]+?)\\\)/g, (_match, body: string) => `$$${escapeSpecials(body.trim())}$$`)
+      // Single-dollar inline math ($x^2$, $\lambda$), which models write most.
+      .split(DOUBLE_DOLLAR_MATH)
+      .map((part, i) => (i % 2 === 1 ? part : part.replace(SINGLE_DOLLAR_MATH, (_m, body: string) => `$$${escapeSpecials(body)}$$`)))
+      .join("")
   );
 }
 
+// Math already in remark-math's $$ form (inline or a block): left alone.
+const DOUBLE_DOLLAR_MATH = /(\$\$[\s\S]*?\$\$)/;
+
+/**
+ * `$...$` inline math, by Pandoc's rule so prices stay prose: the opening `$`
+ * is followed by a non-space and isn't escaped (`\$`) or part of `$$`; the
+ * closing `$` follows a non-space and isn't followed by a digit. So `$x^2$`
+ * and `$\lambda$` are math, while "costs $5 and $10" or "$5-$10" are not.
+ * One line at most.
+ */
+const SINGLE_DOLLAR_MATH = /(?<![\\$\w])\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?![\d$])/g;
+
 export function normalizeMathDelimiters(content: string): string {
-  if (!content.includes("\\(") && !content.includes("\\[")) return content;
+  if (!content.includes("\\(") && !content.includes("\\[") && !content.includes("$")) return content;
   // split() with a capture group puts code segments at the odd indices.
   return content
     .split(CODE_SEGMENT)

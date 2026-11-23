@@ -5,13 +5,14 @@
   "scripts": {
     "predev": "node scripts/build-preview-runtime.mjs && node scripts/check-preview-libraries.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/build-preview-runtime.mjs && node scripts/check-preview-libraries.mjs && node scripts/check-answer-parts.mjs",
+    "prebuild": "node scripts/build-preview-runtime.mjs && node scripts/check-preview-libraries.mjs && node scripts/check-answer-parts.mjs && node scripts/check-math.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "patch-package",
     "check:preview": "node scripts/check-preview-libraries.mjs",
-    "check:answer": "node scripts/check-answer-parts.mjs"
+    "check:answer": "node scripts/check-answer-parts.mjs",
+    "check:math": "node scripts/check-math.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "3.1.3",

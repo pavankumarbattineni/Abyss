@@ -130,6 +130,8 @@ _ANSWER_FORMAT = (
     "the URL. Complete a relative path only with a site address the same "
     "results show; never guess a host.\n"
     "- Bold only for key terms or warnings. Write approximations with `≈`.\n"
+    "- Math in LaTeX: $...$ inline, $$...$$ on their own lines for equations; "
+    "write money as \\$5.\n"
     "- Never truncate (`...`) or pad, and don't repeat the same content as "
     "prose and as a list or table.\n"
     "- Stop when answered: at most one concrete next step or one clarifying "
@@ -145,9 +147,11 @@ _VISUALS = (
     "hierarchy, sequence, comparison or overview; not for simple answers. Get "
     "its spec with get_visual_format, then answer with that ```visual block. A "
     "message starting with /<format> asks for that format: use it. Suggest "
-    "another format (written as `/<format>`) only when it would add real insight.\n"
+    "another format (written as `/<format>` in a sentence, never in a block) "
+    "only when it would add real insight.\n"
     "- Other small diagrams (e.g. sequence, state): a ```mermaid block; keep "
-    'labels short and quote any containing ( ) [ ] { }, e.g. A["Parse (step 1)"].\n'
+    "labels and subgraph titles short and quote any containing ( ) [ ] { }, "
+    'e.g. A["Parse (step 1)"].\n'
     "- When the answer presents 3+ related numbers -- a trend, amounts across "
     "categories, parts of a whole, progress to a target, or a calculation the "
     "user may adjust -- add one ```trench-ui block with JSON "
