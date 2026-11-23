@@ -43,46 +43,49 @@ function toHex(color: string, backdrop: string): string {
 }
 
 /** Mermaid's "base" theme built from the app's own CSS variables, so
- * diagrams follow the current light/dark theme. */
+ * diagrams follow the current light/dark theme. Plain on purpose: the
+ * diagram sits on the page (no card around it), nodes are card-coloured with
+ * a border, and groups (subgraphs) are outlines on the page colour -- no
+ * tinted (sage) fills behind text, which made labels harder to read. */
 function appThemeVariables(isDark: boolean) {
   const style = getComputedStyle(document.documentElement);
   const read = (name: string) => style.getPropertyValue(name).trim();
   const card = toHex(read("--card"), isDark ? "#000000" : "#ffffff");
   const color = (name: string) => toHex(read(name), card);
 
+  const page = color("--background");
   const foreground = color("--foreground");
   const muted = color("--muted");
   const mutedForeground = color("--muted-foreground");
-  const accent = color("--accent");
   const border = color("--border");
 
   return {
     darkMode: isDark,
-    background: card,
+    background: page,
     fontFamily: getComputedStyle(document.body).fontFamily,
     fontSize: "14px",
     textColor: foreground,
-    primaryColor: muted,
+    primaryColor: card,
     primaryTextColor: foreground,
     primaryBorderColor: mutedForeground,
-    secondaryColor: accent,
+    secondaryColor: card,
     secondaryTextColor: foreground,
     secondaryBorderColor: mutedForeground,
-    tertiaryColor: card,
+    tertiaryColor: page,
     tertiaryTextColor: foreground,
     tertiaryBorderColor: border,
-    mainBkg: muted,
+    mainBkg: card,
     nodeBorder: mutedForeground,
     nodeTextColor: foreground,
     lineColor: mutedForeground,
-    clusterBkg: accent,
-    clusterBorder: border,
-    edgeLabelBackground: card,
+    clusterBkg: page,
+    clusterBorder: mutedForeground,
+    edgeLabelBackground: page,
     titleColor: foreground,
-    noteBkgColor: accent,
+    noteBkgColor: muted,
     noteTextColor: foreground,
     noteBorderColor: border,
-    actorBkg: muted,
+    actorBkg: card,
     actorBorder: mutedForeground,
     actorTextColor: foreground,
     signalColor: foreground,

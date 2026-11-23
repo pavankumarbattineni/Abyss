@@ -59,10 +59,10 @@ export function DiagramVisual({ data }: { data: DiagramData }) {
             width={group.width}
             height={group.height + 14}
             rx={14}
-            className="fill-primary/8 stroke-primary/40"
+            className="fill-none stroke-muted-foreground/50"
             strokeDasharray="5 4"
           />
-          <text x={group.x + 12} y={group.y + 2} fontSize={11} className="fill-sage-text font-semibold tracking-wide">
+          <text x={group.x + 12} y={group.y + 2} fontSize={11} className="fill-muted-foreground font-semibold tracking-wide">
             {group.label}
           </text>
         </g>

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Cookies from "js-cookie";
 
+import { persistAuthCookies } from "@/lib/axios";
 import { authService } from "@/services";
 import type { User } from "@/types";
 
@@ -30,6 +31,12 @@ export function AuthProvider({ children, initialIsAuthenticated }: AuthProviderP
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(initialIsAuthenticated);
+
+  // A session from before the cookies had an expiry gets one, so closing
+  // mobile Chrome no longer signs it out (see lib/axios.ts).
+  useEffect(() => {
+    persistAuthCookies();
+  }, []);
 
   const refreshAuthState = useCallback(() => {
     setIsAuthenticated(!!Cookies.get("a_token"));

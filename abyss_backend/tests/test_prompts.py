@@ -29,7 +29,9 @@ def test_delegation_section_lists_every_specialist_and_the_rules():
     assert "**research_specialist**: Finds sources." in prompt
     assert "**writer_specialist**: Drafts text." in prompt
     assert f"at most {MAX_PARALLEL_TASKS} per turn" in prompt
-    assert "write only what you can already answer" in prompt  # then the rest from the results
+    # One short line before delegating, then the answer once (no answer written twice).
+    assert "not the answer. Write the answer once, after the results are in" in prompt
+    assert "The results are your material, not the answer" in prompt
     assert "never mention specialists" in prompt
 
 
@@ -99,11 +101,18 @@ def test_prompts_stay_within_their_size_budget():
     +~145 (parent) and ~125 (sub-agent) for the role section (in/out of role,
     mixed requests, role changes, no forced tie-ins), which replaced a one-line
     "stay within your role" rule; +~40 (parent) for transparent live-preview
-    pages; +~45 each for link rules (titled, full URLs, no guessed hosts) and +~25 (with specialists) for
-    following the owner's routing to specialists."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 7100
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 8350  # + delegation rules
-    assert len(build_sub_agent_prompt("", True, NOW)) < 3450
+    pages; +~35 for math notation and subgraph-title quoting; +~45 each for link rules (titled, full URLs, no guessed hosts) and +~25 (with specialists) for
+    following the owner's routing to specialists; +~270 (parent) for the
+    science/geo visual formats: 12 more names, which format fits what is being
+    explained, the search_images rule, four more chart types, mhchem chemistry and the note that native
+    graphs are interactive; +~110 (parent) for composing each answer for its
+    question, image galleries per section, find_places and parallel tool calls;
+    +~45 (parent) for showing images of real, visible subjects per section;
+    +~30 (with specialists) to present their results like any answer, and +~35
+    (sub-agent) to include the concrete data behind its findings."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 9150
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 10550  # + delegation rules
+    assert len(build_sub_agent_prompt("", True, NOW)) < 3650
 
 
 def test_role_section_follows_the_agents_own_prompt_in_both_kinds():
@@ -166,3 +175,14 @@ def test_links_are_always_full_urls():
     sub = build_sub_agent_prompt("Role.", True, NOW)
     assert "sources as full URLs (https://...) on a site address the results show" in sub
     assert "never relative paths or guessed hosts" in sub
+
+
+def test_math_and_format_suggestions_are_written_the_way_the_chat_renders_them():
+    r"""Inline $...$ is rendered as math (money stays prose only as \$5), a
+    format suggestion inside a ```visual block showed as a broken visual, and
+    an unquoted subgraph title like `subgraph Anode (negative)` broke Mermaid."""
+    prompt = build_parent_prompt("Role.", [], True, NOW)
+    assert "Math in LaTeX: $...$ inline, $$...$$ on their own lines" in prompt
+    assert r"write money as \$5" in prompt
+    assert "in a sentence, never in a block" in prompt
+    assert "labels and subgraph titles short and quote any" in prompt

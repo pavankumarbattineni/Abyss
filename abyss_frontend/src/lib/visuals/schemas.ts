@@ -11,6 +11,8 @@
  */
 import { z } from "zod";
 
+import { evaluateFormula } from "@/lib/formula";
+
 const text = z.string().trim().min(1);
 const optText = z.string().trim().optional().transform((v) => v || undefined);
 /** A list of short strings; non-strings and blanks are dropped. */
@@ -265,6 +267,309 @@ export const explodedViewSchema = z.object({
   ),
 });
 
+// ---------------------------------------------------------------------------
+// Science and math formats: graphs, geometry, fields and notation drawn to
+// scale. Coordinates and values may be numbers or formulas (strings) over the
+// format's parameters, so a slider can move them (see lib/formula.ts).
+// ---------------------------------------------------------------------------
+
+/** A number, or a formula over the visual's parameters ("v*cos(a)"). */
+const numOrExpr = z.union([z.number(), z.string().trim().min(1)]);
+/** [x, y] or {x, y}, each a number or a formula. */
+const xy = z
+  .union([z.tuple([numOrExpr, numOrExpr]), z.object({ x: numOrExpr, y: numOrExpr })])
+  .transform((p) => (Array.isArray(p) ? { x: p[0], y: p[1] } : p));
+/** A number, or a constant expression such as "2pi" or "pi/2". */
+const constant = z
+  .union([
+    z.number(),
+    z.string().transform((s) => {
+      try {
+        return evaluateFormula(s, {});
+      } catch {
+        return NaN;
+      }
+    }),
+  ])
+  .pipe(z.number().finite());
+const range = z
+  .union([z.tuple([constant, constant]), z.object({ min: constant, max: constant })])
+  .transform((r) => (Array.isArray(r) ? r : [r.min, r.max]) as [number, number])
+  .refine(([a, b]) => b > a, "a range's end must be above its start");
+const optRange = range.optional().catch(undefined);
+const flag = z.boolean().optional().catch(undefined);
+/** One of the app's chart colours by number (1-8), or none for the next in turn. */
+const colorIndex = z.union([z.number(), z.string().transform(Number)]).pipe(z.number().int().min(1).max(8)).optional().catch(undefined);
+
+const param = z.object({
+  name: z.string().trim().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  label: optText,
+  min: num,
+  max: num,
+  value: num.optional(),
+  step: num.optional().catch(undefined),
+  /** A play button moves it from min to max over this many seconds. */
+  animate: z.union([z.boolean(), num]).optional().catch(undefined),
+});
+
+export const plotSchema = z.object({
+  ...base,
+  format: z.literal("plot"),
+  x: optRange,
+  y: optRange,
+  xLabel: optText,
+  yLabel: optText,
+  xLog: flag,
+  yLog: flag,
+  grid: flag,
+  /** Equal units on both axes (circles stay round). */
+  equal: flag,
+  params: optList(param, 6),
+  functions: optList(
+    z.object({ y: text, label: optText, x: optRange, color: colorIndex, dashed: flag }),
+    8,
+  ),
+  parametric: optList(
+    z.object({ x: text, y: text, t: range, label: optText, color: colorIndex, dashed: flag }),
+    6,
+  ),
+  polar: optList(z.object({ r: text, t: range, label: optText, color: colorIndex, dashed: flag }), 6),
+  /** A shaded area: between y and y2 (default: the x-axis) from x[0] to x[1]. */
+  areas: optList(
+    z.object({ y: text, y2: z.string().trim().optional(), x: optRange, label: optText, color: colorIndex }),
+    6,
+  ),
+  data: optList(
+    z.object({
+      label: optText,
+      points: z.array(z.union([z.tuple([num, num]), z.object({ x: num, y: num })])).min(1).max(500)
+        .transform((ps) => ps.map((p) => (Array.isArray(p) ? { x: p[0], y: p[1] } : p))),
+      line: flag,
+      color: colorIndex,
+    }),
+    6,
+  ),
+  points: optList(z.object({ at: xy, label: optText, open: flag, color: colorIndex }), 30),
+  segments: optList(z.object({ from: xy, to: xy, label: optText, dashed: flag, arrow: flag, color: colorIndex }), 30),
+  vlines: optList(z.object({ x: numOrExpr, label: optText, dashed: flag }), 10),
+  hlines: optList(z.object({ y: numOrExpr, label: optText, dashed: flag }), 10),
+  notes: optList(z.object({ at: xy, text }), 12),
+});
+
+export const geometrySchema = z.object({
+  ...base,
+  format: z.literal("geometry"),
+  x: optRange,
+  y: optRange,
+  grid: flag,
+  axes: flag,
+  params: optList(param, 6),
+  points: optList(z.object({ id, at: xy, label: optText, hidden: flag }), 40),
+  segments: optList(z.object({ from: z.union([id, xy]), to: z.union([id, xy]), label: optText, dashed: flag }), 40),
+  /** Arrows: forces, velocities, displacements. */
+  vectors: optList(
+    z.object({ from: z.union([id, xy]), to: z.union([id, xy]).optional(), d: xy.optional(), label: optText, color: colorIndex }),
+    24,
+  ),
+  circles: optList(z.object({ center: z.union([id, xy]), r: numOrExpr, label: optText, dashed: flag }), 12),
+  polygons: optList(
+    z.object({ points: z.array(z.union([id, xy])).min(3).max(24), label: optText, shade: flag, color: colorIndex }),
+    12,
+  ),
+  /** An angle at `vertex` from ray vertex->from to ray vertex->to. */
+  angles: optList(
+    z.object({ vertex: z.union([id, xy]), from: z.union([id, xy]), to: z.union([id, xy]), label: optText, right: flag }),
+    12,
+  ),
+  /** Boxes for bodies in free-body diagrams; rotated by `angle` degrees. */
+  boxes: optList(z.object({ at: xy, w: num, h: num, angle: num.optional().catch(undefined), label: optText }), 8),
+  notes: optList(z.object({ at: xy, text }), 12),
+  /** A 2×2 matrix: a toggle shows everything before and after applying it. */
+  transform: z
+    .object({ matrix: z.tuple([z.tuple([num, num]), z.tuple([num, num])]), label: optText })
+    .optional()
+    .catch(undefined),
+});
+
+export const vectorFieldSchema = z.object({
+  ...base,
+  format: z.literal("vector-field"),
+  fx: text,
+  fy: text,
+  x: optRange,
+  y: optRange,
+  /** Arrows per row (6-24). */
+  density: z.union([z.number(), z.string().transform(Number)]).pipe(z.number().min(6).max(24)).optional().catch(undefined),
+  params: optList(param, 4),
+  markers: optList(z.object({ at: xy, label: optText, sign: z.enum(["+", "-"]).optional().catch(undefined) }), 8),
+  xLabel: optText,
+  yLabel: optText,
+});
+
+const bound = z.union([num, z.null(), z.literal("-inf"), z.literal("inf"), z.literal("infinity"), z.literal("-infinity")]);
+export const numberLineSchema = z.object({
+  ...base,
+  format: z.literal("number-line"),
+  min: num,
+  max: num,
+  step: num.optional().catch(undefined),
+  points: optList(z.object({ at: num, label: optText, open: flag }), 20),
+  intervals: optList(
+    z.object({ from: bound, to: bound, fromOpen: flag, toOpen: flag, label: optText, color: colorIndex }),
+    8,
+  ),
+});
+
+export const vennSchema = z.object({
+  ...base,
+  format: z.literal("venn"),
+  sets: list(z.object({ id, label: text }), 3, 2),
+  /** A region = the sets it is inside (and outside all others); [] = outside every set. */
+  regions: optList(z.object({ in: z.array(id).max(3), label: optText, value: z.union([num, text]).optional() }), 8),
+  universe: optText,
+});
+
+export const moleculeSchema = z.object({
+  ...base,
+  format: z.literal("molecule"),
+  // A misspelt key ("smile", "SMILES", "smils") still counts; an entry with no
+  // structure at all is dropped rather than failing the whole visual.
+  molecules: z
+    .array(z.unknown())
+    .transform((items) =>
+      items.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const entry = item as Record<string, unknown>;
+        const key = Object.keys(entry).find((k) => /^smi/i.test(k));
+        const parsed = z
+          .object({ smiles: text, name: optText, caption: optText })
+          .safeParse({ ...entry, smiles: key ? entry[key] : undefined });
+        return parsed.success ? [parsed.data] : [];
+      }).slice(0, 6),
+    )
+    .refine((molecules) => molecules.length > 0, "give at least one molecule with a SMILES string"),
+});
+
+export const periodicTableSchema = z.object({
+  ...base,
+  format: z.literal("periodic-table"),
+  /** Elements to highlight (symbols). */
+  highlight: strings(118),
+  /** A value per element (symbol -> number) shown as a colour scale: a trend. */
+  values: z.record(z.string(), num).optional().catch(undefined),
+  valueLabel: optText,
+  /** One element shown in detail with its electron configuration. */
+  focus: optText,
+  configuration: optText,
+  legend: optText,
+});
+
+export const energyLevelsSchema = z.object({
+  ...base,
+  format: z.literal("energy-levels"),
+  /** Orbital boxes: each subshell with its boxes and electrons (Hund's rule fills them). */
+  orbitals: optList(
+    z.object({ label: text, boxes: z.union([z.number(), z.string().transform(Number)]).pipe(z.number().int().min(1).max(7)), electrons: num }),
+    20,
+  ),
+  /** Energy levels with transitions between them (spectra, MO diagrams). */
+  levels: optList(z.object({ id, label: text, energy: num }), 16),
+  transitions: optList(z.object({ from: id, to: id, label: optText }), 12),
+  energyLabel: optText,
+});
+
+const CIRCUIT_KINDS = [
+  "battery", "cell", "ac", "resistor", "capacitor", "inductor", "lamp", "switch", "switch-closed",
+  "diode", "led", "ammeter", "voltmeter", "fuse", "motor", "wire",
+] as const;
+const circuitPart = z.object({ kind: z.enum(CIRCUIT_KINDS).catch("resistor"), label: optText, value: optText });
+type CircuitPart = z.output<typeof circuitPart>;
+export type CircuitItem = CircuitPart | { parallel: CircuitPart[][] };
+const circuitItem = z.union([
+  z.object({ parallel: z.array(z.array(circuitPart).min(1).max(4)).min(2).max(4) }),
+  circuitPart,
+]);
+export const circuitSchema = z.object({
+  ...base,
+  format: z.literal("circuit"),
+  /** The loop's parts in order, starting from the source; `parallel` holds branches side by side. */
+  loop: list(circuitItem, 12, 2),
+});
+
+export const stepsSchema = z.object({
+  ...base,
+  format: z.literal("steps"),
+  steps: list(
+    z.object({
+      title: optText,
+      text: optText,
+      /** LaTeX shown as a display equation. */
+      math: optText,
+      /** An array's state (algorithms): values, highlighted indices, named pointers. */
+      array: z.array(z.union([num, z.string()])).max(24).optional().catch(undefined),
+      highlight: z.array(z.union([z.number(), z.string().transform(Number)])).max(24).optional().catch(undefined),
+      pointers: z.record(z.string(), z.union([z.number(), z.string().transform(Number)])).optional().catch(undefined),
+    }),
+    20,
+  ),
+});
+
+export const mapSchema = z.object({
+  ...base,
+  format: z.literal("map"),
+  /** Stages or regions: each colours its places and paths, with a legend that filters them. */
+  groups: optList(z.object({ id, label: text }), 8),
+  places: optList(z.object({ name: text, lat: num, lon: num, label: optText, detail: optText, group: id.optional().catch(undefined) }), 60),
+  /** A journey through places in order: names of `places`, or [lat, lon] points. */
+  paths: optList(
+    z.object({
+      via: z.array(z.union([z.string().trim().min(1), z.tuple([num, num])])).min(2).max(60),
+      label: optText,
+      group: id.optional().catch(undefined),
+      dashed: flag,
+    }),
+    12,
+  ),
+  /** Countries by name, shaded; `value` drives a colour scale. */
+  regions: optList(z.object({ name: text, value: num.optional().catch(undefined), label: optText }), 60),
+  routes: optList(z.object({ from: z.tuple([num, num]), to: z.tuple([num, num]), label: optText }), 12),
+  valueLabel: optText,
+});
+
+/** Only Wikimedia's servers: an image found with the search_images tool, never an arbitrary URL. */
+export const WIKIMEDIA_IMAGE = /^https:\/\/(upload|thumb)\.wikimedia\.org\//;
+const wikimediaImage = z.object({
+  src: z.string().trim().regex(WIKIMEDIA_IMAGE, "the image must come from Wikimedia (upload. or thumb.wikimedia.org)"),
+  page: z.string().trim().url().optional().catch(undefined),
+  alt: optText,
+  caption: optText,
+  author: optText,
+  license: optText,
+});
+export type WikimediaImage = z.output<typeof wikimediaImage>;
+/** One image (its fields at the top level) or a gallery of up to 4 ("images"). */
+export const imageSchema = z
+  .object({
+    ...base,
+    format: z.literal("image"),
+    images: z.array(wikimediaImage).min(1).optional(),
+    src: z.string().optional(),
+    page: z.string().optional(),
+    alt: z.string().optional(),
+    caption: z.string().optional(),
+    author: z.string().optional(),
+    license: z.string().optional(),
+  })
+  .transform((d, ctx) => {
+    if (d.images) return { title: d.title, format: d.format, images: d.images.slice(0, 4) };
+    const one = wikimediaImage.safeParse(d);
+    if (!one.success) {
+      for (const issue of one.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
+      return z.NEVER;
+    }
+    return { title: d.title, format: d.format, images: [one.data] };
+  });
+
 export const VISUAL_SCHEMAS = {
   flowchart: flowchartSchema,
   diagram: diagramSchema,
@@ -281,6 +586,18 @@ export const VISUAL_SCHEMAS = {
   handwritten: handwrittenSchema,
   sketchnotes: sketchnotesSchema,
   "exploded-view": explodedViewSchema,
+  plot: plotSchema,
+  geometry: geometrySchema,
+  "vector-field": vectorFieldSchema,
+  "number-line": numberLineSchema,
+  venn: vennSchema,
+  molecule: moleculeSchema,
+  "periodic-table": periodicTableSchema,
+  "energy-levels": energyLevelsSchema,
+  circuit: circuitSchema,
+  steps: stepsSchema,
+  map: mapSchema,
+  image: imageSchema,
 } as const;
 
 export type VisualFormatName = keyof typeof VISUAL_SCHEMAS;
@@ -300,3 +617,16 @@ export type InfographicData = VisualData<"infographic">;
 export type HandwrittenData = VisualData<"handwritten">;
 export type SketchnotesData = VisualData<"sketchnotes">;
 export type ExplodedViewData = VisualData<"exploded-view">;
+export type PlotData = VisualData<"plot">;
+export type GeometryData = VisualData<"geometry">;
+export type VectorFieldData = VisualData<"vector-field">;
+export type NumberLineData = VisualData<"number-line">;
+export type VennData = VisualData<"venn">;
+export type MoleculeData = VisualData<"molecule">;
+export type PeriodicTableData = VisualData<"periodic-table">;
+export type EnergyLevelsData = VisualData<"energy-levels">;
+export type CircuitData = VisualData<"circuit">;
+export type StepsData = VisualData<"steps">;
+export type MapData = VisualData<"map">;
+export type ImageData = VisualData<"image">;
+export type Param = z.output<typeof param>;

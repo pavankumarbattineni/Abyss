@@ -41,7 +41,7 @@ export function RoadmapVisual({ data }: { data: RoadmapData }) {
                       item.kind === "milestone"
                         ? "bg-highlight-soft"
                         : item.kind === "project"
-                          ? "bg-primary/12"
+                          ? "border border-border bg-card"
                           : "bg-muted/60",
                     )}
                   >

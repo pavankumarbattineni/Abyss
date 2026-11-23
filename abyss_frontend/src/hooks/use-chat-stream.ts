@@ -118,6 +118,13 @@ export function useChatStream({
           accumulatedRef.current = accumulatedRef.current.slice(0, accumulatedRef.current.length - text.length);
           setStreamingContent(accumulatedRef.current);
         }
+      } else if (event.type === "answer_replace") {
+        // A broken visual block was rewritten after the answer ended: swap it in.
+        const { old, new: fixed } = event.data;
+        if (old && accumulatedRef.current.includes(old)) {
+          accumulatedRef.current = accumulatedRef.current.replace(old, () => fixed);
+          setStreamingContent(accumulatedRef.current);
+        }
       } else if (event.type === "summary") {
         // Show it just before the question that triggered it -- unless it's already listed
         // (a reconnect replays events, and after a reload it comes from the saved messages).

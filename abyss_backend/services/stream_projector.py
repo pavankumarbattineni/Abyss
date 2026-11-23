@@ -36,6 +36,7 @@ from collections.abc import Callable
 from langchain_core.messages import AIMessage, ToolMessage
 
 from abyss_agents.factory import PARENT_AGENT_NAME
+from abyss_agents.visual_repair import INTERNAL_TAG, REPAIR_EVENT
 from abyss_agents.middleware import (
     CALL_START_EVENT,
     CONTINUE_EVENT,
@@ -151,6 +152,9 @@ class StreamProjector:
         ns = md.get("langgraph_checkpoint_ns", "")
         label = md.get("lc_agent_name") or PARENT_AGENT_NAME
 
+        # Hidden middleware model calls (e.g. a visual block repair) never reach the chat.
+        if kind.startswith("on_chat_model") and INTERNAL_TAG in (event.get("tags") or []):
+            return
         if kind == "on_chain_start":
             self._on_chain_start(node, ns, label)
         elif kind == "on_chat_model_stream":
@@ -167,6 +171,9 @@ class StreamProjector:
             self._call_start[label] = len(self.content_tokens)
         elif kind == "on_custom_event" and event.get("name") == RESUME_EVENT:
             self._on_resume(label, str((event.get("data") or {}).get("request_id") or ""))
+        elif kind == "on_custom_event" and event.get("name") == REPAIR_EVENT:
+            data = event.get("data") or {}
+            self._on_repair(label, str(data.get("old") or ""), str(data.get("new") or ""))
         elif kind == "on_custom_event" and event.get("name") == CONTINUE_EVENT:
             data = event.get("data") or {}
             self._on_continue(label, str(data.get("rewind") or ""), bool(data.get("in_code")), str(data.get("tail") or ""))
@@ -260,6 +267,21 @@ class StreamProjector:
         self._continuing[label] = (tail, in_code, line if shown else "")
         if shown:
             self._take_back(line)
+
+    def _on_repair(self, label: str, old: str, new: str) -> None:
+        """A broken visual block was rewritten after the answer ended
+        (abyss_agents/visual_repair.py): swap it here and, through an
+        answer_replace event, in the chat. Comes after the turn's last model
+        call, so the answer is joined into one token."""
+        run_id = self._last_run.get(label)
+        if run_id is not None and self._is_final.get(run_id):
+            self._flush_run(run_id)
+        content = "".join(self.content_tokens)
+        if not old or old not in content:
+            return
+        self._side_tokens += len(self.content_tokens)  # keeps total_tokens monotonic
+        self.content_tokens = [content.replace(old, new, 1)]
+        self._emit("answer_replace", {"old": old, "new": new})
 
     def abort(self) -> None:
         """Close open reasoning blocks after a cancel. Records steps only — nothing is emitted."""

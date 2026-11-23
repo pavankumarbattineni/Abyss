@@ -107,14 +107,23 @@ async def resolve_llm_for_agent(
     output enabled when the user's thinking toggle is on; otherwise (and for
     every 'prompt' model) it is built plain.
     """
-    llm_model_id = await session.scalar(select(User.llm_model_id).where(User.id == agent_record.user_id))
+    choice = (
+        await session.execute(
+            select(User.llm_model_id, User.llm_default_slot).where(User.id == agent_record.user_id)
+        )
+    ).first()
+    llm_model_id, default_slot = choice if choice else (None, None)
     if llm_model_id is None:
-        result = await session.execute(
+        platform = (
             select(Provider.name, ProviderModel.model_name, ProviderModel.reasoning_mode)
             .join(ProviderModel, ProviderModel.provider_id == Provider.id)
-            .where(ProviderModel.is_platform_default == True, ProviderModel.is_active == True)
+            .where(ProviderModel.is_active == True)
         )
-        row = result.first()
+        row = None
+        if default_slot:  # "Default - 1" / "Default - 2"; Default if that slot was emptied
+            row = (await session.execute(platform.where(ProviderModel.platform_slot == default_slot))).first()
+        if row is None:
+            row = (await session.execute(platform.where(ProviderModel.is_platform_default == True))).first()
         provider, model, mode = row if row else (*configured_default(), REASONING_MODE_PROMPT)
         native = enable_thinking and mode == REASONING_MODE_NATIVE
         llm = build_platform_llm(provider, model, native)

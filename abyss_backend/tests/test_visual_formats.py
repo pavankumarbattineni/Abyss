@@ -11,11 +11,12 @@ from abyss_agents.visual_specs import (
 EXPECTED = {
     "flowchart", "diagram", "blueprint", "tree", "timeline", "roadmap", "cycle", "layers",
     "iceberg", "decision-matrix", "canvas", "infographic", "handwritten", "sketchnotes",
-    "exploded-view",
+    "exploded-view", "plot", "geometry", "vector-field", "number-line", "venn", "molecule",
+    "periodic-table", "energy-levels", "circuit", "steps", "map", "image",
 }
 
 
-def test_all_fifteen_formats_have_a_spec():
+def test_every_format_has_a_spec():
     assert set(FORMATS) == EXPECTED
     for name in EXPECTED:
         spec = spec_for(name)
@@ -81,3 +82,40 @@ def test_middleware_adds_every_requested_spec_in_order():
     assert "## Requested formats" in system and "`/timeline`, `/flowchart`" in system
     assert "one ```visual block per format" in system
     assert system.index('"format":"timeline"') < system.index('"format":"flowchart"')
+
+
+def test_shared_notes_are_added_only_where_a_spec_uses_them():
+    plot = spec_for("plot")
+    assert "PARAM = {" in plot and "FORMULAS are plain text" in plot
+    assert "FORMULAS are plain text" in spec_for("vector-field")
+    tree = spec_for("tree")
+    assert "PARAM = {" not in tree and "FORMULAS" not in tree
+
+
+def test_frontend_schemas_know_every_backend_format():
+    """The specs here and the zod schemas the frontend validates with must list the same formats."""
+    import pathlib
+    import re
+
+    schemas = pathlib.Path(__file__).resolve().parents[2] / "abyss_frontend/src/lib/visuals/schemas.ts"
+    if not schemas.exists():  # backend checked out alone
+        return
+    block = schemas.read_text(encoding="utf-8").split("export const VISUAL_SCHEMAS = {", 1)[1].split("}", 1)[0]
+    names = {m.strip('"') for m in re.findall(r'^\s*("?[a-z-]+"?):', block, re.M)}
+    assert names == set(FORMATS)
+
+
+def test_tool_description_names_every_format():
+    assert all(name in get_visual_format.description for name in FORMATS)
+
+
+def test_requested_format_keeps_its_short_answer_rule():
+    system = _run([HumanMessage("/plot y = x^2")])
+    assert "at most 2 short sentences" in system and '"format":"plot"' in system
+    assert "at most 2 short sentences" not in spec_for("plot")
+
+
+def test_several_specs_in_one_call():
+    both = get_visual_format.invoke({"name": "map, image"})
+    assert '"format":"map"' in both and '"format":"image"' in both
+    assert "Unknown format 'pie'" in get_visual_format.invoke({"name": "plot, pie"})

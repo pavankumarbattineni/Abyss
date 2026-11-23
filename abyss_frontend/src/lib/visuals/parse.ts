@@ -27,7 +27,15 @@ function lenientJson(source: string): unknown {
     .replace(/```\s*$/, "")
     .replace(/[“”]/g, '"')
     .replace(/,\s*([}\]])/g, "$1");
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    // A small header object then a list -- {"format":"image"} followed by
+    // search results -- is one visual: the list goes under "images".
+    const split = /^(\{[^{}]*\})\s*(\[[\s\S]*\])$/.exec(cleaned);
+    if (!split) throw err;
+    return { ...JSON.parse(split[1]), images: JSON.parse(split[2]) };
+  }
 }
 
 /** True for a ```json block that is really a visual (the model used the wrong fence). */
@@ -42,10 +50,25 @@ export function looksLikeVisualJson(source: string): boolean {
   }
 }
 
+/** search_images results pasted as they came (an image object, or a list of
+ * them, without "format") are an image visual: wrap them as one. */
+function asBareImages(value: unknown): unknown {
+  const isImage = (v: unknown) => !!v && typeof v === "object" && !("format" in v) && typeof (v as { src?: unknown }).src === "string";
+  if (Array.isArray(value) && value.length > 0 && value.every(isImage)) return { format: "image", images: value };
+  if (isImage(value)) return { format: "image", images: [value] };
+  const v = value as Record<string, unknown> | null;
+  if (v && v.format === "image" && !v.images && !v.src) {
+    // The image list under another name ("items", "queries"...): whichever list holds images.
+    const key = Object.keys(v).find((k) => Array.isArray(v[k]) && (v[k] as unknown[]).length > 0 && (v[k] as unknown[]).every(isImage));
+    if (key) return { ...v, images: v[key] };
+  }
+  return value;
+}
+
 export function parseVisual(source: string): ParsedVisual {
   let value: unknown;
   try {
-    value = lenientJson(source);
+    value = asBareImages(lenientJson(source));
   } catch (err) {
     return { ok: false, format: sniffFormat(source), errors: [`The visual isn't valid JSON: ${(err as Error).message}`] };
   }

@@ -99,6 +99,13 @@ SUB_AGENT_TIMEOUT_SECONDS = 900
 # A single (MCP) tool call that hasn't answered by then returns an error to
 # the agent instead of holding the whole turn (abyss_agents/middleware.py).
 TOOL_CALL_TIMEOUT_SECONDS = 180
+
+# Longest a single model request may take. Without it a provider SDK can wait
+# (or keep retrying an overloaded model) forever and the answer never ends;
+# with it the call fails as a timeout/unavailable error, which the agent's
+# retry and restart middleware handle and, if it persists, the user is told.
+# Generous: a long answer still fits, and a cut-off one is continued.
+MODEL_REQUEST_TIMEOUT_SECONDS = 300
 # Stop: how long DELETE /streams/{id} waits for the generation to save the
 # stopped reply itself before saving it on its behalf (chat_service.stop_stream).
 CANCEL_GRACE_SECONDS = 5

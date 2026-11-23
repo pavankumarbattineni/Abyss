@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUp,
@@ -61,6 +61,16 @@ interface ChatPanelProps {
 // sidebar or thread panel closed, or a large screen). Container queries on the
 // panel, so it follows the space actually available, not the window.
 const CHAT_COLUMN = "max-w-3xl @5xl:max-w-4xl @7xl:max-w-5xl";
+
+// A conversation (its messages and the docked message box): the reading
+// column 20% narrower -- 38.4 / 44.8 / 51.2rem instead of 48 / 56 / 64rem --
+// still centred. Phones keep their full width (the cap only applies when the
+// panel is wider than it). The centred box on a new thread keeps CHAT_COLUMN.
+const CONVERSATION_COLUMN = "max-w-[38.4rem] @5xl:max-w-[44.8rem] @7xl:max-w-[51.2rem]";
+
+// The docked message box: one line tall when empty, at most 40% of the screen
+// (and 18rem) before its text scrolls inside it.
+const DOCKED_INPUT = "min-h-6 max-h-[min(40dvh,18rem)]";
 
 export function ChatPanel({
   agent,
@@ -158,17 +168,41 @@ export function ChatPanel({
     }
   };
 
-  const composer = (
-    <div className={cn("relative w-full rounded-3xl border border-border-soft bg-surface-raised p-3 shadow-sm transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50", CHAT_COLUMN)}>
+  // The docked composer (under a conversation) is compact: one line when
+  // empty, growing with what you type up to DOCKED_MAX, then scrolling inside.
+  // Sized here as well as by CSS field-sizing, which Safari and Firefox lack.
+  const dockedInputRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const input = dockedInputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  }, [draft]);
+
+  // compact: the composer docked under a conversation. The centred one on a
+  // new thread keeps its larger size (deliberately unchanged).
+  const renderComposer = (compact: boolean) => (
+    <div
+      className={cn(
+        "relative w-full rounded-3xl border border-border-soft bg-surface-raised shadow-sm transition-colors focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50",
+        compact ? "px-3 pt-2 pb-2" : "p-3",
+        compact ? CONVERSATION_COLUMN : CHAT_COLUMN,
+      )}
+    >
       {formatMenu.menu}
       <Textarea
+        ref={compact ? dockedInputRef : undefined}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={`Message ${agent?.name ?? "the agent"}...`}
-        className="field-sizing-content max-h-40 min-h-9 w-full sm:max-h-52 sm:min-h-16 resize-none overflow-y-auto border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent"
+        rows={compact ? 1 : undefined}
+        className={cn(
+          "field-sizing-content w-full resize-none overflow-y-auto border-0 bg-transparent p-1 shadow-none focus-visible:ring-0 dark:bg-transparent",
+          compact ? DOCKED_INPUT : "max-h-40 min-h-9 sm:max-h-52 sm:min-h-16",
+        )}
       />
-      <div className="flex items-center justify-between gap-2 pt-2 sm:pt-3">
+      <div className={cn("flex items-center justify-between gap-2", compact ? "pt-1" : "pt-2 sm:pt-3")}>
         {/* The model applies to every agent and chat of the user. */}
         <div className="flex min-w-0 items-center gap-1.5">
           <AttachMenu />
@@ -220,7 +254,7 @@ export function ChatPanel({
           Ask a question or give it a task to get started.
         </p>
       </div>
-      {composer}
+      {renderComposer(false)}
       {sampleQuestions.length > 0 && (
         <div className={cn("w-full text-left", CHAT_COLUMN)}>
           <p className="mb-2 text-xs font-medium text-muted-foreground">Try asking</p>
@@ -303,7 +337,7 @@ export function ChatPanel({
       ) : hasThread ? (
         isMessagesLoading ? (
           <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div className={cn("mx-auto flex w-full flex-col gap-6", CHAT_COLUMN)}>
+            <div className={cn("mx-auto flex w-full flex-col gap-6", CONVERSATION_COLUMN)}>
               <Skeleton className="h-16 w-2/3" />
               <Skeleton className="ml-auto h-10 w-1/2" />
               <Skeleton className="h-20 w-3/4" />
@@ -319,7 +353,7 @@ export function ChatPanel({
               ref={scrollRef}
               className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 @lg:px-6"
             >
-              <div className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CHAT_COLUMN)}>
+              <div className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CONVERSATION_COLUMN)}>
                 {messages.map((message, index) => message.role === "summary" ? (
                   <ConversationSummary key={message.id} content={message.content} />
                 ) : message.role === "error" ? (
@@ -367,7 +401,7 @@ export function ChatPanel({
                         // The question in a compact bubble; the answer directly on the page (no card),
                         // as in ChatGPT and Claude. pt-1 lines its first line up with the avatar.
                         message.role === "user"
-                          ? "max-w-full overflow-x-auto rounded-2xl bg-accent px-4 py-2 text-sm text-accent-foreground"
+                          ? "max-w-full overflow-x-auto rounded-2xl bg-muted px-4 py-2 text-sm text-foreground"
                           : "w-full pt-1 text-foreground",
                       )}
                     >
@@ -451,7 +485,7 @@ export function ChatPanel({
             </div>
 
             <div className="flex justify-center border-t border-border-soft p-3 sm:p-4">
-              {composer}
+              {renderComposer(true)}
             </div>
           </>
         )

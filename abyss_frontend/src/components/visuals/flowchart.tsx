@@ -23,13 +23,15 @@ function measure(label: string, detail: string | undefined, kind: Kind) {
   return { lines, details, width: Math.max(kind === "start" || kind === "end" ? 110 : 140, textW + 32), height: textH + 22 };
 }
 
+// Plain shapes: start/end are told apart by their pill shape and a stronger
+// outline, not a coloured fill behind their text.
 const SHAPE_CLASS: Record<Kind, string> = {
-  start: "fill-primary stroke-primary",
-  end: "fill-primary stroke-primary",
+  start: "fill-card stroke-foreground/60",
+  end: "fill-card stroke-foreground/60",
   process: "fill-card stroke-border",
   decision: "fill-highlight-soft stroke-highlight",
   io: "fill-muted stroke-border",
-  subprocess: "fill-card stroke-primary",
+  subprocess: "fill-card stroke-border",
 };
 
 /**
@@ -105,7 +107,7 @@ export function FlowchartVisual({ data }: { data: FlowchartData }) {
         const pos = layout.graph.nodes.get(node.id);
         if (!pos) return null;
         const { width: w, height: h } = node;
-        const onPrimary = node.kind === "start" || node.kind === "end";
+        const onPrimary = false; // no filled shapes: text is always the normal colour
         const shape =
           node.kind === "decision" ? (
             <polygon points={`0,${-h / 2} ${w / 2},0 0,${h / 2} ${-w / 2},0`} />
@@ -122,7 +124,7 @@ export function FlowchartVisual({ data }: { data: FlowchartData }) {
               {shape}
             </g>
             {node.kind === "subprocess" && (
-              <g className="stroke-primary" strokeWidth={1.5}>
+              <g className="stroke-border" strokeWidth={1.5}>
                 <line x1={-w / 2 + 9} y1={-h / 2} x2={-w / 2 + 9} y2={h / 2} />
                 <line x1={w / 2 - 9} y1={-h / 2} x2={w / 2 - 9} y2={h / 2} />
               </g>

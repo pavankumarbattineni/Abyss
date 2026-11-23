@@ -27,6 +27,18 @@ export const VISUAL_FORMATS: readonly VisualFormatMeta[] = [
   { name: "handwritten", label: "Handwritten notes", description: "Study notes on a notebook page" },
   { name: "sketchnotes", label: "Sketchnotes", description: "Visual notes around a central idea" },
   { name: "exploded-view", label: "Exploded view", description: "An object pulled apart into its parts" },
+  { name: "plot", label: "Graph", description: "Functions, curves and data drawn to scale" },
+  { name: "geometry", label: "Geometry", description: "Shapes, angles, forces and vectors to scale" },
+  { name: "vector-field", label: "Vector field", description: "Arrows showing a field's direction and strength" },
+  { name: "number-line", label: "Number line", description: "Points, intervals and inequalities" },
+  { name: "venn", label: "Venn diagram", description: "How two or three sets overlap" },
+  { name: "molecule", label: "Molecule", description: "Chemical structures drawn from SMILES" },
+  { name: "periodic-table", label: "Periodic table", description: "Elements highlighted, or a trend across them" },
+  { name: "energy-levels", label: "Energy levels", description: "Orbital boxes and energy transitions" },
+  { name: "circuit", label: "Circuit", description: "An electric circuit in standard symbols" },
+  { name: "steps", label: "Step by step", description: "A derivation, proof or algorithm, one step at a time" },
+  { name: "map", label: "Map", description: "Places, countries and routes on a world map" },
+  { name: "image", label: "Image", description: "A real, credited image from Wikimedia Commons" },
 ];
 
 export const VISUAL_FORMAT_META = Object.fromEntries(VISUAL_FORMATS.map((meta) => [meta.name, meta])) as Record<

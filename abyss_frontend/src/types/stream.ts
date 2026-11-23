@@ -58,6 +58,15 @@ export interface StreamAnswerRewindEvent {
   data: { text: string };
 }
 
+/**
+ * A broken visual block in the finished answer was rewritten on the server:
+ * swap the old block's text for the new one.
+ */
+export interface StreamAnswerReplaceEvent {
+  type: "answer_replace";
+  data: { old: string; new: string };
+}
+
 export interface StreamThreadTitleEvent {
   type: "thread_title";
   data: { title: string };
@@ -126,6 +135,7 @@ export type StreamEvent = { id: string } & (
   | StreamSynthesisStartEvent
   | StreamTokenEvent
   | StreamAnswerRewindEvent
+  | StreamAnswerReplaceEvent
   | StreamThreadTitleEvent
   | StreamDoneEvent
   | StreamErrorEvent

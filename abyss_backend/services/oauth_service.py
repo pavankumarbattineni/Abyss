@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User
 from schemas.auth import TokenPairResponse, UpdateSettingsRequest, UserResponse
-from services.llm_credential_service import validate_model_selection
+from services.llm_credential_service import DEFAULT_CHOICES, validate_default_slot, validate_model_selection
 from utils.jwt import REFRESH, create_access_token, create_refresh_token, decode_token
 
 
@@ -80,11 +80,17 @@ class OAuthService:
         if request.thinking_enabled is not None:
             user.thinking_enabled = request.thinking_enabled
         if request.llm_model_id is not None:
-            # "default" is always allowed; any other model must be active and
-            # its provider's key must be saved by the user.
-            model_id = None if request.llm_model_id == "default" else request.llm_model_id
-            await validate_model_selection(session, user_id, model_id)
-            user.llm_model_id = model_id
+            # "default" / "default-1" / "default-2" are the platform's models;
+            # any other model must be active and its provider's key saved.
+            choice = request.llm_model_id
+            if choice in DEFAULT_CHOICES:
+                await validate_default_slot(session, DEFAULT_CHOICES[choice])
+                user.llm_model_id = None
+                user.llm_default_slot = DEFAULT_CHOICES[choice] or None
+            else:
+                await validate_model_selection(session, user_id, choice)
+                user.llm_model_id = choice
+                user.llm_default_slot = None
         await session.commit()
         await session.refresh(user)
         return _user_response(user)
@@ -113,6 +119,7 @@ def _user_response(user: User) -> UserResponse:
         username=user.username,
         email=user.email,
         thinking_enabled=user.thinking_enabled,
-        llm_model_id=user.llm_model_id,
+        # The picker's value: a model id, "default-1"/"default-2", or None (Default).
+        llm_model_id=user.llm_model_id or (f"default-{user.llm_default_slot}" if user.llm_default_slot else None),
         created_at=user.created_at,
     )

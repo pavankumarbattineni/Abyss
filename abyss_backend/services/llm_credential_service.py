@@ -24,6 +24,26 @@ def _mask_key(raw_key: str) -> str:
     return f"{raw_key[:4]}...{raw_key[-4:]}"
 
 
+# The platform's own models in the picker: "default" plus "default-1" and
+# "default-2" (provider_models.platform_slot), all on the platform's key.
+DEFAULT_CHOICES: dict[str, int] = {"default": 0, "default-1": 1, "default-2": 2}
+
+
+def default_choice_label(slot: int) -> str:
+    return "Default" if not slot else f"Default - {slot}"
+
+
+async def validate_default_slot(session: AsyncSession, slot: int) -> None:
+    """A "Default - n" choice must have an active model in that slot."""
+    if not slot:
+        return
+    found = await session.scalar(
+        select(ProviderModel.id).where(ProviderModel.platform_slot == slot, ProviderModel.is_active == True)
+    )
+    if not found:
+        raise ValueError(f"{default_choice_label(slot)} isn't available right now")
+
+
 async def validate_model_selection(
     session: AsyncSession, user_id: str, llm_model_id: Optional[str]
 ) -> None:
@@ -109,11 +129,25 @@ class LlmCredentialService:
         # (see schemas.agent._normalize_llm_model_id) rather than being a real
         # provider row, so the frontend can render it as just another catalog
         # item instead of hardcoding it.
+        # "Default - 1" / "Default - 2": the platform's extra models, shown only
+        # by their slot name (their own names stay in the BYOK list below).
+        slots = (
+            await session.execute(
+                select(ProviderModel.platform_slot)
+                .join(Provider, Provider.id == ProviderModel.provider_id)
+                .where(ProviderModel.platform_slot.is_not(None), ProviderModel.is_active == True, Provider.is_active == True)
+                .order_by(ProviderModel.platform_slot.asc())
+            )
+        ).scalars().all()
         default_entry = ProviderCatalogEntry(
             provider_id="default",
             provider="default",
             display_name="Default",
-            models=[CatalogModelEntry(id="default", model_name="default", display_name="Default")],
+            models=[CatalogModelEntry(id="default", model_name="default", display_name="Default")]
+            + [
+                CatalogModelEntry(id=f"default-{slot}", model_name=f"default-{slot}", display_name=default_choice_label(slot))
+                for slot in slots
+            ],
         )
         return [default_entry] + list(models_by_provider.values())
 

@@ -11,6 +11,7 @@
  *   every label, so it can't break a diagram that already parsed.
  * - Drops `%%` comments that trail a statement (only whole-line comments
  *   are allowed).
+ * - Quotes subgraph titles that contain such characters (quoteSubgraphTitle).
  * - Drops styling (`classDef`, `class`, `style`, `linkStyle`, `:::name`)
  *   so diagrams follow the app's light/dark theme instead of hard-coded
  *   colors chosen by the model.
@@ -32,7 +33,28 @@ function outsideQuotes(line: string, fn: (segment: string) => string): string {
     .join("");
 }
 
+/**
+ * A subgraph title with syntax characters -- `subgraph Negative Electrode
+ * (Anode)` -- fails to parse; given its own id and quoted, it shows as written:
+ * `subgraph sg1 ["Negative Electrode (Anode)"]`. Titles that are only words
+ * (which parse, and which edges may use as the subgraph's id) stay as they are.
+ */
+function quoteSubgraphTitle(line: string, nextId: () => string): string {
+  const match = /^(\s*subgraph\s+)(.+?)\s*$/.exec(line);
+  if (!match) return line;
+  const [, head, rest] = match;
+  const bracketed = /^([\w-]+)\s*\[(?!")(.*)\]$/.exec(rest);
+  if (bracketed) {
+    const [, id, title] = bracketed;
+    return NEEDS_QUOTES.test(title) ? `${head}${id} [${quote(title)}]` : line;
+  }
+  if (rest.startsWith('"') || !NEEDS_QUOTES.test(rest)) return line;
+  return `${head}${nextId()} [${quote(rest)}]`;
+}
+
 export function cleanMermaidSource(source: string): string {
+  let subgraphs = 0;
+  const nextSubgraphId = () => `sg${++subgraphs}`;
   return source
     .trim()
     // Models sometimes escape quotes inside a label (`C[Return \"Blocked\"]`);
@@ -47,6 +69,7 @@ export function cleanMermaidSource(source: string): string {
       if (/^(classDef|class|style|linkStyle)\s/.test(trimmed)) return "";
 
       let line = rawLine.replace(/\s+%%(?!\{).*$/, "").replace(/:::[\w-]+/g, "");
+      if (/^subgraph\s/.test(trimmed)) return quoteSubgraphTitle(line, nextSubgraphId);
 
       // [label] -- skips other bracket shapes like [[sub]], [(db)], [/x/].
       line = outsideQuotes(line, (s) =>

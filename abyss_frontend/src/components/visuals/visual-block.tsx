@@ -6,6 +6,7 @@ import { Braces, Copy, Shapes, TriangleAlert } from "lucide-react";
 import { Button, Dialog, DialogContent, DialogTitle } from "@/components/ui";
 import { CodeBlock } from "@/components/shared/code-block";
 import { COMPOSE_EVENT } from "@/components/shared/code-preview";
+import { FormatChip, formatCommand } from "@/components/shared/format-chip";
 import { BlockActions, copyText } from "@/components/shared/block-actions";
 import { useCanAskToFix } from "@/components/shared/fix-request";
 import { parseVisual, sniffFormat } from "@/lib/visuals/parse";
@@ -26,6 +27,18 @@ import { RoadmapVisual } from "./roadmap";
 import { SketchnotesVisual } from "./sketchnotes";
 import { TimelineVisual } from "./timeline";
 import { TreeVisual } from "./tree";
+import { CircuitVisual } from "./circuit";
+import { EnergyLevelsVisual } from "./energy-levels";
+import { GeometryVisual } from "./geometry";
+import { ImageVisual } from "./image";
+import { MapVisual } from "./map";
+import { MoleculeVisual } from "./molecule";
+import { NumberLineVisual } from "./number-line";
+import { PeriodicTableVisual } from "./periodic-table";
+import { PlotVisual } from "./plot";
+import { StepsVisual } from "./steps";
+import { VectorFieldVisual } from "./vector-field";
+import { VennVisual } from "./venn";
 
 // Each format has its own renderer; they share the frame below and the
 // building blocks in this folder (stage, rough, icons).
@@ -45,6 +58,18 @@ const RENDERERS: { [F in VisualFormatName]: ComponentType<{ data: VisualData<F> 
   handwritten: HandwrittenVisual,
   sketchnotes: SketchnotesVisual,
   "exploded-view": ExplodedViewVisual,
+  plot: PlotVisual,
+  geometry: GeometryVisual,
+  "vector-field": VectorFieldVisual,
+  "number-line": NumberLineVisual,
+  venn: VennVisual,
+  molecule: MoleculeVisual,
+  "periodic-table": PeriodicTableVisual,
+  "energy-levels": EnergyLevelsVisual,
+  circuit: CircuitVisual,
+  steps: StepsVisual,
+  map: MapVisual,
+  image: ImageVisual,
 };
 
 function Renderer({ format, data }: { format: VisualFormatName; data: VisualData }) {
@@ -67,6 +92,18 @@ export function VisualBlock({ source, isStreaming = false }: { source: string; i
 
   const format = parsed?.format ?? sniffFormat(source);
   const meta = format ? VISUAL_FORMAT_META[format] : null;
+
+  // A block holding only a format command (`/blueprint`) is a suggestion the
+  // model fenced by mistake, not a broken visual: show it as the suggestion
+  // chip it would be in text, instead of an error.
+  const suggested = formatCommand(source);
+  if (suggested) {
+    return (
+      <p className="mb-3 font-sans text-sm text-muted-foreground last:mb-0">
+        Also available as <FormatChip format={suggested} />
+      </p>
+    );
+  }
 
   if (!parsed) {
     return (

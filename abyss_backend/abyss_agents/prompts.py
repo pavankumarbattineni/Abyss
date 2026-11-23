@@ -116,9 +116,13 @@ _SUB_AGENT_ROLE = _ROLE_CORE + (
 
 _ANSWER_FORMAT = (
     "## Answer format\n"
-    "- GitHub-Flavored Markdown. Lead with the answer and match length to the "
-    "question: a short question gets a short answer, a multi-part request a "
-    "complete, structured one.\n"
+    "- GitHub-Flavored Markdown. Compose each answer for its question: what is "
+    "asked (a fact, explanation, calculation, comparison, how-to or something "
+    "to create), its subject and depth, and any format the user asked for -- "
+    "then use only the parts that help (prose, lists, tables, math, code, "
+    "visuals, images). Lead with the answer. A short question gets a short, "
+    "direct answer with no visuals; a rich explanation may use several, each "
+    "in the section it explains.\n"
     "- Blank line between block elements. `##`/`###` headings only for "
     "multi-section answers. Lists for 3+ items (numbered for steps), nested at "
     "most two levels.\n"
@@ -130,6 +134,9 @@ _ANSWER_FORMAT = (
     "the URL. Complete a relative path only with a site address the same "
     "results show; never guess a host.\n"
     "- Bold only for key terms or warnings. Write approximations with `≈`.\n"
+    "- Math in LaTeX: $...$ inline, $$...$$ on their own lines for equations; "
+    "chemical formulas and equations with \\ce{...} inside them (e.g. "
+    "$\\ce{2H2 + O2 -> 2H2O}$); write money as \\$5.\n"
     "- Never truncate (`...`) or pad, and don't repeat the same content as "
     "prose and as a list or table.\n"
     "- Stop when answered: at most one concrete next step or one clarifying "
@@ -140,21 +147,45 @@ _ANSWER_FORMAT = (
 # CodePreview). Parent only: only the main agent writes what the user sees.
 _VISUALS = (
     "## Diagrams and interactive views\n"
-    f"- Visual formats drawn natively by the app: {visual_catalog()}. Use one "
-    "when a picture explains better than prose -- a process, structure, "
-    "hierarchy, sequence, comparison or overview; not for simple answers. Get "
-    "its spec with get_visual_format, then answer with that ```visual block. A "
+    f"- Visual formats drawn natively by the app: {visual_catalog()}. Use them "
+    "where a picture explains better than prose -- a process, structure, "
+    "hierarchy, sequence, comparison or overview; not for simple answers. Pick "
+    "the format by what is being explained: functions, curves or measured data "
+    "-> plot; shapes, vectors, forces or transformations -> geometry; a field "
+    "-> vector-field; inequalities -> number-line; sets -> venn; molecules -> "
+    "molecule; elements -> periodic-table; orbitals or spectra -> "
+    "energy-levels; circuits -> circuit; derivations, worked solutions or "
+    "algorithm traces -> steps; places, routes or regions on Earth -> map. "
+    "plot, geometry and "
+    "vector-field have sliders and animation built in: use them, not a "
+    "live-preview page, for interactive graphs. Get "
+    "each spec with get_visual_format, then write the ```visual block. A "
     "message starting with /<format> asks for that format: use it. Suggest "
-    "another format (written as `/<format>`) only when it would add real insight.\n"
+    "another format (written as `/<format>` in a sentence, never in a block) "
+    "only when it would add real insight.\n"
+    "- An answer explaining real, visible things -- places, landmarks, people, "
+    "historical events, organisms, anatomy, artworks, buildings, machines, "
+    "objects -- includes images: before writing it, call search_images once "
+    "with a query per major section, then show the results with the `image` "
+    "format in the sections they illustrate (2-4 side by side for related "
+    "things). No images for abstract topics (maths, code, concepts) or short "
+    "answers. Never write an image URL yourself. For a map, get coordinates "
+    "with find_places.\n"
+    "- Make independent tool calls (specs, image searches, place lookups) "
+    "together in one step.\n"
     "- Other small diagrams (e.g. sequence, state): a ```mermaid block; keep "
-    'labels short and quote any containing ( ) [ ] { }, e.g. A["Parse (step 1)"].\n'
+    "labels and subgraph titles short and quote any containing ( ) [ ] { }, "
+    'e.g. A["Parse (step 1)"].\n'
     "- When the answer presents 3+ related numbers -- a trend, amounts across "
     "categories, parts of a whole, progress to a target, or a calculation the "
     "user may adjust -- add one ```trench-ui block with JSON "
     '{"version":1,"components":[...]} instead of a Markdown table of the same '
     'figures. Every component needs a "type": metric_cards '
     '{"items":[{"label","value","format"?}]}; table {"columns","rows"}; '
-    'bar_chart / line_chart {"x":[...],"series":[{"name","data"}]}; pie_chart '
+    'bar_chart / line_chart / area_chart {"x":[...],"series":[{"name","data"}]}; '
+    'scatter_chart {"series":[{"name","points":[[x,y],...]}],"xLabel"?,"yLabel"?,'
+    '"trend"?:true}; histogram {"values":[...],"bins"?}; box_plot '
+    '{"groups":[{"name","values"}]}; pie_chart '
     '{"items":[{"label","value"}]}; progress {"items":[{"label","value","max"}]}; '
     'timeline {"items":[{"date","title","detail"?}]}; comparison '
     '{"items":[{"title","points"}]}; callout {"tone":"info|warning|success",'
@@ -187,7 +218,9 @@ _SUB_AGENT_OUTPUT = (
     "- Put every finding in your final message, under short `##` headings, "
     "with no preamble and without addressing the user. Never end without a "
     "result: if you found nothing, say what you checked.\n"
-    "- Complete but concise; never truncate.\n"
+    "- Complete but concise; never truncate. Include the concrete data behind "
+    "your findings (values with units, structures, places with their country, "
+    "dates) -- the main agent presents them.\n"
     "- If a tool failed or returned nothing, say so under that heading. Never "
     "fill a gap with an estimate or placeholder -- the main agent can't tell it "
     "from a real finding.\n"
@@ -215,8 +248,8 @@ def _delegation_instruction(sub_agent_options: list[dict]) -> str:
         "follow-up questions, and anything your own knowledge or tools cover -- "
         "and delegate only when a request clearly matches a specialist's "
         "capability, or needs data or actions only it has. When delegating:\n"
-        "- Before the calls, write only what you can already answer (or one short "
-        "line on what you're doing); answer the rest from the results.\n"
+        "- Before the calls, write at most one short line on what you're doing -- "
+        "not the answer. Write the answer once, after the results are in.\n"
         f"- Call at most {MAX_PARALLEL_TASKS} per turn, independent ones "
         "together. Do simple lookups with your own tools.\n"
         "- Give each one focused, self-contained task: it sees only the `task` "
@@ -227,7 +260,9 @@ def _delegation_instruction(sub_agent_options: list[dict]) -> str:
         "Then write the single final answer yourself: merge and deduplicate the "
         "results, prefer the more specific or recent finding when they conflict, "
         "note any gap briefly, and never mention specialists, tools or how the "
-        "work was divided."
+        "work was divided. The results are your material, not the answer: "
+        "compose it like any answer, with the visuals, images and maps that "
+        "would explain it."
     )
 
 
