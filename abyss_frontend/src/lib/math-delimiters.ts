@@ -88,5 +88,50 @@ export function normalizeMathDelimiters(content: string): string {
 
 /** Slips inside math that KaTeX rejects: a doubled superscript ("Li^^{+}"). */
 function fixMathSlips(text: string): string {
-  return text.replace(/\$\$[\s\S]+?\$\$/g, (math) => math.replace(/\^\s*\^/g, "^"));
+  return wrapLongInlineMath(text.replace(/\$\$[\s\S]+?\$\$/g, (math) => math.replace(/\^\s*\^/g, "^")));
+}
+
+/** Longer inline formulas than this get break points at their top-level commas. */
+const WRAP_AFTER = 40;
+
+/** `tex` cut after each comma outside brackets/braces (a list of items), or null. */
+function splitAtTopLevelCommas(tex: string): string[] | null {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < tex.length; i++) {
+    const c = tex[i];
+    if (c === "\\") {
+      // \{ \} (a set's braces) and \langle \rangle bracket like ( ); any other
+      // command or escaped character (\, \; \alpha) neither brackets nor splits.
+      if (tex[i + 1] === "{" || tex.startsWith("langle", i + 1)) depth++;
+      else if (tex[i + 1] === "}" || tex.startsWith("rangle", i + 1)) depth = Math.max(0, depth - 1);
+      i++;
+      continue;
+    }
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth = Math.max(0, depth - 1);
+    else if (c === "," && depth === 0) {
+      parts.push(tex.slice(start, i + 1).trim());
+      start = i + 1;
+    }
+  }
+  if (!parts.length || depth !== 0) return null;
+  parts.push(tex.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+/**
+ * KaTeX can't wrap an inline formula at a comma, so a long list such as
+ * "(A,B,4), (A,C,2), ..." would run off the screen as one unbreakable line.
+ * A long inline formula is split at its top-level commas into several
+ * formulas joined by an ordinary space, where the line can wrap. It looks the
+ * same. Display equations (their $$ on their own lines) are left as they are.
+ */
+function wrapLongInlineMath(text: string): string {
+  return text.replace(/\$\$([^\n$]+?)\$\$/g, (whole, tex: string) => {
+    if (tex.length <= WRAP_AFTER) return whole;
+    const parts = splitAtTopLevelCommas(tex);
+    return parts && parts.length > 1 ? parts.map((p) => `$$${p}$$`).join(" ") : whole;
+  });
 }

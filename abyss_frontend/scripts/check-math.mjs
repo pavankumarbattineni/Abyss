@@ -23,6 +23,10 @@ const { normalizeMathDelimiters: norm } = await import(
 );
 
 const cases = [
+  // A long inline list wraps at its top-level commas; short math and bracketed lists stay whole.
+  ["long inline list wraps", "Edges: $(A, B, 4), (A, C, 2), (B, C, 1), (B, D, 5)$ here", "Edges: $$(A, B, 4),$$ $$(A, C, 2),$$ $$(B, C, 1),$$ $$(B, D, 5)$$ here"],
+  ["short inline math stays whole", "Point $(a, b)$ here", "Point $$(a, b)$$ here"],
+  ["commas inside braces never split", "Set $\\{a_1, a_2, a_3, a_4, a_5, a_6, a_7, a_8, a_9, a_{10}\\}$ end", "Set $$\\{a_1, a_2, a_3, a_4, a_5, a_6, a_7, a_8, a_9, a_{10}\\}$$ end"],
   ["doubled superscript slip", "Ions: $\\text{Li}^^{+}$ move", "Ions: $$\\text{Li}^{+}$$ move"],
   // Single-dollar inline math, as models write it most.
   ["inline $...$", "The slope is $m = \\frac{dy}{dx}$ here.", "The slope is $$m = \\frac{dy}{dx}$$ here."],

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { ChatPanel } from "@/components/shared/chat-panel";
+import { handOverDraft } from "@/lib/drafts";
 import {
   COMPACT_QUERY,
   useChatStream,
@@ -67,8 +68,11 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
     threadId,
     // The first message moves straight to the thread's URL, which resumes the stream there, so
     // refreshing mid-answer works from the first message on (see useChatStream).
-    onThreadStarted: (newThreadId, streamId) =>
-      router.replace(`/agents/${agentId}/threads/${newThreadId}?streamId=${encodeURIComponent(streamId)}`),
+    onThreadStarted: (newThreadId, streamId) => {
+      // Whatever is typed in the box meanwhile goes along to the thread's page.
+      handOverDraft(`${agentId}:new`, `${agentId}:${newThreadId}`);
+      router.replace(`/agents/${agentId}/threads/${newThreadId}?streamId=${encodeURIComponent(streamId)}`);
+    },
   });
 
   const hasActiveConversation =
@@ -143,6 +147,7 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
         pendingApprovals={pendingApprovals}
         isResolvingApproval={isResolvingApproval}
         onResolveApproval={resolveApprovals}
+        draftKey={`${agentId}:${threadKey}`}
       />
     </div>
   );
