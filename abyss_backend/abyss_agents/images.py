@@ -161,8 +161,12 @@ async def _search(client: httpx.AsyncClient, query: str, limit: int) -> list[dic
 
 
 MAX_QUERIES = 5
-# A subject with fewer relevant Wikimedia images than this gets web images too.
-WEB_TOP_UP_BELOW = 2
+def interleave(first: list[dict], second: list[dict], limit: int) -> list[dict]:
+    """first[0], second[0], first[1], second[1], ... -- up to `limit`, the rest of the longer list after."""
+    out: list[dict] = []
+    for i in range(max(len(first), len(second))):
+        out.extend(x[i] for x in (first, second) if i < len(x))
+    return out[:limit]
 
 
 async def _web_safely(client: httpx.AsyncClient, gate: asyncio.Semaphore, query: str, limit: int) -> list[dict] | None:
@@ -231,14 +235,15 @@ async def search_images(queries: list[str], limit: int = 3) -> str:
     gate = asyncio.Semaphore(_CONCURRENCY)
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
         found = await asyncio.gather(*(_search_safely(client, gate, q, limit) for q in cleaned))
-        # Too few Wikimedia images for a subject (films, characters, products...):
-        # topped up from the web image search, when it's configured.
+        # With the web image search configured, every subject gets both sources,
+        # alternating: Wikimedia's openly licensed photos (a film's actors,
+        # sets, making-of) and the web's (its posters, stills, characters) --
+        # Wikimedia alone often has only things around a subject, not it.
         if web_images.brave_api_key():
-            thin = [i for i, r in enumerate(found) if r is not None and len(r) < WEB_TOP_UP_BELOW or r is None]
-            extra = await asyncio.gather(*(_web_safely(client, gate, cleaned[i], limit) for i in thin))
-            for i, more in zip(thin, extra):
+            extra = await asyncio.gather(*(_web_safely(client, gate, q, limit) for q in cleaned))
+            for i, more in enumerate(extra):
                 if more:
-                    found[i] = ((found[i] or []) + more)[: max(limit, len(found[i] or []))]
+                    found[i] = interleave(found[i] or [], more, limit)
     if all(r is None for r in found):
         return "Image search is unavailable right now. Answer without images."
     if len(cleaned) == 1:

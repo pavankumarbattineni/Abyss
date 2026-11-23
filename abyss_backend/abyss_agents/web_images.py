@@ -102,7 +102,7 @@ def parse_brave(payload: dict) -> list[dict]:
             "page": r.get("url") or "",
             "title": str(r.get("title") or "")[:160],
             "description": "",
-            "author": site,
+            "author": "",  # credited as "© its owner, via <site>"
             "license": "© its owner",
             "source": site,
             "width": (r.get("properties") or {}).get("width"),

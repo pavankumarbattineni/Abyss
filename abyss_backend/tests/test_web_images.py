@@ -75,14 +75,18 @@ def test_web_images_top_up_a_subject_wikimedia_lacks(monkeypatch):
     assert [r["title"] for r in out] == ["Harry Potter and the Philosopher's Stone poster"]  # unrelated one filtered
 
 
-def test_no_web_search_when_wikimedia_has_enough(monkeypatch):
+def test_both_sources_alternate_when_the_web_is_on(monkeypatch):
     commons = {"query": {"pages": [
         {"index": i, "title": f"File:Hobbiton set {i}.jpg", "imageinfo": [{"mime": "image/jpeg",
          "url": f"https://upload.wikimedia.org/h{i}.jpg", "descriptionurl": "https://commons.wikimedia.org/x"}]}
         for i in (1, 2, 3)]}}
-    seen = _route(monkeypatch, commons=commons, brave=BRAVE)
-    out = json.loads(asyncio.run(search_images.ainvoke({"queries": ["Hobbiton set"], "limit": 3})))
-    assert len(out) == 3 and "api.search.brave.com" not in seen
+    web = {"results": [{"title": f"Hobbiton set still {i}", "url": f"https://film.example.com/{i}",
+                        "properties": {"url": f"https://img.example.com/{i}.jpg"}} for i in (1, 2, 3)]}
+    seen = _route(monkeypatch, commons=commons, brave=web)
+    out = json.loads(asyncio.run(search_images.ainvoke({"queries": ["Hobbiton set"], "limit": 4})))
+    assert "api.search.brave.com" in seen
+    # Wikimedia, web, Wikimedia, web -- open licences first, then the film's own imagery.
+    assert ["source" in r for r in out] == [False, True, False, True]
 
 
 def test_off_without_a_key(monkeypatch):
