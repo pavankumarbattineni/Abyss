@@ -26,15 +26,61 @@ export function getAuthToken(): string | undefined {
   return Cookies.get("a_token");
 }
 
-function setAuthTokens(tokens: LoginResponse): void {
-  // Authentication must remain available when navigating away from /auth/*.
-  Cookies.set("a_token", tokens.access_token, { path: "/" });
-  Cookies.set("r_token", tokens.refresh_token, { path: "/" });
+// The session lasts as long as its refresh token (30 days, see the backend's
+// utils/jwt.py) -- used when a token carries no readable expiry.
+const FALLBACK_SESSION_DAYS = 30;
+
+/** When a JWT expires (its `exp` claim), or null if it can't be read. */
+function tokenExpiry(token: string): Date | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null;
+  } catch {
+    return null;
+  }
 }
 
-function clearAuthTokens(): void {
+/**
+ * Cookie options for both session cookies. They must carry an expiry: a
+ * cookie without one is a "session cookie", which mobile Chrome deletes when
+ * the app is closed -- signing the user out. Both live as long as the refresh
+ * token, so the session survives closing the browser until it really expires
+ * (or the user signs out). The access token inside `a_token` still expires
+ * after minutes; a 401 renews it through /auth/refresh (below). `a_token`
+ * must not expire earlier than the session: the route guard (src/proxy.ts)
+ * and the server layout read its presence as "signed in".
+ */
+function sessionCookieOptions(refreshToken: string): Cookies.CookieAttributes {
+  const expires = tokenExpiry(refreshToken) ?? new Date(Date.now() + FALLBACK_SESSION_DAYS * 86_400_000);
+  return {
+    path: "/", // must stay available outside /auth/*
+    expires,
+    sameSite: "lax",
+    secure: typeof window !== "undefined" && window.location.protocol === "https:",
+  };
+}
+
+type SessionTokens = Pick<LoginResponse, "access_token" | "refresh_token">;
+
+export function setAuthTokens(tokens: SessionTokens): void {
+  const options = sessionCookieOptions(tokens.refresh_token);
+  Cookies.set("a_token", tokens.access_token, options);
+  Cookies.set("r_token", tokens.refresh_token, options);
+}
+
+export function clearAuthTokens(): void {
   Cookies.remove("a_token", { path: "/" });
   Cookies.remove("r_token", { path: "/" });
+}
+
+/**
+ * Sessions signed in before the cookies had an expiry hold session cookies,
+ * which mobile Chrome drops on close: give them their expiry (on app load).
+ */
+export function persistAuthCookies(): void {
+  const access = Cookies.get("a_token");
+  const refresh = Cookies.get("r_token");
+  if (access && refresh) setAuthTokens({ access_token: access, refresh_token: refresh });
 }
 
 let refreshPromise: Promise<string | null> | null = null;
