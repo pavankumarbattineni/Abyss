@@ -82,6 +82,38 @@ function findCountry(countries: Countries, name: string): Feature<Geometry, { na
 
 const W = 640;
 
+type Box = { x0: number; x1: number; y0: number; y1: number };
+const overlaps = (a: Box, b: Box) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+/** Each place's dot and label: the first spot around the dot (right, left,
+ * below, above) that overlaps no earlier label and stays inside the map. */
+function placeLabels(places: MapData["places"], projection: (p: [number, number]) => [number, number] | null, height: number) {
+  const taken: Box[] = [];
+  return places.map((p) => {
+    const at = projection([p.lon, p.lat]);
+    if (!at) return null;
+    const [cx, cy] = at;
+    const text = p.label ?? p.name;
+    const w = text.length * 6.6;
+    const spots = [
+      { x: cx + 7, y: cy - 6, anchor: "start" as const },
+      { x: cx - 7, y: cy - 6, anchor: "end" as const },
+      { x: cx + 7, y: cy + 15, anchor: "start" as const },
+      { x: cx - 7, y: cy + 15, anchor: "end" as const },
+      { x: cx, y: cy - 10, anchor: "middle" as const },
+      { x: cx, y: cy + 19, anchor: "middle" as const },
+    ];
+    const boxOf = (s: (typeof spots)[number]): Box => {
+      const x0 = s.anchor === "start" ? s.x : s.anchor === "end" ? s.x - w : s.x - w / 2;
+      return { x0, x1: x0 + w, y0: s.y - 11, y1: s.y + 2 };
+    };
+    const inside = (b: Box) => b.x0 >= 2 && b.x1 <= W - 2 && b.y0 >= 2 && b.y1 <= height - 2;
+    const spot = spots.find((s) => inside(boxOf(s)) && !taken.some((t) => overlaps(t, boxOf(s)))) ?? spots.find((s) => inside(boxOf(s))) ?? spots[0];
+    taken.push(boxOf(spot));
+    return { cx, cy, text, ...spot };
+  });
+}
+
 /**
  * A world map (Equal Earth projection): places as labelled dots, countries
  * shaded (a colour scale when they carry values), and routes as great-circle
@@ -127,11 +159,16 @@ export function MapVisual({ data }: { data: MapData }) {
       const c = geo.geoPath(projection).centroid(target);
       projection.translate([projection.translate()[0] + (W / 2 - c[0]), projection.translate()[1] + (210 - c[1])]);
       [[x0, y0], [x1, y1]] = [[0, 0], [W, 420]];
-    } else {
-      projection.fitExtent([[20, 20], [W - 20, Math.min(560, 20 + ((W - 40) * (y1 - y0)) / (x1 - x0 || 1))]], target);
-      [[x0, y0], [x1, y1]] = geo.geoPath(projection).bounds(target);
     }
-    const height = Math.max(260, Math.min(600, Math.round(Math.max(y1, 280) + 24)));
+    let height = Math.max(260, Math.min(600, Math.round(Math.max(y1, 280) + 24)));
+    if (!(x1 - x0 < minSpan && y1 - y0 < minSpan)) {
+      // Centred, with room around it for labels (most sit to the right of their dot).
+      const innerW = W - 170;
+      const innerH = Math.min(460, Math.max(1, (innerW * (y1 - y0)) / (x1 - x0 || 1)));
+      height = Math.max(240, Math.round(innerH + 110));
+      const top = (height - innerH) / 2;
+      projection.fitExtent([[50, top], [50 + innerW, top + innerH]], target);
+    }
     const path = geo.geoPath(projection);
     const values = shaded.filter((s) => s.f).map((s) => s.r.value).filter((v): v is number => v !== undefined && Number.isFinite(v));
     const lo = values.length ? Math.min(...values) : 0;
@@ -190,18 +227,16 @@ export function MapVisual({ data }: { data: MapData }) {
             </g>
           );
         })}
-        {data.places.map((p, i) => {
-          const at = projection([p.lon, p.lat]);
-          if (!at) return null;
-          return (
+        {placeLabels(data.places, projection, height).map((pl, i) =>
+          pl ? (
             <g key={`p${i}`}>
-              <circle cx={at[0]} cy={at[1]} r={4.5} className="fill-highlight stroke-background" strokeWidth={1.5} />
-              <text x={at[0] + 7} y={at[1] - 6} fontSize={11.5} className="fill-foreground font-semibold" paintOrder="stroke" stroke="var(--background)" strokeWidth={3}>
-                {p.label ?? p.name}
+              <circle cx={pl.cx} cy={pl.cy} r={4.5} className="fill-highlight stroke-background" strokeWidth={1.5} />
+              <text x={pl.x} y={pl.y} textAnchor={pl.anchor} fontSize={11.5} className="fill-foreground font-semibold" paintOrder="stroke" stroke="var(--background)" strokeWidth={3}>
+                {pl.text}
               </text>
             </g>
-          );
-        })}
+          ) : null,
+        )}
       </SvgStage>
       {(model.valued || model.missing.length > 0) && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
