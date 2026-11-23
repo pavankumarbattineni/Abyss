@@ -261,19 +261,28 @@ _FORMATS: tuple[VisualFormat, ...] = (
     ),
     VisualFormat(
         "map",
-        "places, countries and routes on a world map",
-        '{"format":"map","title","places"?:[{"name","lat","lon","label"?}],'
+        "an interactive world map: places, journeys, routes and countries",
+        '{"format":"map","title","groups"?:[{"id","label"}],'
+        '"places"?:[{"name","lat","lon","label"?,"detail"?,"group"?}],'
+        '"paths"?:[{"via":[place names in order],"label"?,"group"?,"dashed"?}],'
         '"regions"?:[{"name":"country","value"?,"label"?}],'
         '"routes"?:[{"from":[lat,lon],"to":[lat,lon],"label"?}],"valueLabel"?}\n'
-        '- Countries by English name; "value" shades them on a colour scale. Real '
-        "coordinates only. The map zooms to what it shows.",
+        "- Coordinates from the find_places tool (or ones you are certain of); never guess. "
+        '"detail": a sentence shown when the place is clicked.\n'
+        '- A journey or trade route: its places in order and one "paths" entry through '
+        'them by name. "groups" colour stages or regions (each place/path names its '
+        'group) with a legend that filters them. Countries by English name; "value" '
+        "shades them on a colour scale.",
     ),
     VisualFormat(
         "image",
-        "a real photo or illustration from Wikimedia Commons",
-        '{"format":"image","title"?,"src","page","alt","caption"?,"author","license"}\n'
+        "real photos or illustrations from Wikimedia Commons",
+        '{"format":"image","title"?,"src","page","alt","caption"?,"author","license"} or, '
+        'for 2-4 related images side by side, {"format":"image","title"?,"images":'
+        '[{"src","page","alt","caption"?,"author","license"}]}\n'
         "- Only from the search_images tool: copy src, page, author and license exactly "
-        "as it returned them. Never invent or guess an image URL.",
+        "as it returned them. Never invent or guess an image URL. Put each image in the "
+        "section it illustrates.",
     ),
 )
 

@@ -10,6 +10,7 @@ Only the search words leave the server: no user or conversation data.
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import logging
@@ -96,26 +97,43 @@ async def _search(query: str, limit: int) -> list[dict]:
         return parse_results(response.json())
 
 
+MAX_QUERIES = 5
+
+
+async def _search_safely(query: str, limit: int) -> list[dict] | None:
+    try:
+        return await _search(query, limit)
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("search_images failed: %s", type(exc).__name__)
+        return None
+
+
 @tool("search_images")
-async def search_images(query: str, limit: int = 4) -> str:
+async def search_images(queries: list[str], limit: int = 3) -> str:
     """Find real images (photos, diagrams, illustrations) on Wikimedia Commons.
 
     Use it when seeing the real thing helps: an organism, a place, a landmark,
     an artwork, an instrument, a historical photo, a labelled anatomical or
-    scientific diagram. `query`: a few English keywords naming the subject
-    (e.g. "mitochondrion diagram", "Taj Mahal"). Returns up to `limit` (1-6)
-    images, best match first, each with src, page, author and license: show
-    one with a ```visual {"format":"image"} block, copying those fields exactly.
+    scientific diagram. `queries`: one to five searches at once, each a few
+    English keywords naming one subject (e.g. ["mitochondrion diagram",
+    "Taj Mahal"]) -- one per section that needs an image. Returns up to `limit`
+    (1-6) images per query, best match first, each with src, page, author and
+    license: show them with ```visual {"format":"image"} blocks, copying those
+    fields exactly.
     """
-    query = " ".join(str(query or "").split())[:200]
-    if not query:
-        return "Give a few keywords describing the image to look for."
-    limit = max(1, min(MAX_RESULTS, int(limit or 4)))
-    try:
-        results = await _search(query, limit)
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("search_images failed: %s", type(exc).__name__)
-        return "Image search is unavailable right now. Answer without an image."
-    if not results:
-        return f'No images found on Wikimedia Commons for "{query}". Try other keywords, or answer without an image.'
-    return json.dumps(results, ensure_ascii=False)
+    if isinstance(queries, str):
+        queries = [queries]
+    cleaned = list(dict.fromkeys(" ".join(str(q or "").split())[:200] for q in queries or []))
+    cleaned = [q for q in cleaned if q][:MAX_QUERIES]
+    if not cleaned:
+        return "Give one or more searches, each a few keywords describing an image."
+    limit = max(1, min(MAX_RESULTS, int(limit or 3)))
+    found = await asyncio.gather(*(_search_safely(q, limit) for q in cleaned))
+    if all(r is None for r in found):
+        return "Image search is unavailable right now. Answer without images."
+    if len(cleaned) == 1:
+        if not found[0]:
+            return f'No images found on Wikimedia Commons for "{cleaned[0]}". Try other keywords, or answer without an image.'
+        return json.dumps(found[0], ensure_ascii=False)
+    out = {q: (r or "no images found -- try other keywords or skip this image") for q, r in zip(cleaned, found)}
+    return json.dumps(out, ensure_ascii=False)

@@ -105,9 +105,29 @@ export const SAMPLES = {
   },
   map: {
     format: "map",
-    places: [{ name: "Delhi", lat: 28.61, lon: 77.21 }],
-    regions: [{ name: "India", value: 1428 }, { name: "USA", value: 335 }, { name: "Atlantis", value: 1 }],
+    title: "Silk Road: Xi'an to Constantinople",
+    groups: [{ id: "china", label: "China" }, { id: "central", label: "Central Asia" }, { id: "west", label: "Persia to Byzantium" }],
+    places: [
+      { name: "Xi'an", lat: 34.2611, lon: 108.9422, group: "china", detail: "Eastern start: the Tang capital Chang'an." },
+      { name: "Dunhuang", lat: 40.1411, lon: 94.6639, group: "china" },
+      { name: "Kashgar", lat: 39.4681, lon: 75.9938, group: "china" },
+      { name: "Samarkand", lat: 39.6547, lon: 66.9758, group: "central" },
+      { name: "Bukhara", lat: 39.7747, lon: 64.4286, group: "central" },
+      { name: "Merv", lat: 37.6628, lon: 62.1925, group: "central" },
+      { name: "Baghdad", lat: 33.3153, lon: 44.3661, group: "west" },
+      { name: "Constantinople", lat: 41.0125, lon: 28.98, group: "west" },
+    ],
+    paths: [{ via: ["Xi'an", "Dunhuang", "Kashgar", "Samarkand", "Bukhara", "Merv", "Baghdad", "Constantinople", "Atlantis"], label: "Main overland route" }],
+    regions: [{ name: "India", value: 1428 }, { name: "USA", value: 335 }],
     routes: [{ from: [28.61, 77.21], to: [40.71, -74.0], label: "flight" }],
+  },
+  image_gallery: {
+    format: "image",
+    title: "Mitochondria",
+    images: [
+      { src: "https://upload.wikimedia.org/wikipedia/commons/0/0c/M.jpg", page: "https://commons.wikimedia.org/wiki/File:M.jpg", caption: "Under a microscope", author: "A", license: "CC0" },
+      { src: "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1a/x.svg/960px-x.svg.png", caption: "Diagram", author: "B", license: "CC BY-SA 4.0" },
+    ],
   },
   image: {
     format: "image",

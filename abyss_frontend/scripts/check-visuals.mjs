@@ -79,6 +79,7 @@ assert.deepEqual(Object.keys(RENDERERS).filter((f) => !(f in SAMPLES)), [], "a f
 const rejects = [
   [{ format: "image", src: "https://evil.example.com/a.png" }, "src"],
   [{ format: "image", src: "http://upload.wikimedia.org/a.png" }, "src"],
+  [{ format: "image", images: [{ src: "https://upload.wikimedia.org/a.png" }, { src: "https://evil.example.com/b.png" }] }, "images"],
   [{ format: "venn", sets: [{ id: "a", label: "A" }] }, "sets"],
 ];
 for (const [spec, field] of rejects) {

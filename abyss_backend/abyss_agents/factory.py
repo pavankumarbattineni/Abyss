@@ -40,6 +40,8 @@ from abyss_agents.middleware import (
 from abyss_agents.naming import to_tool_name
 from abyss_agents.prompts import build_parent_prompt, build_sub_agent_prompt
 from abyss_agents.images import search_images
+from abyss_agents.places import find_places
+from abyss_agents.visual_repair import VisualRepairMiddleware
 from abyss_agents.visual_formats import VisualFormatMiddleware, get_visual_format
 from abyss_agents.skills import LOAD_SKILL_TOOL_NAME, build_skill_tool, load_skill_catalogs
 from abyss_agents.subagent import build_sub_agent_tool
@@ -212,6 +214,9 @@ async def build_agent(
     middleware += [
         _model_retry(),
         ActOrAnswerGuard(),
+        # Broken visual blocks in the finished answer are rewritten (outside the
+        # continuation, so it sees the whole joined reply).
+        VisualRepairMiddleware(llm),
         # A reply cut off at the output limit is continued until complete.
         ContinueCutOffAnswer(constants.MAX_ANSWER_CONTINUATIONS),
         # A provider outage part-way through a reply: tried again, continuing what was shown.
@@ -234,9 +239,10 @@ async def build_agent(
     graph = create_agent(
         llm,
         # get_visual_format / load_skill: a visual format's spec or a skill's
-        # instructions, looked up on demand; search_images: real images from
-        # Wikimedia Commons for the `image` visual.
-        [*parent_tools, get_visual_format, search_images, *skill_tools, *sub_tools],
+        # instructions, looked up on demand; search_images / find_places: real
+        # images (Wikimedia Commons) and coordinates (Wikipedia) for the
+        # `image` and `map` visuals.
+        [*parent_tools, get_visual_format, search_images, find_places, *skill_tools, *sub_tools],
         system_prompt=build_parent_prompt(
             agent_record.system_prompt, sub_options, include_reasoning=prompt_reasoning,
             has_skills=bool(skill_tools),

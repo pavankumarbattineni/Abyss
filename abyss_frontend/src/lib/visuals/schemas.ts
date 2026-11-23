@@ -517,7 +517,19 @@ export const stepsSchema = z.object({
 export const mapSchema = z.object({
   ...base,
   format: z.literal("map"),
-  places: optList(z.object({ name: text, lat: num, lon: num, label: optText }), 40),
+  /** Stages or regions: each colours its places and paths, with a legend that filters them. */
+  groups: optList(z.object({ id, label: text }), 8),
+  places: optList(z.object({ name: text, lat: num, lon: num, label: optText, detail: optText, group: id.optional().catch(undefined) }), 60),
+  /** A journey through places in order: names of `places`, or [lat, lon] points. */
+  paths: optList(
+    z.object({
+      via: z.array(z.union([z.string().trim().min(1), z.tuple([num, num])])).min(2).max(60),
+      label: optText,
+      group: id.optional().catch(undefined),
+      dashed: flag,
+    }),
+    12,
+  ),
   /** Countries by name, shaded; `value` drives a colour scale. */
   regions: optList(z.object({ name: text, value: num.optional().catch(undefined), label: optText }), 60),
   routes: optList(z.object({ from: z.tuple([num, num]), to: z.tuple([num, num]), label: optText }), 12),
@@ -526,9 +538,7 @@ export const mapSchema = z.object({
 
 /** Only Wikimedia's servers: an image found with the search_images tool, never an arbitrary URL. */
 export const WIKIMEDIA_IMAGE = /^https:\/\/(upload|thumb)\.wikimedia\.org\//;
-export const imageSchema = z.object({
-  ...base,
-  format: z.literal("image"),
+const wikimediaImage = z.object({
   src: z.string().trim().regex(WIKIMEDIA_IMAGE, "the image must come from Wikimedia (upload. or thumb.wikimedia.org)"),
   page: z.string().trim().url().optional().catch(undefined),
   alt: optText,
@@ -536,6 +546,29 @@ export const imageSchema = z.object({
   author: optText,
   license: optText,
 });
+export type WikimediaImage = z.output<typeof wikimediaImage>;
+/** One image (its fields at the top level) or a gallery of up to 4 ("images"). */
+export const imageSchema = z
+  .object({
+    ...base,
+    format: z.literal("image"),
+    images: z.array(wikimediaImage).min(1).optional(),
+    src: z.string().optional(),
+    page: z.string().optional(),
+    alt: z.string().optional(),
+    caption: z.string().optional(),
+    author: z.string().optional(),
+    license: z.string().optional(),
+  })
+  .transform((d, ctx) => {
+    if (d.images) return { title: d.title, format: d.format, images: d.images.slice(0, 4) };
+    const one = wikimediaImage.safeParse(d);
+    if (!one.success) {
+      for (const issue of one.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
+      return z.NEVER;
+    }
+    return { title: d.title, format: d.format, images: [one.data] };
+  });
 
 export const VISUAL_SCHEMAS = {
   flowchart: flowchartSchema,

@@ -38,6 +38,7 @@ function parseSseFrame(frame: string): StreamEvent | null {
     case "synthesis_start":
     case "token":
     case "answer_rewind":
+    case "answer_replace":
     case "thread_title":
     case "done":
     case "error":
