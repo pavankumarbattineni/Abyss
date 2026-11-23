@@ -134,3 +134,52 @@ def test_stock_photo_sites_are_never_shown():
         {"title": "Hogwarts Castle in the films", "url": "https://www.cbr.com/x", "properties": {"url": "https://static0.cbrimages.com/hp.jpg"}},
     ]}
     assert [r["source"] for r in parse_brave(stock)] == ["cbr.com"]
+
+
+def test_both_sources_are_searched_at_the_same_time(monkeypatch):
+    # Each source's mock waits until the other has started: run one after the
+    # other, the first would time out.
+    started = {"commons": asyncio.Event(), "web": asyncio.Event()}
+
+    async def handler(request):
+        mine, other = ("web", "commons") if request.url.host == "api.search.brave.com" else ("commons", "web")
+        started[mine].set()
+        await asyncio.wait_for(started[other].wait(), timeout=2)
+        return httpx.Response(200, json=BRAVE if mine == "web" else {})
+
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(images.httpx, "AsyncClient", lambda **kw: _REAL_CLIENT(transport=transport, **kw))
+    monkeypatch.setattr(web_images, "brave_api_key", lambda: "test-key")
+    out = json.loads(asyncio.run(search_images.ainvoke({"queries": ["Harry Potter poster"]})))
+    assert [r["source"] for r in out] == ["example.com"]
+
+
+def test_a_throttled_web_search_is_retried(monkeypatch):
+    calls = {"brave": 0}
+
+    def handler(request):
+        if request.url.host == "api.search.brave.com":
+            calls["brave"] += 1
+            return httpx.Response(429, headers={"retry-after": "0"}) if calls["brave"] == 1 else httpx.Response(200, json=BRAVE)
+        return httpx.Response(200, json={})
+
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(images.httpx, "AsyncClient", lambda **kw: _REAL_CLIENT(transport=transport, **kw))
+    monkeypatch.setattr(web_images, "brave_api_key", lambda: "test-key")
+    out = json.loads(asyncio.run(search_images.ainvoke({"queries": ["Harry Potter poster"]})))
+    assert calls["brave"] == 2 and len(out) == 1
+
+
+def test_the_cache_stays_bounded_with_web_results(monkeypatch):
+    monkeypatch.setattr(images, "_CACHE_MAX", 3)
+    _route(monkeypatch, commons={}, brave=BRAVE)
+    for q in ("Harry Potter a", "Harry Potter b", "Harry Potter c"):
+        asyncio.run(search_images.ainvoke({"queries": [q]}))
+    assert len(images._cache) <= 3  # commons and web entries together
+    assert ("web:harry potter c", 3) in images._cache  # the newest stays
+
+
+def test_no_results_message_names_no_single_source(monkeypatch):
+    _route(monkeypatch, commons={}, brave={"results": []})
+    out = asyncio.run(search_images.ainvoke({"queries": ["Harry Potter poster"]}))
+    assert out.startswith('No images found for "Harry Potter poster"') and "Wikimedia" not in out
