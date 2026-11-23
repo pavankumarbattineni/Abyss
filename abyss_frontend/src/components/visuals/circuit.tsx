@@ -114,8 +114,12 @@ function Symbol({ kind }: { kind: Part["kind"] }): ReactNode {
   }
 }
 
+const labelOf = (part: Part) => [part.label, part.value].filter(Boolean).join(" ");
+/** A part's slot: wide enough for its symbol and its label. */
+const partWidth = (part: Part) => Math.max(PART_W, Math.round(labelOf(part).length * 6.8) + 16);
+
 function Labelled({ part, x, y, vertical = false }: { part: Part; x: number; y: number; vertical?: boolean }) {
-  const text = [part.label, part.value].filter(Boolean).join(" ");
+  const text = labelOf(part);
   return (
     <g>
       <g transform={`translate(${x} ${y})${vertical ? " rotate(-90)" : ""}`}>
@@ -124,7 +128,8 @@ function Labelled({ part, x, y, vertical = false }: { part: Part; x: number; y: 
       {text && (
         <text
           x={vertical ? x - 24 : x}
-          y={vertical ? y : y - 20}
+          // Above the symbol (an LED's light arrows reach higher).
+          y={vertical ? y : y - (part.kind === "led" ? 27 : 21)}
           dy={vertical ? "0.35em" : undefined}
           textAnchor={vertical ? "end" : "middle"}
           fontSize={12}
@@ -147,9 +152,12 @@ export function CircuitVisual({ data }: { data: CircuitData }) {
   const sourceFirst = items.length > 0 && !("parallel" in items[0]) && SOURCES.has((items[0] as Part).kind);
   const source = sourceFirst ? (items[0] as Part) : null;
   const top = sourceFirst ? items.slice(1) : items;
-  const widthOf = (item: CircuitItem) => ("parallel" in item ? Math.max(...item.parallel.map((b) => b.length)) * PART_W + 40 : PART_W);
+  const branchWidth = (branch: Part[]) => branch.reduce((sum, p) => sum + partWidth(p), 0);
+  const widthOf = (item: CircuitItem) => ("parallel" in item ? Math.max(...item.parallel.map(branchWidth)) + 40 : partWidth(item));
   const branchesDeep = Math.max(1, ...top.map((item) => ("parallel" in item ? item.parallel.length : 1)));
-  const left = 70;
+  // Room on the left for the source's label, which sits beside it.
+  const sourceText = source ? labelOf(source) : "";
+  const left = Math.max(70, 40 + Math.round(sourceText.length * 7));
   const y0 = 50;
   const yBottom = y0 + Math.max(150, (branchesDeep - 1) * BRANCH_GAP + 80);
   // left + 20 lead-in + the parts + 20 before the right corner + 40 margin.
@@ -171,14 +179,17 @@ export function CircuitVisual({ data }: { data: CircuitData }) {
       );
       item.parallel.forEach((branch, j) => {
         const by = y0 + j * BRANCH_GAP;
-        const span = branch.length * PART_W;
+        const span = branchWidth(branch);
         const start = (a + b) / 2 - span / 2;
         pieces.push(<line key={`bw${i}-${j}a`} x1={a} x2={start} y1={by} y2={by} className={S} strokeWidth={1.8} />);
         pieces.push(<line key={`bw${i}-${j}b`} x1={start + span} x2={b} y1={by} y2={by} className={S} strokeWidth={1.8} />);
+        let px = start;
         branch.forEach((p, k) => {
-          const cx = start + k * PART_W + PART_W / 2;
-          pieces.push(<line key={`bg${i}-${j}-${k}`} x1={cx - PART_W / 2} x2={cx - 30} y1={by} y2={by} className={S} strokeWidth={1.8} />);
-          pieces.push(<line key={`bh${i}-${j}-${k}`} x1={cx + 30} x2={cx + PART_W / 2} y1={by} y2={by} className={S} strokeWidth={1.8} />);
+          const pw = partWidth(p);
+          const cx = px + pw / 2;
+          px += pw;
+          pieces.push(<line key={`bg${i}-${j}-${k}`} x1={cx - pw / 2} x2={cx - 30} y1={by} y2={by} className={S} strokeWidth={1.8} />);
+          pieces.push(<line key={`bh${i}-${j}-${k}`} x1={cx + 30} x2={cx + pw / 2} y1={by} y2={by} className={S} strokeWidth={1.8} />);
           pieces.push(<Labelled key={`bp${i}-${j}-${k}`} part={p} x={cx} y={by} />);
         });
         pieces.push(<circle key={`ja${i}-${j}`} cx={a} cy={by} r={3} className="fill-foreground" />, <circle key={`jb${i}-${j}`} cx={b} cy={by} r={3} className="fill-foreground" />);

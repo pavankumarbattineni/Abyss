@@ -1,31 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import katex from "katex";
-import "katex/contrib/mhchem";
 import { ChevronLeft, ChevronRight, ListOrdered } from "lucide-react";
 
 import { Button } from "@/components/ui";
+import { richMathHtml as richText, tex } from "@/lib/rich-math";
 import { cn } from "@/lib/utils";
 import type { StepsData } from "@/lib/visuals/schemas";
-
-const escape = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-function tex(source: string, display: boolean): string {
-  // KaTeX escapes everything it outputs; trust:false blocks \href and friends.
-  return katex.renderToString(source, { displayMode: display, throwOnError: false, strict: "ignore", trust: false });
-}
-
-/** Plain text with $$...$$ and $...$ math, as HTML (text escaped, math by KaTeX). */
-function richText(text: string): string {
-  return text
-    .split(/(\$\$[\s\S]+?\$\$|(?<![\\$\w])\$(?=[^\s$])[^$\n]*?[^\s$\\]\$(?![\d$]))/)
-    .map((part, i) => {
-      if (i % 2 === 0) return escape(part);
-      return part.startsWith("$$") ? tex(part.slice(2, -2), false) : tex(part.slice(1, -1), false);
-    })
-    .join("");
-}
 
 function ArrayState({ values, highlight, pointers }: { values: (number | string)[]; highlight: number[]; pointers: Record<string, number> }) {
   const hot = new Set(highlight);

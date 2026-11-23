@@ -62,6 +62,7 @@ import {
   type TableComponent,
   type TimelineComponent,
 } from "@/lib/interactive";
+import { hasMath, richMathHtml } from "@/lib/rich-math";
 import { cn } from "@/lib/utils";
 import { linearFit, niceTicks } from "@/lib/visuals/science";
 
@@ -190,7 +191,7 @@ function TableView({ c }: { c: TableComponent }) {
                       onClick={() => toggle(i)}
                       className="inline-flex items-center gap-1 hover:text-foreground"
                     >
-                      {col}
+                      <MathText text={col} />
                       <Icon className={cn("size-3", !active && "text-muted-foreground/60")} />
                     </button>
                   </th>
@@ -208,7 +209,7 @@ function TableView({ c }: { c: TableComponent }) {
                       key={i}
                       className={cn("px-3 py-1.5 align-top", typeof v === "number" && "text-right tabular-nums")}
                     >
-                      {typeof v === "number" ? v.toLocaleString() : v === null ? "—" : String(v)}
+                      {typeof v === "number" ? v.toLocaleString() : v === null ? "—" : <MathText text={String(v)} />}
                     </td>
                   );
                 })}
@@ -492,6 +493,11 @@ function BoxPlotView({ c }: { c: BoxPlotComponent }) {
       )}
     </svg>
   );
+}
+
+/** A cell or label: plain text, or text with inline $...$ math rendered by KaTeX. */
+function MathText({ text }: { text: string }) {
+  return hasMath(text) ? <span dangerouslySetInnerHTML={{ __html: richMathHtml(text) }} /> : <>{text}</>;
 }
 
 function PieChartView({ c }: { c: PieChartComponent }) {

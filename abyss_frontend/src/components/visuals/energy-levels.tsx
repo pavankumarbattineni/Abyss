@@ -67,6 +67,31 @@ function Levels({ data }: { data: EnergyLevelsData }) {
   const left = 110;
   const right = W - 150;
   const n = Math.max(1, data.transitions.length);
+  // Labels of close levels are pushed apart (top to bottom) so they never overlap.
+  const labelY = new Map<string, number>();
+  let last = -Infinity;
+  for (const l of [...data.levels].sort((a, b) => b.energy - a.energy)) {
+    const y = Math.max(sy(l.energy), last + 14);
+    labelY.set(l.id, y);
+    last = y;
+  }
+  // Transition labels sit just past their arrowhead (below the target level
+  // for emission, above it for absorption); one that would overlap an earlier
+  // label moves a row further out.
+  const placed: { x: number; y: number; w: number }[] = [];
+  const transitionLabelY = data.transitions.map((t, i) => {
+    const a = byId.get(t.from);
+    const b = byId.get(t.to);
+    if (!a || !b || !t.label) return 0;
+    const x = left + ((right - left) * (i + 1)) / (n + 1) + 6;
+    const w = t.label.length * 6.4;
+    const down = sy(b.energy) > sy(a.energy);
+    const step = down ? 15 : -15;
+    let y = sy(b.energy) + (down ? 16 : -16);
+    while (placed.some((p) => x < p.x + p.w && p.x < x + w && Math.abs(p.y - y) < 15)) y += step;
+    placed.push({ x, y, w });
+    return y;
+  });
   return (
     <SvgStage
       width={W}
@@ -88,10 +113,10 @@ function Levels({ data }: { data: EnergyLevelsData }) {
         return (
           <g key={l.id}>
             <line x1={left} x2={right} y1={y} y2={y} className="stroke-foreground" strokeWidth={2.2} />
-            <text x={right + 10} y={y} dy="0.35em" fontSize={12.5} className="fill-foreground font-medium">
+            <text x={right + 10} y={labelY.get(l.id) ?? y} dy="0.35em" fontSize={12.5} className="fill-foreground font-medium">
               {l.label}
             </text>
-            <text x={left - 8} y={y} dy="0.35em" textAnchor="end" fontSize={10.5} className="fill-muted-foreground tabular-nums">
+            <text x={left - 8} y={labelY.get(l.id) ?? y} dy="0.35em" textAnchor="end" fontSize={10.5} className="fill-muted-foreground tabular-nums">
               {formatTick(l.energy)}
             </text>
           </g>
@@ -106,7 +131,7 @@ function Levels({ data }: { data: EnergyLevelsData }) {
           <g key={i}>
             <line x1={x} x2={x} y1={sy(a.energy)} y2={sy(b.energy)} stroke="var(--highlight)" strokeWidth={2} markerEnd={`url(#${uid}-t)`} />
             {t.label && (
-              <text x={x + 6} y={(sy(a.energy) + sy(b.energy)) / 2} dy="0.35em" fontSize={11.5} className="fill-foreground" paintOrder="stroke" stroke="var(--background)" strokeWidth={4}>
+              <text x={x + 6} y={transitionLabelY[i]} dy="0.35em" fontSize={11.5} className="fill-foreground" paintOrder="stroke" stroke="var(--background)" strokeWidth={4}>
                 {t.label}
               </text>
             )}

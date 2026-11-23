@@ -432,7 +432,22 @@ export const vennSchema = z.object({
 export const moleculeSchema = z.object({
   ...base,
   format: z.literal("molecule"),
-  molecules: list(z.object({ smiles: text, name: optText, caption: optText }), 6),
+  // A misspelt key ("smile", "SMILES", "smils") still counts; an entry with no
+  // structure at all is dropped rather than failing the whole visual.
+  molecules: z
+    .array(z.unknown())
+    .transform((items) =>
+      items.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const entry = item as Record<string, unknown>;
+        const key = Object.keys(entry).find((k) => /^smi/i.test(k));
+        const parsed = z
+          .object({ smiles: text, name: optText, caption: optText })
+          .safeParse({ ...entry, smiles: key ? entry[key] : undefined });
+        return parsed.success ? [parsed.data] : [];
+      }).slice(0, 6),
+    )
+    .refine((molecules) => molecules.length > 0, "give at least one molecule with a SMILES string"),
 });
 
 export const periodicTableSchema = z.object({

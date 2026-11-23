@@ -19,10 +19,15 @@ from abyss_agents.visual_specs import catalog, requested_formats, spec_for
 
 @tool("get_visual_format")
 def get_visual_format(name: str) -> str:
-    """Get the spec for drawing a visual format (flowchart, diagram, blueprint, tree,
-    timeline, roadmap, cycle, layers, iceberg, decision-matrix, canvas, infographic,
-    handwritten, sketchnotes, exploded-view). Call it before writing a ```visual block."""
+    """Get the spec for drawing a visual format. Call it before writing a ```visual block."""
     return spec_for(name) or f"Unknown format {name!r}. Formats: {catalog()}."
+
+
+# The formats named in the tool's description come from the one catalog.
+get_visual_format.description = (
+    f"Get the spec for drawing a visual format ({catalog()}). "
+    "Call it before writing a ```visual block."
+)
 
 
 def _text_of(message: HumanMessage) -> str:
@@ -57,7 +62,8 @@ class VisualFormatMiddleware(AgentMiddleware):
         specs = "\n\n".join(spec_for(name) for name in names)
         if len(names) == 1:
             addition = (
-                f"## Requested format\nThe user asked for `/{names[0]}`: answer with it "
+                f"## Requested format\nThe user asked for `/{names[0]}`: answer with it -- "
+                f"at most 2 short sentences of context, then ONE ```visual block "
                 f"(no need to call get_visual_format).\n{specs}"
             )
         else:

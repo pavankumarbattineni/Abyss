@@ -17,6 +17,16 @@ function loadSmiles(): Promise<SmilesModule> {
 
 const SIZE = { width: 280, height: 220 };
 
+// A lone heavy atom ("O", "C", "N") would be drawn as one huge label (OH2):
+// writing its hydrogens out shows the bonds instead.
+const VALENCE: Record<string, number> = { B: 3, C: 4, N: 3, O: 2, P: 3, S: 2, F: 1, Cl: 1, Br: 1, I: 1 };
+function withExplicitHydrogens(smiles: string): string {
+  const atom = smiles.trim();
+  const k = VALENCE[atom];
+  if (!k) return smiles;
+  return k === 1 ? `[H]${atom}` : `[H]${atom}${"([H])".repeat(k - 2)}[H]`;
+}
+
 function Structure({ smiles, name, caption, dark }: { smiles: string; name?: string; caption?: string; dark: boolean }) {
   const ref = useRef<SVGSVGElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,10 +43,11 @@ function Structure({ smiles, name, caption, dark }: { smiles: string; name?: str
           fontSizeSmall: 5,
           padding: 16,
           compactDrawing: false,
-          explicitHydrogens: false,
+          // Only the lone-atom molecules below carry hydrogens to show.
+          explicitHydrogens: withExplicitHydrogens(smiles) !== smiles,
         });
         SmilesDrawer.parse(
-          smiles,
+          withExplicitHydrogens(smiles),
           (tree) => {
             if (cancelled || !ref.current) return;
             ref.current.innerHTML = "";

@@ -154,6 +154,20 @@ export function PlotVisual({ data }: { data: PlotData }) {
   data.polar.forEach((c, i) => c.label && keyItems.push({ label: c.label, color: polarColors[i], dashed: c.dashed }));
   data.data.forEach((d, i) => d.label && keyItems.push({ label: d.label, color: dataColors[i] }));
 
+  // Point labels sit up-right of their point; one that would overlap an
+  // earlier label moves down a row.
+  const placed: { x: number; y: number; w: number }[] = [];
+  const pointLabelY = data.points.map((p) => {
+    const c = toPx({ x: value(p.at.x, scope), y: value(p.at.y, scope) });
+    let y = c.y - 8;
+    if (!p.label || !Number.isFinite(c.x) || !Number.isFinite(y)) return y;
+    const x = c.x + 8;
+    const w = p.label.length * 6.6;
+    while (placed.some((q) => x < q.x + q.w && q.x < x + w && Math.abs(q.y - y) < 14)) y += 14;
+    placed.push({ x, y, w });
+    return y;
+  });
+
   const label = data.title ?? "Graph";
   return (
     <div>
@@ -292,11 +306,12 @@ export function PlotVisual({ data }: { data: PlotData }) {
           const c = toPx({ x: value(p.at.x, scope), y: value(p.at.y, scope) });
           if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) return null;
           const color = p.color ? seriesColor(p.color, 0) : "var(--foreground)";
+          const ly = pointLabelY[i];
           return (
             <g key={`pt${i}`}>
               <circle cx={c.x} cy={c.y} r={4.5} fill={p.open ? "var(--background)" : color} stroke={color} strokeWidth={2} />
               {p.label && (
-                <text x={c.x + 8} y={c.y - 8} fontSize={12} className="fill-foreground font-medium">
+                <text x={c.x + 8} y={ly} fontSize={12} className="fill-foreground font-medium" paintOrder="stroke" stroke="var(--background)" strokeWidth={3}>
                   {p.label}
                 </text>
               )}

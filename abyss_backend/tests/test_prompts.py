@@ -100,11 +100,12 @@ def test_prompts_stay_within_their_size_budget():
     mixed requests, role changes, no forced tie-ins), which replaced a one-line
     "stay within your role" rule; +~40 (parent) for transparent live-preview
     pages; +~35 for math notation and subgraph-title quoting; +~45 each for link rules (titled, full URLs, no guessed hosts) and +~25 (with specialists) for
-    following the owner's routing to specialists; +~240 (parent) for the
+    following the owner's routing to specialists; +~270 (parent) for the
     science/geo visual formats: 12 more names, which format fits what is being
-    explained, the search_images rule, four more chart types and \ce chemistry."""
-    assert len(build_parent_prompt("", [], True, NOW)) < 8250
-    assert len(build_parent_prompt("", SUBS, True, NOW)) < 9500  # + delegation rules
+    explained, the search_images rule, four more chart types, mhchem chemistry and the note that native
+    graphs are interactive."""
+    assert len(build_parent_prompt("", [], True, NOW)) < 8450
+    assert len(build_parent_prompt("", SUBS, True, NOW)) < 9700  # + delegation rules
     assert len(build_sub_agent_prompt("", True, NOW)) < 3450
 
 

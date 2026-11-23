@@ -86,6 +86,10 @@ for (const [spec, field] of rejects) {
   assert.ok(!parsed.ok && parsed.errors.some((e) => e.startsWith(field)), `should reject ${JSON.stringify(spec)}: ${JSON.stringify(parsed)}`);
 }
 
+// Lenient: a misspelt molecule key still draws; an entry with no structure is dropped.
+const typo = m.parseVisual(JSON.stringify({ format: "molecule", molecules: [{ smiles: "O" }, { smils: "C", name: "Methane" }, { name: "nothing" }] }));
+assert.ok(typo.ok && typo.data.molecules.length === 2 && typo.data.molecules[1].smiles === "C", JSON.stringify(typo));
+
 // Lenient: a reversed or broken range is dropped (auto range), not fatal.
 const lenient = m.parseVisual(JSON.stringify({ format: "plot", x: [5, 1], y: [0, "2pi"], functions: [{ y: "x" }] }));
 assert.ok(lenient.ok && lenient.data.x === undefined && Math.abs(lenient.data.y[1] - 2 * Math.PI) < 1e-9, JSON.stringify(lenient));

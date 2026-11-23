@@ -103,3 +103,13 @@ def test_frontend_schemas_know_every_backend_format():
     block = schemas.read_text(encoding="utf-8").split("export const VISUAL_SCHEMAS = {", 1)[1].split("}", 1)[0]
     names = {m.strip('"') for m in re.findall(r'^\s*("?[a-z-]+"?):', block, re.M)}
     assert names == set(FORMATS)
+
+
+def test_tool_description_names_every_format():
+    assert all(name in get_visual_format.description for name in FORMATS)
+
+
+def test_requested_format_keeps_its_short_answer_rule():
+    system = _run([HumanMessage("/plot y = x^2")])
+    assert "at most 2 short sentences" in system and '"format":"plot"' in system
+    assert "at most 2 short sentences" not in spec_for("plot")

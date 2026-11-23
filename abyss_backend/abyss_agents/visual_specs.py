@@ -178,13 +178,15 @@ _FORMATS: tuple[VisualFormat, ...] = (
         '"params"?:[PARAM],"points"?:[{"id","at":[x,y],"label"?,"hidden"?}],'
         '"segments"?:[{"from":P,"to":P,"label"?,"dashed"?}],'
         '"vectors"?:[{"from":P,"to"?:P,"d"?:[dx,dy],"label"?}],'
-        '"circles"?:[{"center":P,"r","label"?}],"polygons"?:[{"points":[P,...],"label"?,"shade"?}],'
-        '"angles"?:[{"vertex":P,"from":P,"to":P,"label"?,"right"?}],'
+        '"circles"?:[{"center":P,"r","label"?}],"polygons"?:[{"points":[P,...],"label"?,"shade"?:true}],'
+        '"angles"?:[{"vertex":P,"from":P,"to":P,"label"?,"right"?:true}],'
         '"boxes"?:[{"at":[x,y],"w","h","angle"?,"label"?}],"notes"?:[{"at":[x,y],"text"}],'
         '"transform"?:{"matrix":[[a,b],[c,d]],"label"?}}\n'
         "- P is a point id or [x,y]; coordinates may be FORMULAS over params. Units are "
-        "equal on both axes. Label sides and angles with their values.\n"
-        '- Forces: a box for the body and "vectors" from its centre (label "mg", "N", '
+        "equal on both axes. Label sides with their lengths. Mark every angle with "
+        '"angles" (an arc at its vertex, labelled) -- never with notes.\n'
+        '- Forces: a box for the body (on a surface: centre h/2 above it along the '
+        'normal, "angle" = the slope) and "vectors" from its centre (label "mg", "N", '
         '"F"). "transform" adds a before/after toggle (linear maps).',
     ),
     VisualFormat(
@@ -291,8 +293,9 @@ _SHARED = {
 FORMATS: dict[str, VisualFormat] = {f.name: f for f in _FORMATS}
 
 _COMMON = (
-    "Reply with at most 2 short sentences of context, then ONE ```" + VISUAL_LANGUAGE
-    + " block holding the JSON below (valid JSON: double quotes, no comments). Fields "
+    "Put the JSON below in a ```" + VISUAL_LANGUAGE + " block where it helps the "
+    "answer; add another visual when it shows something different (valid JSON: "
+    "double quotes, no comments). Fields "
     "marked ? are optional. Labels at most ~6 words, details at most ~20. Facts follow "
     "the usual rules: only from tools, the user or well-established knowledge. "
     f"Icons, where allowed, are one of: {_ICONS}."
