@@ -16,6 +16,8 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -24,7 +26,10 @@ import {
   LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
@@ -39,20 +44,26 @@ import {
   computeCalculator,
   formatCompact,
   formatValue,
+  histogramBins,
   interactiveBlockToText,
   analyzeInteractiveBlock,
+  quartiles,
+  type BoxPlotComponent,
   type CalculatorComponent,
   type CalloutComponent,
   type CartesianChart,
   type ComparisonComponent,
+  type HistogramComponent,
   type InteractiveComponent,
   type MetricCards,
   type PieChartComponent,
   type ProgressComponent,
+  type ScatterChartComponent,
   type TableComponent,
   type TimelineComponent,
 } from "@/lib/interactive";
 import { cn } from "@/lib/utils";
+import { linearFit, niceTicks } from "@/lib/visuals/science";
 
 // Calculators with more inputs than this show the rest behind a toggle,
 // so the results stay in view.
@@ -233,7 +244,8 @@ function CartesianChartView({ c }: { c: CartesianChart }) {
     return row;
   });
   const isBar = c.type === "bar_chart";
-  const Chart = isBar ? BarChart : LineChart;
+  const isArea = c.type === "area_chart";
+  const Chart = isBar ? BarChart : isArea ? AreaChart : LineChart;
   return (
     <div>
       <SeriesLegend names={c.series.map((s) => s.name)} />
@@ -277,7 +289,19 @@ function CartesianChartView({ c }: { c: CartesianChart }) {
               }}
             />
             {c.series.map((s, j) =>
-              isBar ? (
+              isArea ? (
+                <Area
+                  key={j}
+                  dataKey={`s${j}`}
+                  name={s.name}
+                  type="monotone"
+                  stroke={SERIES[j % SERIES.length]}
+                  fill={SERIES[j % SERIES.length]}
+                  fillOpacity={0.2}
+                  strokeWidth={2}
+                  isAnimationActive={false}
+                />
+              ) : isBar ? (
                 <Bar
                   key={j}
                   dataKey={`s${j}`}
@@ -305,6 +329,168 @@ function CartesianChartView({ c }: { c: CartesianChart }) {
         </ResponsiveContainer>
       </div>
     </div>
+  );
+}
+
+/** x-y points per series; with `trend`, a dashed least-squares line per series. */
+function ScatterChartView({ c }: { c: ScatterChartComponent }) {
+  const xs = c.series.flatMap((s) => s.points.map((p) => p.x));
+  const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+  return (
+    <div>
+      <SeriesLegend names={c.series.map((s) => s.name)} />
+      <div className="h-64 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart margin={{ top: 8, right: 12, left: 0, bottom: c.xLabel ? 18 : 0 }}>
+            <CartesianGrid stroke="var(--border)" />
+            <XAxis
+              type="number"
+              dataKey="x"
+              domain={["auto", "auto"]}
+              tickLine={false}
+              axisLine={{ stroke: "var(--border)" }}
+              tick={AXIS_TICK}
+              tickFormatter={(v: number) => formatCompact(v)}
+              label={c.xLabel ? { value: c.xLabel, position: "insideBottom", offset: -12, fill: "var(--muted-foreground)", fontSize: 12 } : undefined}
+            />
+            <YAxis
+              type="number"
+              dataKey="y"
+              domain={["auto", "auto"]}
+              tickLine={false}
+              axisLine={false}
+              width={56}
+              tick={AXIS_TICK}
+              tickFormatter={(v: number) => formatCompact(v)}
+              label={c.yLabel ? { value: c.yLabel, angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 12 } : undefined}
+            />
+            <Tooltip
+              cursor={{ strokeDasharray: "3 3" }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const p = payload[0].payload as { x: number; y: number };
+                return (
+                  <TooltipBox>
+                    <p className="tabular-nums">
+                      {c.xLabel ?? "x"}: {formatValue(p.x)} · {c.yLabel ?? "y"}: {formatValue(p.y)}
+                    </p>
+                  </TooltipBox>
+                );
+              }}
+            />
+            {c.series.map((s, j) => (
+              <Scatter key={j} name={s.name} data={s.points} fill={SERIES[j % SERIES.length]} isAnimationActive={false} />
+            ))}
+            {c.trend &&
+              c.series.map((s, j) => {
+                const fit = linearFit(s.points);
+                return fit ? (
+                  <ReferenceLine
+                    key={`t${j}`}
+                    segment={[
+                      { x: x0, y: fit.slope * x0 + fit.intercept },
+                      { x: x1, y: fit.slope * x1 + fit.intercept },
+                    ]}
+                    stroke={SERIES[j % SERIES.length]}
+                    strokeDasharray="6 4"
+                    ifOverflow="extendDomain"
+                  />
+                ) : null;
+              })}
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function HistogramView({ c }: { c: HistogramComponent }) {
+  const bins = histogramBins(c.values, c.bins).map((b) => ({
+    label: `${formatCompact(b.from, c.format, c.currency)}-${formatCompact(b.to, c.format, c.currency)}`,
+    count: b.count,
+  }));
+  return (
+    <div className="h-60 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={bins} margin={{ top: 8, right: 8, left: 0, bottom: c.xLabel ? 18 : 0 }} barCategoryGap={1}>
+          <CartesianGrid vertical={false} stroke="var(--border)" />
+          <XAxis
+            dataKey="label"
+            tickLine={false}
+            axisLine={{ stroke: "var(--border)" }}
+            interval="preserveStartEnd"
+            minTickGap={8}
+            tick={AXIS_TICK}
+            label={c.xLabel ? { value: c.xLabel, position: "insideBottom", offset: -12, fill: "var(--muted-foreground)", fontSize: 12 } : undefined}
+          />
+          <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} tick={AXIS_TICK} />
+          <Tooltip
+            cursor={{ fill: "var(--muted)", opacity: 0.5 }}
+            content={({ active, payload, label }) =>
+              active && payload?.length ? (
+                <TooltipBox>
+                  <p className="font-medium">{label}</p>
+                  <p className="tabular-nums">{String(payload[0].value)} values</p>
+                </TooltipBox>
+              ) : null
+            }
+          />
+          <Bar dataKey="count" fill={SERIES[0]} isAnimationActive={false} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Box plots: whiskers min-max, box Q1-Q3, line at the median; one per group on a shared scale. */
+function BoxPlotView({ c }: { c: BoxPlotComponent }) {
+  const stats = c.groups.map((g) => ({ name: g.name, ...quartiles(g.values) }));
+  const lo = Math.min(...stats.map((s) => s.min));
+  const hi = Math.max(...stats.map((s) => s.max));
+  const ticks = niceTicks(lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05 || hi + 1, 5);
+  const t0 = Math.min(ticks[0], lo);
+  const t1 = Math.max(ticks[ticks.length - 1], hi);
+  const W = 560;
+  const H = 260;
+  const left = 56;
+  const top = 12;
+  const bottom = H - 32;
+  const y = (v: number) => bottom - ((v - t0) / (t1 - t0 || 1)) * (bottom - top);
+  const slot = (W - left - 12) / stats.length;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="block w-full" role="img" aria-label={c.title ?? "Box plot"}>
+      {ticks.map((t) => (
+        <g key={t}>
+          <line x1={left} x2={W - 12} y1={y(t)} y2={y(t)} stroke="var(--border)" />
+          <text x={left - 6} y={y(t)} dy="0.35em" textAnchor="end" fontSize={11} fill="var(--muted-foreground)">
+            {formatCompact(t, c.format, c.currency)}
+          </text>
+        </g>
+      ))}
+      {stats.map((s, i) => {
+        const cx = left + slot * (i + 0.5);
+        const bw = Math.min(56, slot * 0.5);
+        const color = SERIES[i % SERIES.length];
+        return (
+          <g key={s.name}>
+            <title>{`${s.name}: min ${formatValue(s.min)}, Q1 ${formatValue(s.q1)}, median ${formatValue(s.median)}, Q3 ${formatValue(s.q3)}, max ${formatValue(s.max)}`}</title>
+            <line x1={cx} x2={cx} y1={y(s.max)} y2={y(s.min)} stroke="var(--muted-foreground)" strokeWidth={1.4} />
+            <line x1={cx - bw / 4} x2={cx + bw / 4} y1={y(s.max)} y2={y(s.max)} stroke="var(--muted-foreground)" strokeWidth={1.4} />
+            <line x1={cx - bw / 4} x2={cx + bw / 4} y1={y(s.min)} y2={y(s.min)} stroke="var(--muted-foreground)" strokeWidth={1.4} />
+            <rect x={cx - bw / 2} y={y(s.q3)} width={bw} height={Math.max(1, y(s.q1) - y(s.q3))} fill={color} fillOpacity={0.25} stroke={color} strokeWidth={1.6} rx={3} />
+            <line x1={cx - bw / 2} x2={cx + bw / 2} y1={y(s.median)} y2={y(s.median)} stroke={color} strokeWidth={2.6} />
+            <text x={cx} y={H - 10} textAnchor="middle" fontSize={12} fill="var(--foreground)">
+              {s.name}
+            </text>
+          </g>
+        );
+      })}
+      {c.yLabel && (
+        <text transform={`translate(12 ${(top + bottom) / 2}) rotate(-90)`} textAnchor="middle" fontSize={12} fill="var(--muted-foreground)">
+          {c.yLabel}
+        </text>
+      )}
+    </svg>
   );
 }
 
@@ -652,7 +838,14 @@ function ComponentView({ c }: { c: InteractiveComponent }) {
       return <TableView c={c} />;
     case "bar_chart":
     case "line_chart":
+    case "area_chart":
       return <CartesianChartView c={c} />;
+    case "scatter_chart":
+      return <ScatterChartView c={c} />;
+    case "histogram":
+      return <HistogramView c={c} />;
+    case "box_plot":
+      return <BoxPlotView c={c} />;
     case "pie_chart":
       return <PieChartView c={c} />;
     case "progress":

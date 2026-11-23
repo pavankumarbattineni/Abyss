@@ -66,6 +66,38 @@ const cartesian = {
 };
 const barChart = z.object({ ...cartesian, type: z.literal("bar_chart") });
 const lineChart = z.object({ ...cartesian, type: z.literal("line_chart") });
+const areaChart = z.object({ ...cartesian, type: z.literal("area_chart") });
+
+// Numeric x-y data: scatter plots (with an optional least-squares trend line),
+// raw values binned into a histogram, and distributions as box plots.
+const pair = z
+  .union([z.tuple([num, num]), z.object({ x: num, y: num })])
+  .transform((p) => (Array.isArray(p) ? { x: p[0], y: p[1] } : p));
+const scatterChart = z.object({
+  ...base,
+  type: z.literal("scatter_chart"),
+  series: z.array(z.object({ name: text, points: list(pair).min(1) })).min(1).max(6),
+  xLabel: text.optional(),
+  yLabel: text.optional(),
+  trend: z.boolean().optional().catch(undefined),
+});
+const histogram = z.object({
+  ...base,
+  type: z.literal("histogram"),
+  values: list(num).min(2),
+  bins: z.union([z.number(), z.string().transform(Number)]).pipe(z.number().int().min(2).max(40)).optional().catch(undefined),
+  xLabel: text.optional(),
+  format,
+  currency,
+});
+const boxPlot = z.object({
+  ...base,
+  type: z.literal("box_plot"),
+  groups: z.array(z.object({ name: text, values: list(num).min(3) })).min(1).max(8),
+  yLabel: text.optional(),
+  format,
+  currency,
+});
 
 const pieChart = z.object({
   ...base,
@@ -175,6 +207,10 @@ const COMPONENT_SCHEMAS = {
   table,
   bar_chart: barChart,
   line_chart: lineChart,
+  area_chart: areaChart,
+  scatter_chart: scatterChart,
+  histogram,
+  box_plot: boxPlot,
   pie_chart: pieChart,
   progress,
   timeline,
@@ -185,7 +221,10 @@ const COMPONENT_SCHEMAS = {
 
 export type MetricCards = z.infer<typeof metricCards>;
 export type TableComponent = z.infer<typeof table>;
-export type CartesianChart = z.infer<typeof barChart> | z.infer<typeof lineChart>;
+export type CartesianChart = z.infer<typeof barChart> | z.infer<typeof lineChart> | z.infer<typeof areaChart>;
+export type ScatterChartComponent = z.infer<typeof scatterChart>;
+export type HistogramComponent = z.infer<typeof histogram>;
+export type BoxPlotComponent = z.infer<typeof boxPlot>;
 export type PieChartComponent = z.infer<typeof pieChart>;
 export type ProgressComponent = z.infer<typeof progress>;
 export type TimelineComponent = z.infer<typeof timeline>;
@@ -196,6 +235,9 @@ export type InteractiveComponent =
   | MetricCards
   | TableComponent
   | CartesianChart
+  | ScatterChartComponent
+  | HistogramComponent
+  | BoxPlotComponent
   | PieChartComponent
   | ProgressComponent
   | TimelineComponent
@@ -465,6 +507,30 @@ function markdownTable(columns: string[], rows: unknown[][]): string {
   ].join("\n");
 }
 
+/** Equal-width bins over the values (Sturges' rule when no count is given). */
+export function histogramBins(values: number[], bins?: number): { from: number; to: number; count: number }[] {
+  const v = values.filter(Number.isFinite);
+  if (!v.length) return [];
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const n = bins ?? Math.max(4, Math.min(20, Math.ceil(Math.log2(v.length) + 1)));
+  const width = (hi - lo) / n || 1;
+  const out = Array.from({ length: n }, (_, i) => ({ from: lo + i * width, to: lo + (i + 1) * width, count: 0 }));
+  for (const x of v) out[Math.min(n - 1, Math.floor((x - lo) / width))].count++;
+  return out;
+}
+
+/** Five-number summary (linear-interpolated quartiles). */
+export function quartiles(values: number[]): { min: number; q1: number; median: number; q3: number; max: number } {
+  const v = values.filter(Number.isFinite).sort((a, b) => a - b);
+  const at = (p: number) => {
+    const i = (v.length - 1) * p;
+    const lo = Math.floor(i);
+    return v[lo] + (v[Math.min(v.length - 1, lo + 1)] - v[lo]) * (i - lo);
+  };
+  return { min: v[0], q1: at(0.25), median: at(0.5), q3: at(0.75), max: v[v.length - 1] };
+}
+
 function componentToText(c: InteractiveComponent): string {
   const parts: string[] = [];
   if (c.title) parts.push(`**${c.title}**`);
@@ -479,8 +545,30 @@ function componentToText(c: InteractiveComponent): string {
     case "table":
       parts.push(markdownTable(c.columns, c.rows));
       break;
+    case "scatter_chart":
+      for (const s of c.series) {
+        parts.push(`${s.name}:`, markdownTable([c.xLabel ?? "x", c.yLabel ?? "y"], s.points.map((p) => [p.x, p.y])));
+      }
+      break;
+    case "histogram": {
+      const h = histogramBins(c.values, c.bins);
+      parts.push(markdownTable([c.xLabel ?? "Range", "Count"], h.map((b) => [`${formatValue(b.from, c.format, c.currency)}–${formatValue(b.to, c.format, c.currency)}`, b.count])));
+      break;
+    }
+    case "box_plot":
+      parts.push(
+        markdownTable(
+          ["", "Min", "Q1", "Median", "Q3", "Max"],
+          c.groups.map((g) => {
+            const q = quartiles(g.values);
+            return [g.name, ...[q.min, q.q1, q.median, q.q3, q.max].map((v) => formatValue(v, c.format, c.currency))];
+          }),
+        ),
+      );
+      break;
     case "bar_chart":
     case "line_chart":
+    case "area_chart":
       parts.push(
         markdownTable(
           ["", ...c.series.map((s) => s.name)],

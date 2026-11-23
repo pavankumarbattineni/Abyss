@@ -39,7 +39,29 @@ const FUNCTIONS: Record<string, (...args: number[]) => number> = {
   and: (...a) => (a.every(truthy) ? 1 : 0),
   or: (...a) => (a.some(truthy) ? 1 : 0),
   not: (x) => (truthy(x) ? 0 : 1),
+  // Trigonometry (radians) and friends, for plots and science formulas.
+  sin: Math.sin,
+  cos: Math.cos,
+  tan: Math.tan,
+  asin: Math.asin,
+  acos: Math.acos,
+  atan: Math.atan,
+  atan2: Math.atan2,
+  sinh: Math.sinh,
+  cosh: Math.cosh,
+  tanh: Math.tanh,
+  sec: (x) => 1 / Math.cos(x),
+  csc: (x) => 1 / Math.sin(x),
+  cot: (x) => 1 / Math.tan(x),
+  sign: Math.sign,
+  cbrt: Math.cbrt,
+  log2: Math.log2,
+  hypot: (...a) => Math.hypot(...a),
+  mod: (a, b) => ((a % b) + b) % b,
 };
+
+/** Constants a formula may use without defining them (its own values win). */
+const CONSTANTS: Record<string, number> = { pi: Math.PI, PI: Math.PI, e: Math.E, tau: 2 * Math.PI };
 
 const ARITY: Record<string, [number, number]> = {
   if: [3, 3],
@@ -54,6 +76,23 @@ const ARITY: Record<string, [number, number]> = {
   log10: [1, 1],
   pow: [2, 2],
   round: [1, 2],
+  sin: [1, 1],
+  cos: [1, 1],
+  tan: [1, 1],
+  asin: [1, 1],
+  acos: [1, 1],
+  atan: [1, 1],
+  atan2: [2, 2],
+  sinh: [1, 1],
+  cosh: [1, 1],
+  tanh: [1, 1],
+  sec: [1, 1],
+  csc: [1, 1],
+  cot: [1, 1],
+  sign: [1, 1],
+  cbrt: [1, 1],
+  log2: [1, 1],
+  mod: [2, 2],
 };
 
 const COMPARISONS: Record<string, (a: number, b: number) => boolean> = {
@@ -73,7 +112,39 @@ type Token =
 
 const MAX_LENGTH = 2000;
 
+// Tokens by source: a plot evaluates the same formula hundreds of times a frame.
+const TOKEN_CACHE = new Map<string, Token[]>();
+const TOKEN_CACHE_MAX = 500;
+
 function tokenize(source: string): Token[] {
+  const cached = TOKEN_CACHE.get(source);
+  if (cached) return cached;
+  const tokens = withImplicitMultiplication(tokenizeUncached(source));
+  if (TOKEN_CACHE.size >= TOKEN_CACHE_MAX) TOKEN_CACHE.clear();
+  TOKEN_CACHE.set(source, tokens);
+  return tokens;
+}
+
+/** `2x`, `3(x+1)`, `(a+b)(a-b)`, `2pi`, `a x` and `x(1+x)` as models write
+ * them: a value directly followed by another value or an opening bracket
+ * multiplies. (A function name followed by "(" stays a call.) */
+function withImplicitMultiplication(tokens: Token[]): Token[] {
+  const out: Token[] = [];
+  tokens.forEach((t, i) => {
+    const prev = tokens[i - 1];
+    const prevEndsValue =
+      prev &&
+      (prev.kind === "num" ||
+        (prev.kind === "op" && prev.op === ")") ||
+        (prev.kind === "ident" && !Object.hasOwn(FUNCTIONS, prev.name)));
+    const startsValue = t.kind === "num" || t.kind === "ident" || (t.kind === "op" && t.op === "(");
+    if (prevEndsValue && startsValue && !(prev.kind === "num" && t.kind === "num")) out.push({ kind: "op", op: "*" });
+    out.push(t);
+  });
+  return out;
+}
+
+function tokenizeUncached(source: string): Token[] {
   if (source.length > MAX_LENGTH) throw new FormulaError("The formula is too long");
   const tokens: Token[] = [];
   let i = 0;
@@ -94,7 +165,7 @@ function tokenize(source: string): Token[] {
     } else if (["==", "!=", "<=", ">="].includes(two)) {
       tokens.push({ kind: "op", op: two });
       i += 2;
-    } else if ("+-*/^(),<>=".includes(ch)) {
+    } else if ("+-*/^(),<>=%".includes(ch)) {
       tokens.push({ kind: "op", op: ch });
       i++;
     } else {
@@ -158,10 +229,10 @@ export function evaluateFormula(source: string, scope: Readonly<Record<string, n
 
   function term(): number {
     let value = unary();
-    while (isOp("*") || isOp("/")) {
+    while (isOp("*") || isOp("/") || isOp("%")) {
       const op = (tokens[pos++] as { op: string }).op;
       const rhs = unary();
-      value = op === "*" ? value * rhs : value / rhs;
+      value = op === "*" ? value * rhs : op === "/" ? value / rhs : value % rhs;
     }
     return value;
   }
@@ -213,8 +284,9 @@ export function evaluateFormula(source: string, scope: Readonly<Record<string, n
         }
         return fn(...args);
       }
-      if (!Object.hasOwn(scope, t.name)) throw new FormulaError(`Refers to an unknown value: ${t.name}`);
-      return scope[t.name];
+      if (Object.hasOwn(scope, t.name)) return scope[t.name];
+      if (Object.hasOwn(CONSTANTS, t.name)) return CONSTANTS[t.name];
+      throw new FormulaError(`Refers to an unknown value: ${t.name}`);
     }
     if (t.op === "(") {
       pos++;

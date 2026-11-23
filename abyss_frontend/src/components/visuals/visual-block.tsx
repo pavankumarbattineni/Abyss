@@ -27,6 +27,18 @@ import { RoadmapVisual } from "./roadmap";
 import { SketchnotesVisual } from "./sketchnotes";
 import { TimelineVisual } from "./timeline";
 import { TreeVisual } from "./tree";
+import { CircuitVisual } from "./circuit";
+import { EnergyLevelsVisual } from "./energy-levels";
+import { GeometryVisual } from "./geometry";
+import { ImageVisual } from "./image";
+import { MapVisual } from "./map";
+import { MoleculeVisual } from "./molecule";
+import { NumberLineVisual } from "./number-line";
+import { PeriodicTableVisual } from "./periodic-table";
+import { PlotVisual } from "./plot";
+import { StepsVisual } from "./steps";
+import { VectorFieldVisual } from "./vector-field";
+import { VennVisual } from "./venn";
 
 // Each format has its own renderer; they share the frame below and the
 // building blocks in this folder (stage, rough, icons).
@@ -46,6 +58,18 @@ const RENDERERS: { [F in VisualFormatName]: ComponentType<{ data: VisualData<F> 
   handwritten: HandwrittenVisual,
   sketchnotes: SketchnotesVisual,
   "exploded-view": ExplodedViewVisual,
+  plot: PlotVisual,
+  geometry: GeometryVisual,
+  "vector-field": VectorFieldVisual,
+  "number-line": NumberLineVisual,
+  venn: VennVisual,
+  molecule: MoleculeVisual,
+  "periodic-table": PeriodicTableVisual,
+  "energy-levels": EnergyLevelsVisual,
+  circuit: CircuitVisual,
+  steps: StepsVisual,
+  map: MapVisual,
+  image: ImageVisual,
 };
 
 function Renderer({ format, data }: { format: VisualFormatName; data: VisualData }) {

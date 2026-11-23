@@ -322,6 +322,7 @@ function describeCall(toolName: string, input: string | undefined): { type: "ski
   })();
   if (toolName === "load_skill") return { type: "skill", name: arg || "a skill" };
   if (toolName === "get_visual_format") return { type: "format", name: arg ? `${humanizeIdentifier(arg)} visual` : "a visual" };
+  if (toolName === "search_images") return { type: "tool", name: "Wikimedia image search" };
   return { type: "tool", name: humanizeIdentifier(toolName) };
 }
 

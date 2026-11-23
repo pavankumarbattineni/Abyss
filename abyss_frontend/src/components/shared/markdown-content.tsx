@@ -7,9 +7,12 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import "katex/dist/katex.min.css";
+// Chemistry notation in math: \ce{2H2 + O2 -> 2H2O}, states, equilibrium arrows.
+import "katex/contrib/mhchem";
 
 import { endsInOpenCodeBlock, previewKind } from "@/lib/code-preview";
 import { INTERACTIVE_LANGUAGE, looksLikeInteractiveJson } from "@/lib/interactive";
+import { WIKIMEDIA_IMAGE } from "@/lib/visuals/schemas";
 import { looksLikeVisualJson, VISUAL_LANGUAGE } from "@/lib/visuals/parse";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
 import { cn } from "@/lib/utils";
@@ -135,6 +138,30 @@ function FencedBlock({ node, isStreaming, ...props }: { node?: unknown; isStream
 
 function buildComponents(isStreaming: boolean): Components {
   return {
+    // Images only from Wikimedia (found with the search_images tool); any other
+    // address -- possibly invented, or a tracker -- is shown as a link instead.
+    img: ({ src, alt, title }) => {
+      const url = typeof src === "string" ? src : "";
+      if (!WIKIMEDIA_IMAGE.test(url)) {
+        return url ? (
+          <a href={url} target="_blank" rel="noreferrer" className="text-sage-text underline underline-offset-2 hover:text-foreground">
+            {alt || "Image"}
+          </a>
+        ) : null;
+      }
+      return (
+        <span className="my-3 flex flex-col items-center gap-1.5">
+          {/* eslint-disable-next-line @next/next/no-img-element -- a remote, credited image shown as is */}
+          <img src={url} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" crossOrigin="anonymous" className="max-h-[440px] w-auto max-w-full rounded-lg bg-white object-contain" />
+          {(alt || title) && (
+            <span className="text-center font-sans text-[13px] leading-snug text-muted-foreground">
+              {alt}
+              {title && <span className="block text-xs">{title}</span>}
+            </span>
+          )}
+        </span>
+      );
+    },
     a: ({ href, children, ...props }) => (
       <a
         {...props}

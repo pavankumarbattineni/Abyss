@@ -152,7 +152,141 @@ _FORMATS: tuple[VisualFormat, ...] = (
         '- 3-10 parts in assembly order, outermost first. "shape" is the closest simple '
         "form; detail says what the part does.",
     ),
+    VisualFormat(
+        "plot",
+        "graphs of functions, curves and data on axes",
+        '{"format":"plot","title","x"?:[min,max],"y"?:[min,max],"xLabel"?,"yLabel"?,'
+        '"xLog"?,"yLog"?,"equal"?,"params"?:[PARAM],'
+        '"functions"?:[{"y":"formula in x","label"?,"x"?:[min,max],"dashed"?}],'
+        '"parametric"?:[{"x":"formula in t","y":"formula in t","t":[min,max],"label"?}],'
+        '"polar"?:[{"r":"formula in t","t":[min,max],"label"?}],'
+        '"areas"?:[{"y","y2"?,"x":[a,b],"label"?}],'
+        '"data"?:[{"label"?,"points":[[x,y],...],"line"?}],'
+        '"points"?:[{"at":[x,y],"label"?,"open"?}],"segments"?:[{"from":[x,y],"to":[x,y],'
+        '"label"?,"dashed"?,"arrow"?}],"vlines"?:[{"x","label"?}],"hlines"?:[{"y","label"?}],'
+        '"notes"?:[{"at":[x,y],"text"}]}\n'
+        "- FORMULAS. Up to 8 functions; mark roots, extrema, intercepts and asymptotes "
+        '(points, vlines, hlines). "areas" shade integrals or regions between curves. '
+        '"data" plots measured points. Set x (and y if it helps) to the interesting window.\n'
+        "- PARAMS make it interactive: a slider per parameter (e.g. a, k, omega in "
+        '"a*sin(k*x)"); "animate":true adds a play button.',
+    ),
+    VisualFormat(
+        "geometry",
+        "geometric figures, vectors, free-body diagrams, transformations",
+        '{"format":"geometry","title","x"?:[min,max],"y"?:[min,max],"grid"?,"axes"?,'
+        '"params"?:[PARAM],"points"?:[{"id","at":[x,y],"label"?,"hidden"?}],'
+        '"segments"?:[{"from":P,"to":P,"label"?,"dashed"?}],'
+        '"vectors"?:[{"from":P,"to"?:P,"d"?:[dx,dy],"label"?}],'
+        '"circles"?:[{"center":P,"r","label"?}],"polygons"?:[{"points":[P,...],"label"?,"shade"?}],'
+        '"angles"?:[{"vertex":P,"from":P,"to":P,"label"?,"right"?}],'
+        '"boxes"?:[{"at":[x,y],"w","h","angle"?,"label"?}],"notes"?:[{"at":[x,y],"text"}],'
+        '"transform"?:{"matrix":[[a,b],[c,d]],"label"?}}\n'
+        "- P is a point id or [x,y]; coordinates may be FORMULAS over params. Units are "
+        "equal on both axes. Label sides and angles with their values.\n"
+        '- Forces: a box for the body and "vectors" from its centre (label "mg", "N", '
+        '"F"). "transform" adds a before/after toggle (linear maps).',
+    ),
+    VisualFormat(
+        "vector-field",
+        "a 2D vector field: flows, forces, slope fields",
+        '{"format":"vector-field","title","fx":"formula in x,y","fy":"formula in x,y",'
+        '"x"?:[min,max],"y"?:[min,max],"density"?:6-24,"params"?:[PARAM],'
+        '"markers"?:[{"at":[x,y],"label"?,"sign"?:"+|-"}],"xLabel"?,"yLabel"?}\n'
+        "- FORMULAS. Arrows show direction, colour the strength. Slope field of y'=f(x,y): "
+        '"fx":"1","fy":"f". Markers for charges, sources, sinks or equilibria.',
+    ),
+    VisualFormat(
+        "number-line",
+        "values, inequalities and intervals on a number line",
+        '{"format":"number-line","title","min","max","step"?,'
+        '"points"?:[{"at","label"?,"open"?}],"intervals"?:[{"from":number|"-inf",'
+        '"to":number|"inf","fromOpen"?,"toOpen"?,"label"?}]}\n'
+        '- Open circles for strict bounds ("<", ">"), filled for "<=" and ">=". One '
+        "interval per part of a solution set.",
+    ),
+    VisualFormat(
+        "venn",
+        "overlapping sets",
+        '{"format":"venn","title","sets":[{"id","label"}],"regions"?:[{"in":[set ids],'
+        '"label"?,"value"?}],"universe"?}\n'
+        '- 2-3 sets. A region is the sets it lies in (and no others): ["a","b"] = the '
+        'overlap only; [] = outside all sets. "value" for counts or probabilities.',
+    ),
+    VisualFormat(
+        "molecule",
+        "chemical structures drawn from SMILES",
+        '{"format":"molecule","title","molecules":[{"smiles","name"?,"caption"?}]}\n'
+        "- 1-6 molecules, each a valid SMILES string (e.g. ethanol CCO, benzene "
+        "c1ccccc1). Use several to show a reaction's reactants and products or isomers.",
+    ),
+    VisualFormat(
+        "periodic-table",
+        "the periodic table: elements, groups, trends",
+        '{"format":"periodic-table","title","highlight"?:[symbols],"values"?:{"symbol":number},'
+        '"valueLabel"?,"focus"?:"symbol","configuration"?,"legend"?}\n'
+        '- "highlight" a set of elements (and say what they share in "legend"); "values" '
+        "shades a trend (electronegativity, radius) for the elements given; \"focus\" one "
+        'element with its electron "configuration".',
+    ),
+    VisualFormat(
+        "energy-levels",
+        "orbital box diagrams and energy level diagrams",
+        '{"format":"energy-levels","title","orbitals"?:[{"label":"1s","boxes":1-7,'
+        '"electrons"}],"levels"?:[{"id","label","energy"}],'
+        '"transitions"?:[{"from":id,"to":id,"label"?}],"energyLabel"?}\n'
+        '- "orbitals" for electron configurations, lowest energy first (boxes: s 1, p 3, '
+        'd 5, f 7; filled by Hund\'s rule). "levels" with real energies for spectra and '
+        "transitions (absorption/emission).",
+    ),
+    VisualFormat(
+        "circuit",
+        "an electric circuit schematic",
+        '{"format":"circuit","title","loop":[PART | {"parallel":[[PART,...],[PART,...]]}]}\n'
+        'PART = {"kind":"battery|cell|ac|resistor|capacitor|inductor|lamp|switch|'
+        'switch-closed|diode|led|ammeter|voltmeter|fuse|motor|wire","label"?,"value"?}\n'
+        "- The loop's parts in order, source first. A parallel group holds 2-4 branches "
+        '(each a list of parts in series). Values with units ("10 Ω", "9 V").',
+    ),
+    VisualFormat(
+        "steps",
+        "a step-by-step derivation, proof, solution or algorithm trace",
+        '{"format":"steps","title","steps":[{"title"?,"text"?,"math"?,"array"?:[values],'
+        '"highlight"?:[indices],"pointers"?:{"name":index}}]}\n'
+        '- 3-20 steps, one idea each. "math": one LaTeX equation (no $); "text" may hold '
+        "inline $...$ math. Algorithm traces: the array's state each step, the cells "
+        'being compared or swapped in "highlight", and "pointers" like {"i":0,"j":3}.',
+    ),
+    VisualFormat(
+        "map",
+        "places, countries and routes on a world map",
+        '{"format":"map","title","places"?:[{"name","lat","lon","label"?}],'
+        '"regions"?:[{"name":"country","value"?,"label"?}],'
+        '"routes"?:[{"from":[lat,lon],"to":[lat,lon],"label"?}],"valueLabel"?}\n'
+        '- Countries by English name; "value" shades them on a colour scale. Real '
+        "coordinates only. The map zooms to what it shows.",
+    ),
+    VisualFormat(
+        "image",
+        "a real photo or illustration from Wikimedia Commons",
+        '{"format":"image","title"?,"src","page","alt","caption"?,"author","license"}\n'
+        "- Only from the search_images tool: copy src, page, author and license exactly "
+        "as it returned them. Never invent or guess an image URL.",
+    ),
 )
+
+#: Shared notes the specs refer to by name (appended to the specs that use them).
+_SHARED = {
+    "PARAM": (
+        'PARAM = {"name","label"?,"min","max","value"?,"step"?,"animate"?:true}: a '
+        "slider; formulas use it by name."
+    ),
+    "FORMULAS": (
+        "FORMULAS are plain text, not LaTeX: + - * / ^, sin cos tan asin acos atan "
+        "sinh cosh tanh sqrt abs exp ln log10 log2 floor min max, pi e, and implicit "
+        'multiplication ("2x", "3sin(x)").'
+    ),
+}
 
 FORMATS: dict[str, VisualFormat] = {f.name: f for f in _FORMATS}
 
@@ -167,7 +301,10 @@ _COMMON = (
 
 def spec_for(name: str) -> str | None:
     fmt = FORMATS.get(name.strip().lstrip("/").lower())
-    return f"Visual format `{fmt.name}`. {_COMMON}\n{fmt.spec}" if fmt else None
+    if not fmt:
+        return None
+    shared = "".join(f"\n{text}" for key, text in _SHARED.items() if key in fmt.spec)
+    return f"Visual format `{fmt.name}`. {_COMMON}\n{fmt.spec}{shared}"
 
 
 def catalog() -> str:

@@ -131,7 +131,8 @@ _ANSWER_FORMAT = (
     "results show; never guess a host.\n"
     "- Bold only for key terms or warnings. Write approximations with `≈`.\n"
     "- Math in LaTeX: $...$ inline, $$...$$ on their own lines for equations; "
-    "write money as \\$5.\n"
+    "chemical formulas and equations with \\ce{...} inside them (e.g. "
+    "$\\ce{2H2 + O2 -> 2H2O}$); write money as \\$5.\n"
     "- Never truncate (`...`) or pad, and don't repeat the same content as "
     "prose and as a list or table.\n"
     "- Stop when answered: at most one concrete next step or one clarifying "
@@ -144,11 +145,20 @@ _VISUALS = (
     "## Diagrams and interactive views\n"
     f"- Visual formats drawn natively by the app: {visual_catalog()}. Use one "
     "when a picture explains better than prose -- a process, structure, "
-    "hierarchy, sequence, comparison or overview; not for simple answers. Get "
+    "hierarchy, sequence, comparison or overview; not for simple answers. Pick "
+    "the format by what is being explained: functions, curves or measured data "
+    "-> plot; shapes, vectors, forces or transformations -> geometry; a field "
+    "-> vector-field; inequalities -> number-line; sets -> venn; molecules -> "
+    "molecule; elements -> periodic-table; orbitals or spectra -> "
+    "energy-levels; circuits -> circuit; derivations, worked solutions or "
+    "algorithm traces -> steps; places -> map. Get "
     "its spec with get_visual_format, then answer with that ```visual block. A "
     "message starting with /<format> asks for that format: use it. Suggest "
     "another format (written as `/<format>` in a sentence, never in a block) "
     "only when it would add real insight.\n"
+    "- When seeing the real thing helps (an organism, place, artwork, object "
+    "or labelled diagram), call search_images and show one result with the "
+    "`image` format. Never write an image URL yourself.\n"
     "- Other small diagrams (e.g. sequence, state): a ```mermaid block; keep "
     "labels and subgraph titles short and quote any containing ( ) [ ] { }, "
     'e.g. A["Parse (step 1)"].\n'
@@ -158,7 +168,10 @@ _VISUALS = (
     '{"version":1,"components":[...]} instead of a Markdown table of the same '
     'figures. Every component needs a "type": metric_cards '
     '{"items":[{"label","value","format"?}]}; table {"columns","rows"}; '
-    'bar_chart / line_chart {"x":[...],"series":[{"name","data"}]}; pie_chart '
+    'bar_chart / line_chart / area_chart {"x":[...],"series":[{"name","data"}]}; '
+    'scatter_chart {"series":[{"name","points":[[x,y],...]}],"xLabel"?,"yLabel"?,'
+    '"trend"?:true}; histogram {"values":[...],"bins"?}; box_plot '
+    '{"groups":[{"name","values"}]}; pie_chart '
     '{"items":[{"label","value"}]}; progress {"items":[{"label","value","max"}]}; '
     'timeline {"items":[{"date","title","detail"?}]}; comparison '
     '{"items":[{"title","points"}]}; callout {"tone":"info|warning|success",'
