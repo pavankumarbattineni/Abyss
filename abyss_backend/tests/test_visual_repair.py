@@ -150,3 +150,114 @@ def test_image_lists_under_other_names_or_after_a_header_count_as_images():
     assert check_block("visual", json.dumps({"format": "image", "items": [{"src": src}]})) == ([], "image")
     header_then_list = '{"format":"image"}\n' + json.dumps([{"src": src}, {"src": src}])
     assert check_block("visual", header_then_list) == ([], "image")
+
+
+# ── Edge cases found in production (Abyss-40) ─────────────────────────────────
+
+COMPARISON = {"format": "comparison", "title": "Pan-India Success Drivers",
+              "items": [{"title": "RRR", "points": ["Spectacle", "Music"]}, {"title": "Pushpa", "points": ["Swagger"]}]}
+
+
+def test_an_interactive_component_in_a_visual_block_moves_to_its_own_block_without_a_model_call():
+    text, llm = run(f"Why each hit\n{fence('visual', COMPARISON)}\nEnd", [])
+    assert llm.configs == []
+    assert "```trench-ui" in text and '"type": "comparison"' in text
+    assert [b.errors for b in find_blocks(text)] == [()]
+
+
+def test_a_visual_format_in_an_interactive_block_moves_to_a_visual_block():
+    steps = {"type": "steps", "steps": [{"title": "A", "detail": "x"}, {"title": "B", "detail": "y"}]}
+    text, llm = run(fence("trench-ui", {"version": 1, "components": [steps]}), [])
+    assert llm.configs == [] and text.startswith("```visual") and '"format": "steps"' in text
+
+
+def test_an_unknown_format_is_rewritten_into_the_one_that_fits():
+    broken = fence("visual", {"format": "pros-cons", "title": "T", "points": [["A", "x"], ["B", "y"]]})
+    steps = {"format": "steps", "title": "T", "steps": [{"title": "A", "detail": "x"}, {"title": "B", "detail": "y"}]}
+    text, llm = run(broken, ["steps", json.dumps(steps)])
+    assert text == fence("visual", steps)
+    assert [c["run_name"] for c in llm.configs] == ["visual_format_choice", "visual_block_repair"]
+
+
+def test_a_visual_that_still_cant_be_drawn_is_shown_as_text_not_an_error():
+    broken = fence("visual", {"format": "pros-cons", "title": "RRR vs Pushpa",
+                              "items": [{"title": "RRR", "points": ["Spectacle"]}]})
+    text, _ = run(f"Intro\n{broken}\nEnd", ["no-such-format", '{"format":"pros-cons"}'])
+    assert "```" not in text and "**RRR vs Pushpa**" in text and "- **RRR**" in text and "Spectacle" in text
+
+
+def _run_with(text, *, messages=(), found=None, missing=(), monkeypatch):
+    from abyss_agents import images, visual_repair
+
+    calls = []
+
+    async def fake_find(queries, limit=3, prefer=None):
+        calls.append((list(queries), prefer))
+        return [list((found or {}).get(q, [])) for q in queries]
+
+    async def fake_missing(srcs):
+        return {s for s in srcs if s in missing}
+
+    monkeypatch.setattr(images, "find_images", fake_find)
+    monkeypatch.setattr(visual_repair, "_missing", fake_missing)
+    response = SimpleNamespace(result=[AIMessage(text)])
+
+    async def handler(request):
+        return response
+
+    out = asyncio.run(VisualRepairMiddleware(FakeLLM([])).awrap_model_call(SimpleNamespace(messages=list(messages)), handler))
+    return out.result[-1].text, calls
+
+
+REAL = {"src": "https://upload.wikimedia.org/real/RRR_poster.jpg", "page": "https://commons.wikimedia.org/wiki/File:RRR.jpg",
+        "author": "A", "license": "CC BY-SA 4.0"}
+
+
+def test_an_image_the_model_made_up_is_replaced_by_a_real_one(monkeypatch):
+    made_up = {"format": "image", "images": [{"src": "https://www.example-fan-site.com/rrr.jpg", "alt": "RRR movie poster"}]}
+    text, calls = _run_with(fence("visual", made_up), found={"RRR movie poster": [REAL]}, monkeypatch=monkeypatch)
+    assert calls == [(["RRR movie poster"], "web")]  # a web address: searched on the web first
+    image = json.loads(text.split("\n", 1)[1].rsplit("```", 1)[0])["images"][0]
+    assert image["src"] == REAL["src"] and image["alt"] == "RRR movie poster" and image["license"] == "CC BY-SA 4.0"
+
+
+def test_a_made_up_wikimedia_address_that_doesnt_exist_is_replaced(monkeypatch):
+    fake = "https://upload.wikimedia.org/wikipedia/commons/x/xx/Pushpa_invented.jpg"
+    block = fence("visual", {"format": "image", "src": fake, "alt": "Pushpa The Rise poster"})
+    text, calls = _run_with(block, found={"Pushpa The Rise poster": [REAL]}, missing={fake}, monkeypatch=monkeypatch)
+    assert calls == [(["Pushpa The Rise poster"], "open")] and fake not in text and REAL["src"] in text
+
+
+def test_images_from_the_conversations_searches_are_trusted_without_any_check(monkeypatch):
+    from langchain_core.messages import ToolMessage
+
+    searched = ToolMessage(json.dumps([REAL]), tool_call_id="1", name="search_images")
+    block = fence("visual", {"format": "image", **REAL})
+    text, calls = _run_with(block, messages=[searched], missing={REAL["src"]}, monkeypatch=monkeypatch)
+    assert text == block and calls == []
+
+
+def test_a_made_up_image_with_no_search_result_is_left_out(monkeypatch):
+    block = fence("visual", {"format": "image", "src": "https://x.example.com/a.jpg", "alt": "Something obscure"})
+    text, _ = _run_with(f"A\n{block}\nB", monkeypatch=monkeypatch)
+    assert text == "A\n\nB"
+
+
+def test_an_image_block_cut_short_mid_json_is_rebuilt_from_the_search_results(monkeypatch):
+    from langchain_core.messages import ToolMessage
+
+    other = {**REAL, "src": "https://upload.wikimedia.org/real/Awards.jpg"}
+    searched = ToolMessage(json.dumps({"RRR film": [REAL], "awards": [other]}), tool_call_id="1", name="search_images")
+    # As in the live run: results copied whole, then abandoned with "...".
+    cut = ('```visual\n{"format":"image","title":"Awards","images":[{"author":"A","src":"' + REAL["src"]
+           + '","description":"The President confers the National Film Awa…,height":480,...\n```')
+    text, calls = _run_with(f"Q\n{cut}\nEnd", messages=[searched], monkeypatch=monkeypatch)
+    block = find_blocks(text)
+    assert [b.errors for b in block] == [()] and calls == []
+    data = json.loads(block[0].source)
+    assert data["title"] == "Awards" and data["src"] == REAL["src"] and data["license"] == REAL["license"]
+
+
+def test_a_block_left_open_at_the_end_is_closed_and_checked():
+    text, _ = run('Intro\n```visual\n' + json.dumps(GOOD_PLOT), [])
+    assert text.endswith("\n```") and [b.errors for b in find_blocks(text)] == [()]

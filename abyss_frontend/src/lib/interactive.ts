@@ -353,6 +353,19 @@ export function looksLikeInteractiveJson(source: string): boolean {
   );
 }
 
+/** A ```visual block whose "format" is really one of these components -- models mix
+ * the two up ({"format":"comparison",...}) -- as the interactive block it means;
+ * null otherwise. Names that are also visual formats stay visuals. (New answers are
+ * fixed on the server, abyss_agents/visual_check.py language_fixes; this covers
+ * answers saved before.) */
+export function interactiveFromVisual(source: string, isVisualFormat: (name: string) => boolean): string | null {
+  const raw = parseLenientJson(source) as Record<string, unknown> | undefined;
+  const format = raw && typeof raw === "object" ? raw.format : undefined;
+  if (typeof format !== "string" || isVisualFormat(format) || !Object.hasOwn(COMPONENT_SCHEMAS, format)) return null;
+  const { format: type, ...rest } = raw as Record<string, unknown>;
+  return JSON.stringify({ version: 1, components: [{ type, ...rest }] });
+}
+
 export interface BlockAnalysis {
   block: ParsedBlock | null;
   /** Why the block (or parts of it) couldn't be shown. */

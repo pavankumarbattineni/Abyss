@@ -36,6 +36,7 @@ from collections.abc import Callable
 from langchain_core.messages import AIMessage, ToolMessage
 
 from abyss_agents.factory import PARENT_AGENT_NAME
+from abyss_agents.tool_display import background_status
 from abyss_agents.visual_repair import INTERNAL_TAG, REPAIR_EVENT
 from abyss_agents.middleware import (
     CALL_START_EVENT,
@@ -58,6 +59,13 @@ _TOOL_RESULT_NODES = ("tools",)
 _HITL_NODE_SUFFIX = ".after_model"
 # A running tool call's input, as sent live (the full input is saved with the step).
 _INPUT_PREVIEW_CHARS = 500
+
+
+def _background(event: dict) -> dict:
+    """{"background": status} for a tool that declared itself a background step
+    (abyss_agents/tool_display.py) -- the chat then lists no step for the call; {} otherwise."""
+    status = background_status(event.get("metadata"))
+    return {"background": status} if status else {}
 
 
 def _is_top_level(checkpoint_ns: str) -> bool:
@@ -499,7 +507,9 @@ class StreamProjector:
         self._tool_at[run_id] = self.answer_length()
         # The input shows what is being looked up while it runs (capped: a preview, not a payload).
         preview = (self._tool_input[run_id] or "")[:_INPUT_PREVIEW_CHARS]
-        self._emit("tool_start", {"tool_name": name, "agent_name": label, "at": self._tool_at[run_id], "input": preview})
+        self._emit("tool_start", {
+            "tool_name": name, "agent_name": label, "at": self._tool_at[run_id], "input": preview, **_background(event),
+        })
 
     def _on_tool_end(self, event: dict, label: str, ns: str) -> None:
         name = event.get("name", "")
@@ -519,6 +529,7 @@ class StreamProjector:
             return
 
         output_str = extract_tool_output(output)
+        background = _background(event)
         self.reasoning_steps.append({
             "agent": label,
             "step": "tool_call",
@@ -528,8 +539,9 @@ class StreamProjector:
             "duration_ms": duration_ms,
             "truncated": False,
             "at": self._tool_at.pop(run_id, self.answer_length()),
+            **background,
         })
-        self._emit("tool_end", {"tool_name": name, "agent_name": label, "output": output_str})
+        self._emit("tool_end", {"tool_name": name, "agent_name": label, "output": output_str, **background})
 
     def _on_chain_end(self, event: dict, node: str, label: str) -> None:
         """Surface tool calls that never executed.

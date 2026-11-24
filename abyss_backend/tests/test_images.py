@@ -141,3 +141,11 @@ def test_only_results_about_the_subject_are_kept_best_first():
     assert [r["title"] for r in kept] == ["Daniel Radcliffe as Harry Potter", "Daniel Radcliffe 2009"]
     # Generic words alone ("movie set photo") never make an image relevant.
     assert relevant("movie set photo", results, 5) == results[:5]  # nothing distinctive to check: unfiltered
+
+
+def test_the_model_gets_only_what_it_copies():
+    from abyss_agents.images import for_model
+
+    full = {"src": "s", "page": "p", "title": "t", "description": "a long description", "author": "", "license": "L",
+            "width": 800, "height": 600}
+    assert for_model(full) == {"src": "s", "page": "p", "title": "t", "author": "", "license": "L"}

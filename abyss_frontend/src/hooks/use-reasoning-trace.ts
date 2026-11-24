@@ -63,7 +63,14 @@ function reasoningReducer(trace: ReasoningTrace, action: ReasoningAction): Reaso
       );
 
     case "tool_start":
-      return startToolCallSegment(trace, action.data.agent_name, action.data.tool_name, action.data.at, action.data.input);
+      return startToolCallSegment(
+        trace,
+        action.data.agent_name,
+        action.data.tool_name,
+        action.data.at,
+        action.data.input,
+        action.data.background,
+      );
 
     case "tool_end":
       return endToolCallSegment(

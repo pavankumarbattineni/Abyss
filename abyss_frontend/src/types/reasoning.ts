@@ -26,6 +26,8 @@ export type TimelineItem =
       output?: string;
       durationMs?: number;
       at?: number;
+      /** A background step's running status ("Finding images…"): the chat lists no step for it. */
+      background?: string;
     };
 
 /** A piece of an answer shown in order: text the agent wrote, or the steps

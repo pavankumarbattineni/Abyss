@@ -127,3 +127,24 @@ def test_a_running_tool_call_shows_its_input_live():
     _tool(projector, "t1", "web_search")
     start = next(e for e in events if e["event_type"] == "tool_start")
     assert start["data"]["input"] == '{"query": "q"}'
+
+
+def test_a_tool_that_declares_itself_a_background_step_carries_its_status():
+    from abyss_agents.images import search_images
+    from abyss_agents.places import find_places
+    from abyss_agents.tool_display import BACKGROUND, background_status
+    from abyss_agents.visual_formats import get_visual_format
+
+    # The built-in preparation tools declare it themselves; the chat needs no names.
+    assert all(background_status(t.metadata) for t in (search_images, find_places, get_visual_format))
+
+    events = []
+    projector = StreamProjector(events.append)
+    meta = {**_meta(PARENT_AGENT_NAME, node="tools"), BACKGROUND: "Finding images…"}
+    projector.handle({"event": "on_tool_start", "run_id": "t1", "name": "any_tool", "metadata": meta, "data": {"input": {"q": "x"}}})
+    projector.handle({"event": "on_tool_end", "run_id": "t1", "name": "any_tool", "metadata": meta,
+                      "data": {"output": ToolMessage("[]", tool_call_id="t1")}})
+    _tool(projector, "t2", "web_search")  # an ordinary tool: no mark
+    by_type = [(e["event_type"], e["data"].get("background")) for e in events if e["event_type"] in ("tool_start", "tool_end")]
+    assert by_type == [("tool_start", "Finding images…"), ("tool_end", "Finding images…"), ("tool_start", None), ("tool_end", None)]
+    assert [s.get("background") for s in projector.reasoning_steps if s["step"] == "tool_call"] == ["Finding images…", None]

@@ -163,7 +163,7 @@ _VISUALS = (
     "message starting with /<format> asks for that format: use it. Suggest "
     "another format (written as `/<format>` in a sentence, never in a block) "
     "only when it would add real insight.\n"
-    "- An answer explaining things that can be pictured -- places, landmarks, "
+    "- Every answer (follow-ups too) explaining things that can be pictured -- places, landmarks, "
     "people, historical events, organisms, anatomy, artworks, buildings, "
     "machines, objects, products, brands, and films, series, books or games "
     "with their characters and worlds -- includes images: before writing it, "
