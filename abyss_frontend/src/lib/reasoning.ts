@@ -209,6 +209,34 @@ function outsideCodeBlock(content: string, at: number): number {
   return inside ? content.length : at;
 }
 
+/**
+ * Steps the agent takes only to prepare what the answer shows: a visual's
+ * format, images, places for a map. They run as always and stay in the saved
+ * reasoning (Tracing shows them), but the chat leaves them out of its steps --
+ * the reader sees the visual or images themselves. While one runs, the chat
+ * just says what it's doing (the value here).
+ */
+const BACKGROUND_STEPS: Record<string, string> = {
+  get_visual_format: "Preparing visuals…",
+  search_images: "Finding images…",
+  find_places: "Finding places…",
+};
+
+export function isBackgroundStep(item: TimelineItem): boolean {
+  return item.kind === "tool_call" && Object.hasOwn(BACKGROUND_STEPS, item.toolName);
+}
+
+/** The steps the chat shows: everything but background steps. */
+export function visibleSteps(timeline: TimelineItem[]): TimelineItem[] {
+  return timeline.filter((item) => !isBackgroundStep(item));
+}
+
+/** What a running background step is doing ("Finding images…"), or null when none runs. */
+export function backgroundActivity(timeline: TimelineItem[]): string | null {
+  const running = timeline.findLast((item) => isBackgroundStep(item) && item.kind === "tool_call" && item.status === "running");
+  return running?.kind === "tool_call" ? BACKGROUND_STEPS[running.toolName] : null;
+}
+
 // --- Presentation helpers ------------------------------------------------------
 
 /** "web_research_agent" -> "Web research agent"; used when no real name is known. */

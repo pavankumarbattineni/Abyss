@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { BookOpenText, Brain, ChevronRight, Loader2, Shapes, UsersRound, Wrench } from "lucide-react";
+import { BookOpenText, Brain, ChevronRight, Loader2, UsersRound, Wrench } from "lucide-react";
 
-import { answerParts, humanizeIdentifier, mainAgentName } from "@/lib/reasoning";
+import { answerParts, backgroundActivity, humanizeIdentifier, mainAgentName, visibleSteps } from "@/lib/reasoning";
 import { cn } from "@/lib/utils";
 import type { ReasoningTrace, TimelineItem } from "@/types";
 import { CopyButton } from "./copy-button";
@@ -37,11 +37,19 @@ export function AnswerTimeline({ content, trace, isStreaming, agentNames = {} }:
     agentNames[label] ?? (label === main ? "Agent" : humanizeIdentifier(label));
   const isMain = (label: string): boolean => label === main;
 
+  // A background step running now (preparing a visual, finding images or places): not shown
+  // as a step, but the live heading says what's happening.
+  const busyWith = isStreaming ? backgroundActivity(trace.timeline) : null;
+
   const parts = useMemo(() => {
-    // A thought that never got any text (the model went straight to acting) has nothing to show.
-    const items = trace.timeline.filter((item) => !(item.kind === "thought" && !item.content.trim() && !isStreaming));
-    return answerParts(content, items);
-  }, [content, trace.timeline, isStreaming]);
+    // A thought that never got any text (the model went straight to acting) has nothing to show;
+    // background steps are left out (lib/reasoning BACKGROUND_STEPS).
+    const items = visibleSteps(trace.timeline).filter((item) => !(item.kind === "thought" && !item.content.trim() && !isStreaming));
+    const laidOut = answerParts(content, items);
+    // Only a background step running after the text so far: a live heading with no steps.
+    if (busyWith && laidOut.at(-1)?.kind !== "activity") laidOut.push({ kind: "activity", items: [] });
+    return laidOut;
+  }, [content, trace.timeline, isStreaming, busyWith]);
 
   return (
     <div className="flex min-w-0 flex-col">
@@ -55,6 +63,7 @@ export function AnswerTimeline({ content, trace, isStreaming, agentNames = {} }:
             items={part.items}
             trace={trace}
             live={isStreaming && isLast}
+            busyWith={isLast ? busyWith : null}
             displayName={displayName}
             isMain={isMain}
             // Space from the text around it; none above the very first part.
@@ -70,6 +79,7 @@ function ActivityGroup({
   items,
   trace,
   live,
+  busyWith,
   displayName,
   isMain,
   className,
@@ -77,6 +87,8 @@ function ActivityGroup({
   items: TimelineItem[];
   trace: ReasoningTrace;
   live: boolean;
+  /** A background step running now ("Finding images…"): said in the heading, never listed. */
+  busyWith: string | null;
   displayName: (label: string) => string;
   isMain: (label: string) => boolean;
   className?: string;
@@ -96,7 +108,23 @@ function ActivityGroup({
         ? trace.agents[item.target]?.status === "running"
         : live && index === items.length - 1;
 
-  const title = live ? currentActivity(items.at(-1), displayName, isMain) : summarize(items, displayName);
+  const title = live ? currentActivity(items.at(-1), displayName, isMain, busyWith) : summarize(items, displayName);
+  const pulse = live && (
+    <span className="relative mr-0.5 flex size-2 shrink-0" aria-hidden="true">
+      <span className="absolute inline-flex size-full animate-ping rounded-full bg-highlight opacity-60" />
+      <span className="relative inline-flex size-2 rounded-full bg-highlight" />
+    </span>
+  );
+
+  // Only background steps so far: a live status line while they run, then nothing at all.
+  if (items.length === 0) {
+    return live ? (
+      <div className={cn("flex min-w-0 items-center gap-1.5 py-1 font-sans text-sm text-foreground/80", className)}>
+        {pulse}
+        <span className="truncate">{title}</span>
+      </div>
+    ) : null;
+  }
 
   return (
     <div className={cn("min-w-0 font-sans", className)}>
@@ -106,12 +134,7 @@ function ActivityGroup({
         aria-expanded={open}
         className="group/steps flex max-w-full items-center gap-1.5 rounded-md py-1 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
-        {live && (
-          <span className="relative mr-0.5 flex size-2 shrink-0" aria-hidden="true">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-highlight opacity-60" />
-            <span className="relative inline-flex size-2 rounded-full bg-highlight" />
-          </span>
-        )}
+        {pulse}
         <span className={cn("truncate", live && "text-foreground/80")}>{title}</span>
         <ChevronRight
           className={cn("size-4 shrink-0 transition-transform", open && "rotate-90")}
@@ -150,18 +173,9 @@ function StepRow({
 }) {
   const [expanded, setExpanded] = useState<boolean>(false);
   const call = item.kind === "tool_call" ? describeCall(item.toolName, item.input) : null;
-  // Distinct marks: thinking, a specialist, a skill (a playbook it followed), a
-  // visual format's spec, and any other tool.
+  // Distinct marks: thinking, a specialist, a skill (a playbook it followed), and any other tool.
   const Icon =
-    item.kind === "thought"
-      ? Brain
-      : item.kind === "delegation"
-        ? UsersRound
-        : call?.type === "skill"
-          ? BookOpenText
-          : call?.type === "format"
-            ? Shapes
-            : Wrench;
+    item.kind === "thought" ? Brain : item.kind === "delegation" ? UsersRound : call?.type === "skill" ? BookOpenText : Wrench;
   const who = nested ? `${displayName(item.agent)} · ` : "";
 
   let verb: string;
@@ -183,10 +197,6 @@ function StepRow({
     verb = running ? "Reading skill" : skillLoaded(item.output) ? "Followed skill" : "Looked for skill";
     subject = call.name;
     hasDetails = !!item.output;
-  } else if (call?.type === "format") {
-    verb = running ? "Preparing" : "Prepared";
-    subject = call.name;
-    hasDetails = false;
   } else {
     verb = running ? "Using" : "Used";
     subject = humanizeIdentifier(item.toolName);
@@ -251,28 +261,22 @@ function StepRow({
   );
 }
 
-/** What the agent is doing right now, for a group that's still running. */
+/** What the agent is doing right now, for a group that's still running: its
+ * latest step when that's a running call or specialist, else the background
+ * step running (busyWith, e.g. "Finding images…"), else thinking. */
 function currentActivity(
   item: TimelineItem | undefined,
   name: (label: string) => string,
   isMain: (label: string) => boolean,
+  busyWith: string | null,
 ): string {
-  if (!item) return "Thinking…";
-  switch (item.kind) {
-    case "delegation":
-      return `Asking ${name(item.target)}…`;
-    case "tool_call": {
-      if (item.status !== "running") return "Thinking…";
-      const call = describeCall(item.toolName, item.input);
-      return call.type === "skill"
-        ? `Reading skill ${call.name}…`
-        : call.type === "format"
-          ? `Preparing ${call.name}…`
-          : `Using ${humanizeIdentifier(item.toolName)}…`;
-    }
-    default:
-      return isMain(item.agent) ? "Thinking…" : `${name(item.agent)} is thinking…`;
+  if (item?.kind === "delegation") return `Asking ${name(item.target)}…`;
+  if (item?.kind === "tool_call" && item.status === "running") {
+    const call = describeCall(item.toolName, item.input);
+    return call.type === "skill" ? `Reading skill ${call.name}…` : `Using ${call.name}…`;
   }
+  if (busyWith) return busyWith;
+  return !item || isMain(item.agent) ? "Thinking…" : `${name(item.agent)} is thinking…`;
 }
 
 /** A finished group in one line: the tools used and specialists asked, or --
@@ -288,7 +292,6 @@ function summarize(items: TimelineItem[], name: (label: string) => string): stri
         if (skillLoaded(item.output) && !skills.includes(call.name)) skills.push(call.name);
         continue;
       }
-      if (call.type === "format") continue; // preparing a visual is part of answering, not a lookup
       const tool = humanizeIdentifier(item.toolName);
       toolCounts.set(tool, (toolCounts.get(tool) ?? 0) + 1);
     } else if (item.kind === "delegation" && !asked.includes(name(item.target))) {
@@ -310,8 +313,9 @@ function summarize(items: TimelineItem[], name: (label: string) => string): stri
 }
 
 /** What a tool call was: loading one of the user's skills (abyss_agents/skills.py
- * load_skill), getting a visual format's spec (get_visual_format), or a tool. */
-function describeCall(toolName: string, input: string | undefined): { type: "skill" | "format" | "tool"; name: string } {
+ * load_skill), or a tool. (Background steps -- visual formats, images, places --
+ * never reach here: lib/reasoning visibleSteps.) */
+function describeCall(toolName: string, input: string | undefined): { type: "skill" | "tool"; name: string } {
   const arg = (() => {
     try {
       const value: unknown = JSON.parse(input ?? "");
@@ -321,9 +325,6 @@ function describeCall(toolName: string, input: string | undefined): { type: "ski
     }
   })();
   if (toolName === "load_skill") return { type: "skill", name: arg || "a skill" };
-  if (toolName === "get_visual_format") return { type: "format", name: arg ? `${humanizeIdentifier(arg)} visual` : "a visual" };
-  if (toolName === "search_images") return { type: "tool", name: "Image search" };
-  if (toolName === "find_places") return { type: "tool", name: "Wikipedia place lookup" };
   return { type: "tool", name: humanizeIdentifier(toolName) };
 }
 
