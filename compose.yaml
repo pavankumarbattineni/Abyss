@@ -5,7 +5,7 @@
 # --env-file supplies the NEXT_PUBLIC_* values baked into the frontend build.
 # The backend reads abyss_backend/.env.compose (git-ignored; see
 # abyss_backend/.env.example): ABYSS_CONFIG with DB host "postgres", plus the
-# POSTGRES_* values below. Ports avoid Trench's stack (3000/8000/5433) and a
+# POSTGRES_* values below. Ports avoid other local stacks (3000/8000/5433) and a
 # local Postgres (5432).
 name: abyss
 

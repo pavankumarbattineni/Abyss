@@ -40,6 +40,7 @@ import { BlockActions, TableActions, copyText } from "./block-actions";
 import { FULLSCREEN_CLASS, useFullscreen } from "./use-fullscreen";
 import { Button } from "@/components/ui/button";
 import {
+  INTERACTIVE_LANGUAGE,
   calculatorDefaults,
   computeCalculator,
   formatCompact,
@@ -899,7 +900,7 @@ export function InteractiveBlock({ source, isStreaming = false, citationNumbers,
   if (!parsed) {
     return (
       <CodeBlock
-        language="trench-ui"
+        language={INTERACTIVE_LANGUAGE}
         code={source}
         note={`This interactive view couldn't be displayed (${
           analysis?.problems[0]?.toLowerCase() ?? "unknown format"

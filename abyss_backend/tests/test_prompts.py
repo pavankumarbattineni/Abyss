@@ -142,11 +142,11 @@ def test_role_section_follows_the_agents_own_prompt_in_both_kinds():
 def test_only_the_main_agent_gets_the_visual_formats():
     """Sub-agents report to the main agent; only it writes what users see."""
     parent = build_parent_prompt("Role.", [], True, NOW)
-    assert "```mermaid" in parent and "```trench-ui" in parent
+    assert "```mermaid" in parent and "```abyss-ui" in parent
     assert '"type"' in parent  # every interactive component must declare one
     assert "```visual" in parent and "get_visual_format" in parent
     sub = build_sub_agent_prompt("Role.", True, NOW)
-    assert "mermaid" not in sub and "trench-ui" not in sub and "visual" not in sub
+    assert "mermaid" not in sub and "abyss-ui" not in sub and "visual" not in sub
 
 
 def test_live_previews_switch_pages_in_place():

@@ -1,4 +1,4 @@
-"""Server-side checks and repair of an answer's ```visual / ```trench-ui blocks."""
+"""Server-side checks and repair of an answer's ```visual / ```abyss-ui blocks."""
 import asyncio
 import json
 from types import SimpleNamespace
@@ -20,7 +20,7 @@ def test_good_blocks_pass_and_lenient_json_is_accepted():
     assert check_block("visual", '{"format":"venn","sets":[{"id":"a","label":"A"},{"id":"b","label":"B"},],}')[0] == []
     assert check_block("visual", json.dumps({"format": "molecule", "molecules": [{"smils": "C"}]}))[0] == []
     ui = {"version": 1, "components": [{"type": "histogram", "values": [1, 2, 3]}]}
-    assert check_block("trench-ui", json.dumps(ui))[0] == []
+    assert check_block("abyss-ui", json.dumps(ui))[0] == []
 
 
 def test_fatal_problems_are_reported_with_the_field():
@@ -31,7 +31,7 @@ def test_fatal_problems_are_reported_with_the_field():
     assert "image URL from search_images" in check_block("visual", '{"format":"image","src":"https://example.com/a.png"}')[0][0]
     gallery = {"format": "image", "images": [{"src": "https://upload.wikimedia.org/a.png"}, {"src": "http://x/b.png"}]}
     assert check_block("visual", json.dumps(gallery))[0] == ["images.1.src: must be an image URL from search_images"]
-    assert "unknown 'donut'" in check_block("trench-ui", '{"version":1,"components":[{"type":"donut"}]}')[0][0]
+    assert "unknown 'donut'" in check_block("abyss-ui", '{"version":1,"components":[{"type":"donut"}]}')[0][0]
 
 
 def test_find_blocks_ignores_other_code():
@@ -161,13 +161,13 @@ COMPARISON = {"format": "comparison", "title": "Pan-India Success Drivers",
 def test_an_interactive_component_in_a_visual_block_moves_to_its_own_block_without_a_model_call():
     text, llm = run(f"Why each hit\n{fence('visual', COMPARISON)}\nEnd", [])
     assert llm.configs == []
-    assert "```trench-ui" in text and '"type": "comparison"' in text
+    assert "```abyss-ui" in text and '"type": "comparison"' in text
     assert [b.errors for b in find_blocks(text)] == [()]
 
 
 def test_a_visual_format_in_an_interactive_block_moves_to_a_visual_block():
     steps = {"type": "steps", "steps": [{"title": "A", "detail": "x"}, {"title": "B", "detail": "y"}]}
-    text, llm = run(fence("trench-ui", {"version": 1, "components": [steps]}), [])
+    text, llm = run(fence("abyss-ui", {"version": 1, "components": [steps]}), [])
     assert llm.configs == [] and text.startswith("```visual") and '"format": "steps"' in text
 
 
@@ -261,3 +261,12 @@ def test_an_image_block_cut_short_mid_json_is_rebuilt_from_the_search_results(mo
 def test_a_block_left_open_at_the_end_is_closed_and_checked():
     text, _ = run('Intro\n```visual\n' + json.dumps(GOOD_PLOT), [])
     assert text.endswith("\n```") and [b.errors for b in find_blocks(text)] == [()]
+
+
+def test_blocks_saved_under_the_old_tag_are_still_read_and_written_back_under_the_new_one():
+    ui = {"version": 1, "components": [{"type": "histogram", "values": [1, 2, 3]}]}
+    assert check_block("trench-ui", json.dumps(ui))[0] == []
+    assert [b.language for b in find_blocks(fence("trench-ui", ui))] == ["abyss-ui"]
+    broken = fence("trench-ui", '{"version":1,"components":[{"type":"histogram"}]}')
+    text, _ = run(broken, [json.dumps(ui)])
+    assert text.startswith("```abyss-ui")

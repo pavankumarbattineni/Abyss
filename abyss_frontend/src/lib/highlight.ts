@@ -10,9 +10,11 @@
  */
 import hljs from "highlight.js/lib/common";
 
+import { INTERACTIVE_LANGUAGES } from "@/lib/interactive";
+
 /** Fence names highlight.js doesn't know by itself. */
 const ALIASES: Record<string, string> = {
-  "trench-ui": "json",
+  ...Object.fromEntries(INTERACTIVE_LANGUAGES.map((name) => [name, "json"])),
   jsonc: "json",
   json5: "json",
   zsh: "bash",

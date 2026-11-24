@@ -35,7 +35,7 @@ const EXAMPLES = [
   { category: "Preferences", content: "Prefers concise answers with code examples.", source: "You asked" },
   { category: "Preferences", content: "Wants dates written as DD MMM YYYY.", source: "Learned from a chat" },
   { category: "Work", content: "Works as a backend and AI engineer.", source: "Learned from a chat" },
-  { category: "Projects", content: "Builds Trench, a RAG knowledge assistant.", source: "You asked" },
+  { category: "Projects", content: "Builds a RAG knowledge assistant.", source: "You asked" },
 ];
 
 function ComingSoonBadge() {

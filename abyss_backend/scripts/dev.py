@@ -6,7 +6,7 @@
 The async psycopg driver (LangGraph's checkpointer) can't use Windows' default
 Proactor event loop, and `uvicorn main:app` picks that loop. This starts
 uvicorn on a selector loop instead; elsewhere it behaves like plain uvicorn.
-Port: ABYSS_PORT (default 8100, so Abyss runs alongside Trench on 8000).
+Port: ABYSS_PORT (default 8100, so it doesn't clash with other local apps on 8000).
 """
 import asyncio
 import os

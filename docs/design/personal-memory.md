@@ -50,7 +50,7 @@ Tools are always registered (topology must stay stable across HITL resume); when
 ## 5. Storage — PostgreSQL only
 No separate vector DB: a user has tens–hundreds of short rows.
 - **Phase 1:** full-text search (`tsvector` + GIN) + categories + pinning + recency.
-- **Phase 2:** `pgvector` on the same Neon DB (768-d, HNSW, Gemini embeddings as in Trench), hybrid with full-text.
+- **Phase 2:** `pgvector` on the same Neon DB (768-d, HNSW, Gemini embeddings), hybrid with full-text.
 
 ```sql
 user_memories (
