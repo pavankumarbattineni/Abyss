@@ -18,6 +18,14 @@ class StreamStatusResponse(BaseModel):
     pending_approval: Optional[dict[str, Any]] = None
 
 
+class ActiveStreamResponse(BaseModel):
+    """A thread's answer in progress, if any: the page reopening the thread
+    reconnects to it (GET /streams/{stream_id}) wherever it was opened from."""
+
+    stream_id: Optional[str] = None
+    status: Optional[Literal["PENDING", "RUNNING", "AWAITING_APPROVAL"]] = None
+
+
 class StreamCancelResponse(BaseModel):
     stream_id: str
     status: str

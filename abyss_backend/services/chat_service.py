@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 import json
 import logging
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -32,6 +33,7 @@ from constants import (
     THREAD_TITLE_INPUT_MAX_CHARS,
     THREAD_TITLE_OUTPUT_MAX_CHARS,
     THREAD_TITLE_WAIT_SECONDS,
+    PROGRESS_FLUSH_SECONDS,
     TOKEN_FLUSH_INTERVAL,
 )
 from database.checkpointer import get_checkpointer
@@ -39,13 +41,14 @@ from database.models import (
     Agent, LlmCredential, Message, MCPTool, Provider, ProviderModel,
     StreamRecord, Thread, User, utcnow,
 )
-from schemas.stream import StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
+from schemas.stream import ActiveStreamResponse, StreamStartResponse, ToolApprovalDecision, ToolApprovalGroup, ToolApprovalRequest
 from services.trace_sync import KIND_AGENT_TURN, KIND_THREAD_TITLE, RUN_NAMES, sync_after_run
 from utils.platform_llm import build_platform_llm, configured_default
 from utils.pricing import compute_cost_usd
 from utils.encryption import decrypt_value
 from abyss_agents.factory import build_agent
 from abyss_agents.history import SUMMARY_EVENT
+from abyss_agents.middleware import MODEL_ACTIVITY, ModelActivity
 from services.stream_projector import StreamProjector
 from utils.llm_providers import PROVIDERS, classify_llm_error
 from utils.thread_title import TITLE_SYSTEM_PROMPT, clean_title, fallback_title, title_request
@@ -449,6 +452,13 @@ async def _save_summary(
 _ACTIVE_STATUSES = (STREAM_STATUS_PENDING, STREAM_STATUS_RUNNING)
 
 
+def _progress_due(new_tokens: int, seconds_since: float, changed: bool) -> bool:
+    """Whether a running answer saves its progress now: every
+    TOKEN_FLUSH_INTERVAL tokens, and every PROGRESS_FLUSH_SECONDS while
+    anything else new arrived (reasoning steps, tool calls and results)."""
+    return new_tokens >= TOKEN_FLUSH_INTERVAL or (changed and seconds_since >= PROGRESS_FLUSH_SECONDS)
+
+
 @dataclass
 class _RunState:
     """What a running generation has produced so far (kept in stream_manager),
@@ -619,6 +629,8 @@ async def _run_generation(
             starting_chunk_index=starting_chunk_index,
         )
         last_flush_count = 0  # projector.total_tokens at the last periodic flush
+        last_flush_chunks = starting_chunk_index  # projector.chunk_index then
+        last_flush_at = time.monotonic()
         # LangSmith traces this invocation produces (agent turn, title), synced
         # into Tracing when it ends -- whatever the outcome.
         trace_ids: list[str] = []
@@ -767,7 +779,24 @@ async def _run_generation(
                 **_trace_config(turn_run_id, KIND_AGENT_TURN, trace_meta),
             }
 
+            # The setup reads above opened a transaction: end it before the
+            # model runs. A run can wait minutes on a model or a tool, and
+            # Postgres closes a connection left idle inside a transaction
+            # (Neon: idle_in_transaction_session_timeout = 5 min), which then
+            # failed the answer at its first save. Ended here, the connection
+            # goes back to the pool; each later save checks one out afresh
+            # (pre-pinged) and commits at once, so none is held while waiting.
+            await session.commit()
+
+            # Every model chunk of this answer (main agent and specialists)
+            # shows its model is alive; a call silent too long is given up
+            # (RestartFailedReply). Set here, inherited by the graph's tasks.
+            model_activity = ModelActivity()
+            MODEL_ACTIVITY.set(model_activity)
+
             async for event in graph.astream_events(graph_input, run_config, version="v2"):
+                if event.get("event") == "on_chat_model_stream":
+                    model_activity.touch()
                 if event.get("event") == "on_custom_event" and event.get("name") == SUMMARY_EVENT:
                     summary_message_ids.append(
                         await _save_summary(session, projector, stream_id, thread_id, event.get("data") or {})
@@ -775,10 +804,13 @@ async def _run_generation(
                     continue
                 projector.handle(event)
 
-                # Periodic crash-recovery flush every TOKEN_FLUSH_INTERVAL tokens.
-                # total_tokens is monotonically increasing so the diff never goes
-                # negative and the flush fires reliably every ~50 tokens.
-                if projector.total_tokens - last_flush_count >= TOKEN_FLUSH_INTERVAL:
+                # Periodic crash-recovery flush (_progress_due). total_tokens and
+                # chunk_index only grow, so the differences never go negative.
+                if _progress_due(
+                    projector.total_tokens - last_flush_count,
+                    time.monotonic() - last_flush_at,
+                    projector.chunk_index != last_flush_chunks,
+                ):
                     steps_to_persist = projector.steps_for_flush()
                     await session.execute(
                         update(StreamRecord)
@@ -793,6 +825,8 @@ async def _run_generation(
                     )
                     await session.commit()
                     last_flush_count = projector.total_tokens
+                    last_flush_chunks = projector.chunk_index
+                    last_flush_at = time.monotonic()
 
             # The splitter always holds back up to _max_lookahead trailing chars
             # in case they're the start of a reasoning tag, so this final flush's
@@ -1307,6 +1341,31 @@ class ChatService:
             ]
         )
         return await self.resolve_tool_approvals(session, stream_id, user_id, deny_all)
+
+    async def get_active_stream(self, session: AsyncSession, thread_id: str, user_id: str) -> ActiveStreamResponse:
+        """The thread's answer in progress (running or waiting for a tool
+        approval), so a page reopening the thread can reconnect to it -- the
+        answer runs on whether or not anyone is watching. A run nothing works
+        on any more (_is_left_over) isn't reported: there is nothing to
+        reconnect to, and the next message saves it as stopped."""
+        owned = await session.execute(
+            select(Thread.id).where(Thread.id == thread_id, Thread.user_id == user_id, Thread.is_active == True)
+        )
+        if owned.scalar_one_or_none() is None:
+            raise NotFoundError("Thread not found")
+        result = await session.execute(
+            select(StreamRecord)
+            .where(
+                StreamRecord.thread_id == thread_id,
+                StreamRecord.status.in_([*_ACTIVE_STATUSES, STREAM_STATUS_AWAITING_APPROVAL]),
+            )
+            .order_by(StreamRecord.created_at.desc())
+            .limit(1)
+        )
+        record = result.scalar_one_or_none()
+        if record is None or _is_left_over(record):
+            return ActiveStreamResponse()
+        return ActiveStreamResponse(stream_id=record.id, status=record.status)
 
     async def get_messages(
         self, session: AsyncSession, thread_id: str, user_id: str

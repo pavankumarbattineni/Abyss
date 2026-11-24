@@ -1,5 +1,6 @@
 import { api } from "@/lib/axios";
 import type {
+  ActiveStreamResponse,
   Message,
   SendMessageRequest,
   SendMessageResponse,
@@ -42,6 +43,12 @@ class ThreadService {
       `/threads/${threadId}/messages`,
       payload,
     );
+    return data;
+  }
+
+  /** The thread's answer in progress, if any -- it runs on while no page shows it. */
+  async getActiveStream(threadId: string): Promise<ActiveStreamResponse> {
+    const { data } = await api.get<ActiveStreamResponse>(`/threads/${threadId}/active-stream`);
     return data;
   }
 

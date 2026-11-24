@@ -111,6 +111,11 @@ TOOL_CALL_TIMEOUT_SECONDS = 180
 # retry and restart middleware handle and, if it persists, the user is told.
 # Generous: a long answer still fits, and a cut-off one is continued.
 MODEL_REQUEST_TIMEOUT_SECONDS = 300
+# A model call that produces nothing at all -- no token, no thought -- for this
+# long is given up (an overloaded provider can hold a request open for minutes
+# before answering 503) and tried again or reported. Only silence counts: a
+# long answer that keeps streaming is never cut (see RestartFailedReply).
+MODEL_SILENCE_SECONDS = 120
 # Stop: how long DELETE /streams/{id} waits for the generation to save the
 # stopped reply itself before saving it on its behalf (chat_service.stop_stream).
 CANCEL_GRACE_SECONDS = 5
@@ -131,6 +136,9 @@ THREAD_TITLE_OUTPUT_MAX_CHARS = 255
 # this long for it before "done" (it still reaches the thread list later).
 THREAD_TITLE_WAIT_SECONDS = 10
 TOKEN_FLUSH_INTERVAL = 50
+# ...and at least this often while anything new arrives (steps, tool results),
+# so a slow answer's progress is saved and its updated_at shows it is alive.
+PROGRESS_FLUSH_SECONDS = 10
 
 # Reasoning / Thinking Process
 
