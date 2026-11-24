@@ -165,6 +165,10 @@ jobs:
 
       # Build exactly what Render/Compose build; load: true keeps the image
       # here for the scan (nothing is pushed). Layers are cached between runs.
+      # Saving the cache is best-effort: GitHub can refuse the write (on a PR
+      # run: "cache write denied: token has no writable scopes"), and that must
+      # never fail a build that itself succeeded -- the image is still built
+      # and scanned.
       - name: Build image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -172,7 +176,7 @@ jobs:
           tags: abyss-${{ matrix.service }}:ci
           load: true
           cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }},ignore-error=true
           # Frontend only (the backend Dockerfile declares no ARGs).
           build-args: |
             NEXT_PUBLIC_API_URL=http://localhost:8100
