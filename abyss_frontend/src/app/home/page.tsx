@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AuthTopBar, SiteFooter } from "@/components/layout";
+import { DescentArt, OnView } from "@/components/pages/home";
 import { Button } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -32,35 +33,6 @@ const STEPS = [
   { title: "You get the answer", body: "With every step of the reasoning one click away." },
 ];
 
-/** The descent: rings receding into depth, the Tomato point at the bottom.
- * The Abyss mark, drawn large. */
-function DescentArt() {
-  const rings = [
-    { r: 150, cy: 160 },
-    { r: 118, cy: 180 },
-    { r: 88, cy: 198 },
-    { r: 60, cy: 214 },
-    { r: 35, cy: 227 },
-  ];
-  return (
-    <svg viewBox="0 0 320 320" className="w-full max-w-[13rem] sm:max-w-[18rem] md:max-w-[22rem]" aria-hidden="true">
-      {rings.map((ring, index) => (
-        <circle
-          key={ring.r}
-          cx="160"
-          cy={ring.cy}
-          r={ring.r}
-          fill={index === rings.length - 1 ? "var(--foreground)" : "none"}
-          stroke="var(--sage-text)"
-          strokeWidth={index === 0 ? 3 : 1.5}
-          strokeOpacity={1 - index * 0.12}
-        />
-      ))}
-      <circle cx="160" cy="236" r="9" fill="var(--highlight)" />
-    </svg>
-  );
-}
-
 export default function LandingPage() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -69,14 +41,15 @@ export default function LandingPage() {
       <main className="mx-auto max-w-6xl px-4 sm:px-6">
         <section className="grid items-center gap-10 py-14 sm:py-20 md:grid-cols-[1.2fr_1fr]">
           <div>
-            <h1 className="text-5xl leading-[1.02] font-semibold tracking-tight sm:text-6xl lg:text-7xl">
+            {/* Motion (globals.css, "Home motion"): the hero arrives with the descent art. */}
+            <h1 className="home-rise text-5xl leading-[1.02] font-semibold tracking-tight sm:text-6xl lg:text-7xl">
               Make the unknown operational.
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
+            <p className="home-rise mt-6 max-w-xl text-lg leading-8 text-muted-foreground" style={{ "--i": 1 } as React.CSSProperties}>
               Design AI agents, connect them to the tools you already use, and let specialists
               share the work, while every sensitive action waits for your approval.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="home-rise mt-8 flex flex-wrap gap-3" style={{ "--i": 2 } as React.CSSProperties}>
               <Button size="lg" className="min-h-11 px-6" asChild>
                 <Link href="/auth/signup">Get started</Link>
               </Button>
@@ -94,24 +67,25 @@ export default function LandingPage() {
           <h2 id="capabilities" className="sr-only">
             What Abyss does
           </h2>
-          <div className="grid gap-10 md:grid-cols-3">
-            {CAPABILITIES.map(({ title, body }) => (
-              <div key={title}>
+          <OnView className="grid gap-10 md:grid-cols-3">
+            {CAPABILITIES.map(({ title, body }, index) => (
+              <div key={title} className="reveal-item" style={{ "--i": index } as React.CSSProperties}>
                 <h3 className="text-lg font-semibold">{title}</h3>
                 <p className="mt-2 leading-7 text-muted-foreground">{body}</p>
               </div>
             ))}
-          </div>
+          </OnView>
         </section>
 
         <section aria-labelledby="how-it-works" className="border-t border-border py-14">
           <h2 id="how-it-works" className="text-2xl font-semibold tracking-tight">
             How a request runs
           </h2>
-          <ol className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Runs once in view: the steps light up in order, like a request going through. */}
+          <OnView as="ol" className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map(({ title, body }, index) => (
-              <li key={title} className="flex gap-4">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+              <li key={title} className="run-step flex gap-4" style={{ "--i": index } as React.CSSProperties}>
+                <span className="run-badge flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
                   {index + 1}
                 </span>
                 <div>
@@ -120,7 +94,7 @@ export default function LandingPage() {
                 </div>
               </li>
             ))}
-          </ol>
+          </OnView>
         </section>
       </main>
 
