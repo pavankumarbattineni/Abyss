@@ -5,7 +5,7 @@
   "scripts": {
     "predev": "node scripts/build-preview-runtime.mjs && node scripts/check-preview-libraries.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/build-preview-runtime.mjs && node scripts/check-preview-libraries.mjs && node scripts/check-answer-parts.mjs && node scripts/check-math.mjs && node scripts/check-visuals.mjs && node scripts/check-labels.mjs",
+    "prebuild": "node scripts/build-preview-runtime.mjs && node scripts/check-preview-libraries.mjs && node scripts/check-answer-parts.mjs && node scripts/check-math.mjs && node scripts/check-visuals.mjs && node scripts/check-labels.mjs && node scripts/check-gallery.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -14,7 +14,8 @@
     "check:answer": "node scripts/check-answer-parts.mjs",
     "check:math": "node scripts/check-math.mjs",
     "check:visuals": "node scripts/check-visuals.mjs",
-    "check:labels": "node scripts/check-labels.mjs"
+    "check:labels": "node scripts/check-labels.mjs",
+    "check:gallery": "node scripts/check-gallery.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "3.1.3",

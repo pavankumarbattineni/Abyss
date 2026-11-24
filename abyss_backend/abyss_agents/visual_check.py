@@ -208,7 +208,7 @@ def image_srcs(text: str) -> list[str]:
 
 
 def image_searches(text: str, ok: ImageCheck = image_src_ok) -> list[tuple[str, str]]:
-    """(query, prefer) for every image in the answer that fails `ok`, each once."""
+    """(query, kind) for every image in the answer that fails `ok`, each once ("open" or "web": what its address imitated)."""
     wanted = []
     for _, data, _, images in _image_blocks(text):
         for image in images:

@@ -1,23 +1,26 @@
 """The `search_images` tool: real images for the `image` visual.
 
-Two sources:
-  - Wikimedia Commons ("open"): openly licensed photos, drawings and diagrams,
-    each with the author and licence it asks to be credited -- best for
-    science, nature, landmarks, history and real people. The frontend loads
-    them straight from upload./thumb.wikimedia.org.
-  - The web ("web": Brave Search, abyss_agents/web_images.py), when
-    configured: posters, stills, characters, products, brands -- what Commons
-    doesn't have. Credited to their site, loaded through the signed image proxy.
+The agent names, for every subject it searches, the sources that suit it --
+a film's poster from Wikipedia, a person's photo from Wikidata, a diagram
+from Commons... (abyss_agents/image_sources, one module per source; the
+tool's description lists them from there). No classifier, no fixed topic
+map: the agent's own understanding of the subject decides. A subject searched
+without sources gets the exact-subject and openly licensed ones.
 
-The agent's model, which already knows what the question is about, says which
-source suits each call (`prefer`); no separate classifier. The preferred
-source fills the gallery first and the other only tops it up, so a wrong
-preference costs a little quality, never all the images. Without a preference
-both alternate. Whichever is used, only images whose title, description or
-page names the subject are kept (relevant()), and an image both sources found
-appears once.
+For each call this coordinator:
+  1. searches every chosen source for every subject at once (each source
+     with its own concurrency gate and 6 h cache, so one slow or failing
+     source never holds up the others);
+  2. per subject, alternates the sources' results in the agent's order,
+     keeps only images whose title, description or page names the subject
+     (relevant()), drops copies of the same image, sites that keep failing or
+     are excluded (image_sites.py) and images too small to read;
+  3. tops up a subject that came back short from the open web (Brave) --
+     never the first choice, so answers don't fill with arbitrary web images;
+  4. returns the best `limit` per subject, with only the fields the model
+     copies (for_model()).
 
-The model never invents image URLs: the frontend accepts only Wikimedia
+The model never invents image URLs: the chat accepts only Wikimedia
 addresses and tokens this server signed (abyss_frontend/src/lib/visuals/schemas.ts,
 abyss_agents/visual_check.py). Only the search words leave the server: no user
 or conversation data.
@@ -25,64 +28,52 @@ or conversation data.
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import httpx
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field, model_validator
 
-from abyss_agents import web_images
-from abyss_agents.http_retry import describe, get_with_retry
+from abyss_agents import image_sites, image_sources
+from abyss_agents.http_retry import describe
+from abyss_agents.image_sources.base import ImageSource
+from abyss_agents.image_sources.mediawiki import clean_url as _clean_url  # noqa: F401  (re-exported)
+from abyss_agents.image_sources.mediawiki import parse_files as parse_results  # noqa: F401  (re-exported)
 from abyss_agents.tool_display import background_step
 
 logger = logging.getLogger(__name__)
 
-COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 # Wikimedia's User-Agent policy asks API clients for "name/version (contact)
 # library": requests without contact information get throttled or refused,
 # above all from shared cloud servers. The contact is the app's public
-# repository -- no user, account or deployment details.
+# repository -- no user, account or deployment details. Sent to every source.
 USER_AGENT = "AbyssImageSearch/1.1 (https://github.com/pavankumarbattineni/Abyss) python-httpx"
 TIMEOUT_SECONDS = 10.0
-THUMB_WIDTH = 800
 MAX_QUERIES = 5
 MAX_RESULTS = 8
-# Searches running at once per source: a burst of many is what gets throttled.
-_CONCURRENCY = 3
+# Below this many images for a subject, the open web tops it up.
+_TOP_UP_BELOW = 2
+# Smaller images (when the size is known) are icons or thumbnails, unreadable in a gallery.
+_MIN_WIDTH, _MIN_HEIGHT = 300, 200
 # Successful searches are reused for a while (the same subjects come up again).
 _CACHE_SECONDS = 6 * 3600
 _CACHE_MAX = 500
 _cache: dict[tuple[str, int], tuple[float, list[dict]]] = {}
-_ALLOWED_HOSTS = {"upload.wikimedia.org", "thumb.wikimedia.org"}
-_TAGS = re.compile(r"<[^>]+>")
 
 
-def _plain(value: object, limit: int) -> str:
-    """Wikimedia metadata is HTML: tags stripped, entities decoded, whitespace folded."""
-    text = html.unescape(_TAGS.sub(" ", str(value or "")))
-    text = re.sub(r"\s+([.,;:)])", r"\1", " ".join(text.split()))
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
-
-
-def _clean_url(url: str) -> str | None:
-    """https on a Wikimedia image host, without tracking parameters; None otherwise."""
-    parts = urlsplit(url or "")
-    if parts.scheme != "https" or parts.hostname not in _ALLOWED_HOSTS:
-        return None
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
-
+# --- Relevance -----------------------------------------------------------------
 
 # Words that describe a picture rather than its subject: they don't make a result relevant.
 _GENERIC = {
     "the", "and", "for", "with", "from", "image", "images", "photo", "photos", "picture", "pictures",
     "portrait", "diagram", "illustration", "drawing", "map", "view", "movie", "film", "films", "series",
     "show", "tv", "set", "scene", "scenes", "location", "locations", "filming", "actor", "actress",
-    "cast", "character", "characters", "official", "poster", "still", "real", "famous",
+    "cast", "character", "characters", "official", "poster", "still", "real", "famous", "book", "cover",
+    "game", "games", "novel", "album", "season",
 }
 
 
@@ -101,7 +92,7 @@ def relevant(query: str, results: list[dict], limit: int) -> list[dict]:
     """Only results whose title, description or page names the query's subject
     (one of its distinctive words), most matching words first -- so an image is
     never unrelated to what was searched. Order is kept among equals (the
-    source's own ranking)."""
+    sources' own ranking, in the agent's order)."""
     subject = _words(query) - _GENERIC
     if not subject:
         return results[:limit]
@@ -115,64 +106,73 @@ def relevant(query: str, results: list[dict], limit: int) -> list[dict]:
     return [r for _, _, r in sorted(scored)][:limit]
 
 
-def interleave(first: list[dict], second: list[dict], limit: int) -> list[dict]:
-    """first[0], second[0], first[1], second[1], ... -- up to `limit`, the rest of the longer list after."""
+# --- Merging ---------------------------------------------------------------------
+
+
+def interleave(*lists: list[dict], limit: int | None = None) -> list[dict]:
+    """lists[0][0], lists[1][0], ..., lists[0][1], ... -- every source gets a turn, in order."""
     out: list[dict] = []
-    for i in range(max(len(first), len(second))):
-        out.extend(x[i] for x in (first, second) if i < len(x))
+    for i in range(max((len(x) for x in lists), default=0)):
+        out.extend(x[i] for x in lists if i < len(x))
+    return out if limit is None else out[:limit]
+
+
+def _identity(result: dict) -> str:
+    """The same picture found by several sources -- at different sizes or
+    hosts -- shares its file name: one key for all its copies."""
+    raw = str(result.get("key") or result.get("src") or "")
+    name = urlsplit(raw).path.rsplit("/", 1)[-1] if "/" in raw else raw
+    name = re.sub(r"^\d+px-", "", name.lower())
+    return name if len(name) >= 12 else raw.lower()
+
+
+def _usable(result: dict, skipped: set[str], excluded: tuple[str, ...]) -> bool:
+    """Not too small to read, and not from a site that keeps failing or is excluded."""
+    try:
+        if int(result.get("width")) < _MIN_WIDTH or int(result.get("height")) < _MIN_HEIGHT:
+            return False
+    except (TypeError, ValueError):
+        pass
+    host = image_sites.site_of(str(result.get("key") or ""))
+    return not host or not (image_sites.is_listed(host, skipped) or image_sites.is_listed(host, excluded))
+
+
+def subject_names(per_source: list[list[dict]]) -> list[str]:
+    """The subject's real name as an exact-subject source resolved it (its best
+    result's article or entity name: "Grand Theft Auto V" for "GTA V")."""
+    for results in per_source:
+        for r in results[:1]:
+            if r.get("subject"):
+                return [r["subject"]]
+    return []
+
+
+def pick(query: str, per_source: list[list[dict]], limit: int, skipped: set[str] = frozenset(),
+         excluded: tuple[str, ...] = (), names: list[str] | None = None) -> list[dict]:
+    """One subject's best images from its sources' results: each source's own
+    results ranked by relevance, then the sources alternating in the agent's
+    order -- so the agent's choice leads. An image names the subject when it
+    matches the query or the subject's real name (`names`)."""
+    names = names if names is not None else subject_names(per_source)
+    ranked = []
+    for results in per_source:
+        ordered: dict[str, dict] = {}  # query matches first (most matching words first), then name matches
+        for subject in [query, *names]:
+            for r in relevant(subject, results, 4 * limit):
+                ordered.setdefault(_identity(r), r)
+        ranked.append(list(ordered.values()))
+    seen: set[str] = set()
+    out = []
+    for r in interleave(*ranked):
+        key = _identity(r)
+        if key in seen or not _usable(r, skipped, excluded):
+            continue
+        seen.add(key)
+        out.append(r)
     return out[:limit]
 
 
-def parse_results(payload: dict) -> list[dict]:
-    """The Commons API's pages -> what the `image` visual needs, best match first."""
-    pages = (payload.get("query") or {}).get("pages") or []
-    pages = sorted(pages, key=lambda p: p.get("index", 0))
-    results: list[dict] = []
-    for page in pages:
-        info = (page.get("imageinfo") or [{}])[0]
-        if not str(info.get("mime", "")).startswith("image/"):
-            continue
-        src = _clean_url(info.get("thumburl") or info.get("url") or "")
-        if not src:
-            continue
-        meta = info.get("extmetadata") or {}
-        field = lambda name: (meta.get(name) or {}).get("value")  # noqa: E731
-        title = str(page.get("title", "")).removeprefix("File:")
-        results.append({
-            "src": src,
-            "page": info.get("descriptionurl") or "",
-            "title": re.sub(r"\.[A-Za-z0-9]+$", "", title),
-            "description": _plain(field("ImageDescription") or field("ObjectName"), 240),
-            "author": _plain(field("Artist"), 80) or "Unknown author",
-            "license": _plain(field("LicenseShortName"), 40) or "See file page",
-            "width": info.get("thumbwidth") or info.get("width"),
-            "height": info.get("thumbheight") or info.get("height"),
-        })
-    return results
-
-
-async def _commons(client: httpx.AsyncClient, query: str, limit: int) -> list[dict]:
-    # More candidates than needed: unrelated ones are dropped (relevant()).
-    params = {
-        "action": "query",
-        "format": "json",
-        "formatversion": "2",
-        "generator": "search",
-        # Photos, drawings and diagrams only (no PDFs, audio or video).
-        "gsrsearch": f"{query} filetype:bitmap|drawing",
-        "gsrnamespace": "6",
-        "gsrlimit": str(min(2 * limit, 20)),
-        "prop": "imageinfo",
-        "iiprop": "url|extmetadata|size|mime",
-        "iiurlwidth": str(THUMB_WIDTH),
-        "iiextmetadatafilter": "Artist|LicenseShortName|ImageDescription|ObjectName",
-    }
-    response = await get_with_retry(client, COMMONS_API, params)
-    return relevant(query, parse_results(response.json()), limit)
-
-
-async def _web(client: httpx.AsyncClient, query: str, limit: int) -> list[dict]:
-    return relevant(query, await web_images.web_search(client, query, 2 * limit), limit)
+# --- Searching -------------------------------------------------------------------
 
 
 def _remember(key: tuple[str, int], results: list[dict]) -> None:
@@ -186,151 +186,142 @@ def _remember(key: tuple[str, int], results: list[dict]) -> None:
     _cache[key] = (time.monotonic() + _CACHE_SECONDS, results)
 
 
-Search = Callable[[httpx.AsyncClient, str, int], Awaitable[list[dict]]]
-
-
-async def _cached(source: str, search: Search, client: httpx.AsyncClient, gate: asyncio.Semaphore,
+async def _cached(source: ImageSource, client: httpx.AsyncClient, gate: asyncio.Semaphore,
                   query: str, limit: int) -> list[dict] | None:
-    """One source's results for one query: from the cache, or searched under the
+    """One source's results for one subject: from the cache, or searched under the
     source's concurrency gate. None when the source failed (logged, never raised)."""
-    key = (f"{source}:{query.lower()}", limit)
+    key = (f"{source.name}:{query.lower()}", limit)
     hit = _cache.get(key)
     if hit and hit[0] > time.monotonic():
         return hit[1]
     async with gate:
         try:
-            results = await search(client, query, limit)
-        except (httpx.HTTPError, ValueError) as exc:
-            logger.warning("%s image search failed (%s) for a %d-word query", source, describe(exc), len(query.split()))
+            results = await source.search(client, query, limit)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            logger.warning("%s image search failed (%s) for a %d-word query", source.name, describe(exc), len(query.split()))
             return None
     _remember(key, results)
     return results
 
 
-async def _all(source: str, search: Search, client: httpx.AsyncClient, queries: list[str], limit: int) -> list:
-    gate = asyncio.Semaphore(_CONCURRENCY)  # each source has its own: one never waits for the other
-    return await asyncio.gather(*(_cached(source, search, client, gate, q, limit) for q in queries))
-
-
-
-
-PREFER_WEB = "web"  # posters, stills, characters, products, brands, games
-PREFER_OPEN = "open"  # openly licensed: science, nature, landmarks, history, real people
-# Below this many images for a query, the preferred source gets topped up.
-_TOP_UP_BELOW = 2
-
-
-def preference(value: object) -> str | None:
-    """The source asked for: PREFER_WEB, PREFER_OPEN, or None (balanced) for anything else."""
-    text = str(value or "").strip().lower()
-    return text if text in (PREFER_WEB, PREFER_OPEN) else None
-
-
-def combine(prefer: str | None, commons: list[dict] | None, web: list[dict] | None, limit: int) -> list[dict] | None:
-    """One query's gallery from both sources' results: the preferred source
-    first and the other filling what's left, or both alternating without a
-    preference. None only when every source searched failed."""
-    if commons is None and web is None:
-        return None
-    commons, web = commons or [], web or []
-    if prefer == PREFER_WEB:
-        return (web + commons)[:limit]
-    if prefer == PREFER_OPEN:
-        return (commons + web)[:limit]
-    return interleave(commons, web, limit)
-
-
-async def _gather_sources(client: httpx.AsyncClient, queries: list[str], limit: int, prefer: str | None) -> tuple[list, list]:
-    """(Commons results, web results) per query.
-
-    - Web off: Commons only.
-    - "open": Commons first; the web only for queries Commons came back short
-      on -- most "open" searches never use the web quota.
-    - "web" or balanced: both at once (Commons costs nothing, and the top-up
-      is then ready without a second wait).
-    """
-    none = [None] * len(queries)
-    if not web_images.brave_api_key():
-        return await _all("commons", _commons, client, queries, limit), none
-    if prefer == PREFER_OPEN:
-        commons = await _all("commons", _commons, client, queries, limit)
-        short = [q for q, found in zip(queries, commons) if len(found or []) < min(limit, _TOP_UP_BELOW)]
-        if not short:
-            return commons, none
-        extra = dict(zip(short, await _all("web", _web, client, short, limit)))
-        return commons, [extra.get(q) for q in queries]
-    commons, web = await asyncio.gather(
-        _all("commons", _commons, client, queries, limit),
-        _all("web", _web, client, queries, limit),
-    )
-    return commons, web
-
-
-def clean_queries(queries: object) -> list[str]:
-    """Searches as the tool takes them: one string or a list, trimmed, deduplicated, at most MAX_QUERIES."""
-    if isinstance(queries, str):
-        queries = [queries]
-    cleaned = dict.fromkeys(" ".join(str(q or "").split())[:200] for q in queries or [])
-    return [q for q in cleaned if q][:MAX_QUERIES]
-
-
-async def find_images(queries: list[str], limit: int = 3, prefer: object = None) -> list[list[dict] | None]:
-    """Per query, its images (best first), [] when none match, None when every
-    source failed. What search_images returns, for callers that aren't the
-    model -- the visual repair finding real images for ones the model wrote
-    itself (visual_repair.py)."""
+async def find_images(searches: list[tuple[str, list[str]]], limit: int = 3) -> list[list[dict] | None]:
+    """Per (subject, chosen sources): its images, best first; [] when none
+    match; None when every source searched failed. What search_images
+    returns, for callers that aren't the model too -- the visual repair finding
+    real images for ones the model wrote itself (visual_repair.py)."""
     limit = max(1, min(MAX_RESULTS, int(limit or 3)))
-    prefer = preference(prefer)
-    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
-        commons, web = await _gather_sources(client, queries, limit, prefer)
-    return [combine(prefer, c, w, limit) for c, w in zip(commons, web)]
+    plans = [(query, image_sources.chosen(names)) for query, names in searches]
+    skipped = await image_sites.skipped_sites()
+    excluded = image_sites.configured_blocks()
+    fallback = image_sources.FALLBACK
+    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}, follow_redirects=True) as client:
+        gates = {name: asyncio.Semaphore(s.concurrency) for name, s in image_sources.CHOOSABLE.items()}
+        gates[fallback.name] = asyncio.Semaphore(fallback.concurrency)
+        # Every subject x chosen source at once.
+        runs = [[_cached(s, client, gates[s.name], query, limit) for s in sources] for query, sources in plans]
+        flat = iter(await asyncio.gather(*(r for row in runs for r in row)))
+        found = [[next(flat) for _ in row] for row in runs]
+        names = [subject_names([r for r in lists if r]) for lists in found]
+        picked = [pick(query, [r for r in lists if r], limit, skipped, excluded, names[i])
+                  for i, ((query, _), lists) in enumerate(zip(plans, found))]
+        # The open web only for subjects the chosen sources came back short on.
+        short = [i for i, p in enumerate(picked) if len(p) < min(limit, _TOP_UP_BELOW)]
+        extra: dict[int, list[dict] | None] = {}
+        if short and fallback.available():
+            more = await asyncio.gather(*(_cached(fallback, client, gates[fallback.name], plans[i][0], limit) for i in short))
+            extra = dict(zip(short, more))
+    out: list[list[dict] | None] = []
+    for i, ((query, _), lists) in enumerate(zip(plans, found)):
+        if all(r is None for r in lists) and extra.get(i) is None:
+            out.append(None)
+            continue
+        top_up = extra.get(i) or []
+        out.append(pick(query, [picked[i], top_up], limit, skipped, excluded, names[i]) if top_up else picked[i])
+    return out
 
 
-@tool("search_images")
-async def search_images(queries: list[str], limit: int = 3, prefer: str | None = None) -> str:
-    """Find real images: openly licensed photos and diagrams, and -- where web
-    image search is on -- posters, stills and product images from the web.
+# --- The tool --------------------------------------------------------------------
 
-    Use it when seeing the real thing helps: a place, landmark, person,
-    organism, artwork, object, historical photo, or a labelled diagram.
-    `queries`: one to five searches at once, each a few English keywords
-    naming one subject (e.g. ["mitochondrion diagram", "Taj Mahal"]) -- one
-    per subject. For a film, series, book or game, search the work itself
-    (e.g. ["Interstellar film"]); its people or places are subjects of their own.
-    `prefer`: set it whenever the subjects clearly suit one source --
-      "web" for films, series, games and their characters or scenes, products,
-      brands, album or book covers;
-      "open" for science, anatomy, nature, landmarks, history and real people;
-      omit only when unsure or mixed. The other source only tops up a short result.
-    Subjects needing different sources go in separate calls, made together.
-    Returns up to `limit` (1-8) images per query, best match first, each with
-    src, page, author and license (and `source`, the site, for web images):
-    show them with ```visual {"format":"image"} blocks, copying those fields
-    exactly.
-    """
-    cleaned = clean_queries(queries)
-    if not cleaned:
-        return "Give one or more searches, each a few keywords describing an image."
-    found = await find_images(cleaned, limit, prefer)
-    if all(r is None for r in found):
-        return "Image search is unavailable right now. Answer without images."
-    found = [[for_model(r) for r in results] if results else results for results in found]
-    if len(cleaned) == 1:
-        if not found[0]:
-            return f'No images found for "{cleaned[0]}". Try other keywords, or answer without an image.'
-        return json.dumps(found[0], ensure_ascii=False)
-    out = {q: (r or "no images found -- try other keywords or skip this image") for q, r in zip(cleaned, found)}
-    return json.dumps(out, ensure_ascii=False)
+
+class ImageSearch(BaseModel):
+    """One subject to find images of."""
+
+    query: str = Field(description="a few English keywords naming one subject")
+    sources: list[str] = Field(
+        default_factory=list,
+        description="the sources that suit this subject, best first",
+        # The registry's names, so a model can only choose a real source.
+        json_schema_extra={"items": {"type": "string", "enum": list(image_sources.CHOOSABLE)}},
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_text(cls, value: object) -> object:
+        return {"query": value} if isinstance(value, str) else value  # a plain string is a query with default sources
+
+
+def clean_queries(queries: object) -> list[ImageSearch]:
+    """Searches as the tool takes them: trimmed, deduplicated, at most MAX_QUERIES."""
+    if isinstance(queries, (str, dict, ImageSearch)):
+        queries = [queries]
+    seen: dict[str, ImageSearch] = {}
+    for item in queries or []:
+        try:
+            search = item if isinstance(item, ImageSearch) else ImageSearch.model_validate(item)
+        except ValueError:
+            continue
+        text = " ".join(str(search.query or "").split())[:200]
+        if text and text.lower() not in seen:
+            seen[text.lower()] = ImageSearch(query=text, sources=search.sources)
+    return list(seen.values())[:MAX_QUERIES]
 
 
 # What the model copies into an image block (and the title, to know what each image shows).
-# The description and size only serve relevance and filtering here: a long description
+# The description, size and key only serve relevance and filtering here: a long description
 # is what models cut short mid-JSON when copying a result whole.
 _FOR_MODEL = ("src", "page", "title", "author", "license", "source")
 
 
 def for_model(result: dict) -> dict:
     return {k: result[k] for k in _FOR_MODEL if result.get(k) not in (None, "") or k in ("author", "license")}
+
+
+@tool("search_images")
+async def search_images(queries: list[ImageSearch], limit: int = 3) -> str:
+    """Find real images of the subjects an answer explains, from the sources chosen for each."""
+    cleaned = clean_queries(queries)
+    if not cleaned:
+        return "Give one or more searches, each a few keywords describing an image."
+    found = await find_images([(q.query, q.sources) for q in cleaned], limit)
+    if all(r is None for r in found):
+        return "Image search is unavailable right now. Answer without images."
+    found = [[for_model(r) for r in results] if results else results for results in found]
+    if len(cleaned) == 1:
+        if not found[0]:
+            return f'No images found for "{cleaned[0].query}". Try other keywords or sources, or answer without an image.'
+        return json.dumps(found[0], ensure_ascii=False)
+    out = {q.query: (r or "no images found -- try other keywords or sources, or skip this image") for q, r in zip(cleaned, found)}
+    return json.dumps(out, ensure_ascii=False)
+
+
+search_images.description = f"""Find real images of the subjects an answer explains.
+
+Use it when seeing the real thing helps: a place, landmark, person, organism,
+artwork, object, historical photo, a labelled diagram, or a film's, series',
+book's or game's poster or cover.
+`queries`: one to five subjects, each {{"query": a few English keywords naming
+one subject, "sources": the sources that suit THAT subject, best first}}, e.g.
+[{{"query": "Interstellar film", "sources": ["wikipedia"]}},
+ {{"query": "Christopher Nolan", "sources": ["wikidata", "wikipedia"]}},
+ {{"query": "human heart anatomy", "sources": ["commons", "openverse"]}}].
+Sources:
+{image_sources.describe()}
+Choose for each subject what will actually picture it; the open web tops up a
+subject only when these come back short.
+Returns up to `limit` (1-8) images per subject, best match first, each with
+src, page, author and license (and `source`, the site, where it isn't
+Wikimedia Commons): show them with ```visual {{"format":"image"}} blocks,
+copying those fields exactly."""
 
 
 # Only prepares what the answer shows: the chat lists no step for it (tool_display.py).
