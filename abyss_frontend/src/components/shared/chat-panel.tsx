@@ -33,6 +33,7 @@ import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalP
 import { contentForCopy } from "@/lib/interactive";
 import { agentService } from "@/services";
 import { AttachMenu } from "./attach-menu";
+import { MicHint } from "./mic-hint";
 import { ModelPicker } from "./model-picker";
 import { CopyButton } from "./copy-button";
 import { FixRequestContext } from "./fix-request";
@@ -222,12 +223,14 @@ export function ChatPanel({
           compact ? DOCKED_INPUT : "max-h-40 min-h-9 sm:max-h-52 sm:min-h-16",
         )}
       />
-      <div className={cn("flex items-center justify-between gap-2", compact ? "pt-1" : "pt-2 sm:pt-3")}>
+      <div className={cn("flex items-center justify-between gap-2", compact ? "pt-1.5" : "pt-2.5 sm:pt-3.5")}>
         {/* The model applies to every agent and chat of the user. */}
         <div className="flex min-w-0 items-center gap-1.5">
           <AttachMenu />
           <ModelPicker />
         </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+        <MicHint />
         {isStreaming ? (
           <Button
             type="button"
@@ -251,6 +254,7 @@ export function ChatPanel({
             <ArrowUp className="size-4" />
           </Button>
         )}
+        </div>
       </div>
     </div>
   );
