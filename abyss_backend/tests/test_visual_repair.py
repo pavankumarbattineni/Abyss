@@ -270,3 +270,12 @@ def test_blocks_saved_under_the_old_tag_are_still_read_and_written_back_under_th
     broken = fence("trench-ui", '{"version":1,"components":[{"type":"histogram"}]}')
     text, _ = run(broken, [json.dumps(ui)])
     assert text.startswith("```abyss-ui")
+
+
+def test_an_image_address_that_is_a_web_page_is_unusable():
+    from abyss_agents.visual_repair import is_unusable
+
+    assert is_unusable(404, "") and is_unusable(410, "text/html")
+    assert is_unusable(200, "text/html; charset=UTF-8")  # thumb.wikimedia.org/wiki/File:... is a page
+    assert not is_unusable(200, "image/jpeg")
+    assert not is_unusable(429, "text/html") and not is_unusable(503, "")  # busy: never dropped for that

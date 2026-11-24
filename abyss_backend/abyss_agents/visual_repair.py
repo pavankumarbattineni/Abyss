@@ -140,16 +140,25 @@ def rebuilt_image_blocks(text: str, known: dict[str, dict]) -> list[tuple[str, s
     return fixes
 
 
+def is_unusable(status_code: int, content_type: str) -> bool:
+    """An address that can't be shown as an image: gone (404/410), or found but
+    not an image (a file's description page on an image host). Anything else --
+    throttled, a server error -- counts as usable: a working image is never
+    dropped because Wikimedia was busy."""
+    if status_code in (404, 410):
+        return True
+    return 200 <= status_code < 300 and not content_type.lower().startswith("image/")
+
+
 async def _missing(srcs: list[str]) -> set[str]:
-    """The Wikimedia addresses that don't exist (404/410). Anything else --
-    found, throttled, unreachable -- counts as existing: a working image is
-    never dropped because Wikimedia was busy."""
+    """The Wikimedia addresses that can't be shown as images (is_unusable)."""
     if not srcs:
         return set()
 
     async def gone(client: httpx.AsyncClient, src: str) -> bool:
         try:
-            return (await client.head(src)).status_code in (404, 410)
+            response = await client.head(src)
+            return is_unusable(response.status_code, response.headers.get("content-type", ""))
         except httpx.HTTPError:
             return False
 
