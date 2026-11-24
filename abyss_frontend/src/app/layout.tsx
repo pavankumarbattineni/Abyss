@@ -5,7 +5,7 @@ import "./globals.css";
 import { AuthProvider, QueryProvider, ThemeProvider } from "@/providers";
 import { Toaster } from "@/components/ui";
 
-// Same typography as Trench, loaded straight from Google Fonts (display=swap)
+// The app's typography, loaded straight from Google Fonts (display=swap)
 // rather than next/font/google, whose Turbopack loader can't resolve some of
 // Google's dynamic font URLs. Applied via the font-* tokens in globals.css.
 //   Inter 400/500/600        -- UI and user messages

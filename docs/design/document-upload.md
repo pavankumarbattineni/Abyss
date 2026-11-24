@@ -10,7 +10,7 @@ Static UI already in code: `abyss_frontend/src/components/shared/attach-menu.tsx
 - Audio and video are out of scope for now.
 
 ## 2. MarkItDown evaluation (v0.1.9, 2026-11-17)
-Tested on the Trench/Abyss documentation PDFs, their HTML source, a rasterised "scanned" PDF and DOCX/XLSX/PPTX files built from the same content.
+Tested on technical documentation PDFs, their HTML source, a rasterised "scanned" PDF and DOCX/XLSX/PPTX files built from the same content.
 
 | Input | Result |
 |---|---|
@@ -38,6 +38,6 @@ read / SSRF); don't accept ZIP (recursive conversion). MIT licence, pre-1.0 → 
 8. **Runtime:** lazy-load MarkItDown in a worker thread with a timeout (Render 512 MB); friendly error codes `unsupported_file`, `file_too_large`.
 
 ## 4. Open decisions
-- Per-chat attachments only, or also a reusable per-user knowledge base (that would be search/RAG like Trench)?
-- Storage for originals: Postgres (small files) vs object storage (B2, as Trench uses).
+- Per-chat attachments only, or also a reusable per-user knowledge base (that would be search/RAG)?
+- Storage for originals: Postgres (small files) vs object storage (e.g. B2).
 - Maximum file size / pages per upload and per thread.

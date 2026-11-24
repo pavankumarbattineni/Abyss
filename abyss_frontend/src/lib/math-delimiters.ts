@@ -1,5 +1,5 @@
 /**
- * Trench's system prompt asks the model for LaTeX delimited the standard way
+ * Models often write LaTeX delimited the standard way
  * -- `\( ... \)` inline and `\[ ... \]` for display equations -- but
  * Markdown treats `\(`/`\[` as escaped punctuation (so the raw LaTeX leaks
  * into the page as text) and remark-math only recognizes `$` delimiters.

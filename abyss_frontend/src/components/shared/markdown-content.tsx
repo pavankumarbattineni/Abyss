@@ -12,7 +12,7 @@ import "katex/dist/katex.min.css";
 import "katex/contrib/mhchem";
 
 import { endsInOpenCodeBlock, previewKind } from "@/lib/code-preview";
-import { INTERACTIVE_LANGUAGE, interactiveFromVisual, looksLikeInteractiveJson } from "@/lib/interactive";
+import { interactiveFromVisual, isInteractiveLanguage, looksLikeInteractiveJson } from "@/lib/interactive";
 import { WIKIMEDIA_IMAGE } from "@/lib/visuals/schemas";
 import { isVisualFormat, looksLikeVisualJson, VISUAL_LANGUAGE } from "@/lib/visuals/parse";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
@@ -48,7 +48,7 @@ const VisualBlock = dynamic(
 import { FormatChip, formatCommand } from "./format-chip";
 import { MermaidDiagram } from "./mermaid-diagram";
 
-// Same renderer as Trench (minus its document citations). singleTilde off:
+// GitHub-flavoured Markdown with math. singleTilde off:
 // a lone "~" (e.g. "~2,400") is never read as strikethrough -- only "~~x~~".
 // singleDollarTextMath off: only $$...$$ is math (see math-delimiters.ts), so
 // prose like "costs $5 and $10" never renders as an equation. Raw HTML is
@@ -114,8 +114,9 @@ function FencedBlock({ node, isStreaming, ...props }: { node?: unknown; isStream
     return <MermaidDiagram code={block.code} isStreaming={isStreaming} />;
   }
   if (
-    block?.language === INTERACTIVE_LANGUAGE ||
-    (block?.language === "json" && !isStreaming && looksLikeInteractiveJson(block.code))
+    block &&
+    (isInteractiveLanguage(block.language) ||
+      (block.language === "json" && !isStreaming && looksLikeInteractiveJson(block.code)))
   ) {
     return <InteractiveBlock source={block.code} isStreaming={isStreaming} />;
   }
@@ -276,7 +277,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   const source = normalizeMathDelimiters(splitInlineFenceJson(content));
   const unfinishedFrom = !isStreaming && endsInOpenCodeBlock(source) ? source.trimEnd().length : null;
   return (
-    // Agent response typography, as in Trench: Source Serif 4 at a reading
+    // Agent response typography: Source Serif 4 at a reading
     // size. Same element while streaming and after, so fonts never jump.
     <div className={cn("min-w-0 font-serif text-[16px] leading-[1.7] wrap-break-word", className)}>
       <UnfinishedTailContext.Provider value={unfinishedFrom}>

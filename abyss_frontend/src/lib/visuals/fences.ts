@@ -6,8 +6,11 @@
  * way (abyss_agents/visual_check.py fence_fixes); this covers older answers
  * and the live stream.
  */
-const ONE_LINE = /^([ \t]*)```(visual|trench-ui)[ \t]+([{[].*?)[ \t]*```[ \t]*$/gm;
-const OPENING = /^([ \t]*)```(visual|trench-ui)[ \t]+([{[].*)$/gm;
+import { INTERACTIVE_LANGUAGES } from "@/lib/interactive";
+
+const TAGS = ["visual", ...INTERACTIVE_LANGUAGES].join("|");
+const ONE_LINE = new RegExp(`^([ \\t]*)\`\`\`(${TAGS})[ \\t]+([{[].*?)[ \\t]*\`\`\`[ \\t]*$`, "gm");
+const OPENING = new RegExp(`^([ \\t]*)\`\`\`(${TAGS})[ \\t]+([{[].*)$`, "gm");
 
 export function splitInlineFenceJson(content: string): string {
   if (!content.includes("```")) return content;

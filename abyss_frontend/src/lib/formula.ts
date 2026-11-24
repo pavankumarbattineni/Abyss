@@ -1,5 +1,5 @@
 /** A tiny, safe evaluator for calculator formulas the model writes inside
- * ```trench-ui blocks. Never uses eval/Function: the input is tokenized and
+ * ```abyss-ui blocks. Never uses eval/Function: the input is tokenized and
  * parsed by a recursive-descent parser that only knows numbers, variables
  * from `scope`, arithmetic, comparisons and a fixed set of functions.
  * Anything else throws a FormulaError with a message fit to show a user.

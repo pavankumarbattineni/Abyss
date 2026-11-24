@@ -2,7 +2,7 @@
  * Live previews of frontend code an agent writes (```html, or a React
  * component in ```jsx / ```tsx).
  *
- * Unlike ```trench-ui (lib/interactive.ts), where the model only supplies data
+ * Unlike ```abyss-ui (lib/interactive.ts), where the model only supplies data
  * for our own components, this runs MODEL-WRITTEN CODE -- so it only ever runs
  * inside a sandboxed iframe (components/shared/code-preview.tsx):
  *

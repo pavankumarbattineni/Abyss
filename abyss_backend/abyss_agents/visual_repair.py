@@ -1,4 +1,4 @@
-"""Repairs broken ```visual / ```trench-ui blocks before an answer is saved.
+"""Repairs broken ```visual / ```abyss-ui blocks before an answer is saved.
 
 The answer streams to the chat as it is written, so a block the model got
 wrong (broken JSON, a missing required field, an unknown format, a made-up
@@ -199,7 +199,7 @@ class VisualRepairMiddleware(AgentMiddleware):
             target = await self._choose_format(block)
         guide = spec_for(target or block.format) if (target or block.format) else None
         if block.language == INTERACTIVE_LANGUAGE:
-            guide = 'A trench-ui block: {"version":1,"components":[{"type":...}, ...]}.'
+            guide = f'An {INTERACTIVE_LANGUAGE} block: {{"version":1,"components":[{{"type":...}}, ...]}}.'
         prompt = (
             f"Block ({block.language}):\n{block.source}\n\nErrors:\n"
             + "\n".join(f"- {e}" for e in block.errors)

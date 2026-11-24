@@ -181,7 +181,7 @@ _VISUALS = (
     'e.g. A["Parse (step 1)"].\n'
     "- When the answer presents 3+ related numbers -- a trend, amounts across "
     "categories, parts of a whole, progress to a target, or a calculation the "
-    "user may adjust -- add one ```trench-ui block with JSON "
+    "user may adjust -- add one ```abyss-ui block with JSON "
     '{"version":1,"components":[...]} instead of a Markdown table of the same '
     'figures. Every component needs a "type": metric_cards '
     '{"items":[{"label","value","format"?}]}; table {"columns","rows"}; '

@@ -1,6 +1,6 @@
-/** The ```trench-ui block format: a fixed catalog of components the model
- * may put in an answer (see rule 8 of the system prompt in
- * app/graph/rag_graph.py). The model only ever supplies DATA -- every
+/** The ```abyss-ui block format: a fixed catalog of components the model
+ * may put in an answer (see the interactive-view rule of the system prompt in
+ * abyss_backend/abyss_agents/prompts.py). The model only ever supplies DATA -- every
  * component is rendered by our own React code, so there is no model-written
  * HTML or JS. Parsing is lenient per component: one malformed component is
  * skipped, and only a block with nothing usable falls back to plain code. */
@@ -8,7 +8,15 @@ import { z } from "zod";
 
 import { evaluateFormula, formulaIdentifiers } from "@/lib/formula";
 
-export const INTERACTIVE_LANGUAGE = "trench-ui";
+export const INTERACTIVE_LANGUAGE = "abyss-ui";
+/** Earlier names of the block tag: answers saved with them still draw. */
+export const LEGACY_INTERACTIVE_LANGUAGES: readonly string[] = ["trench-ui"];
+/** Every tag an interactive block may carry: the current one first. */
+export const INTERACTIVE_LANGUAGES: readonly string[] = [INTERACTIVE_LANGUAGE, ...LEGACY_INTERACTIVE_LANGUAGES];
+
+export function isInteractiveLanguage(language: string | undefined): boolean {
+  return INTERACTIVE_LANGUAGES.includes(language ?? "");
+}
 
 const MAX_COMPONENTS = 12;
 const MAX_ITEMS = 500;
@@ -649,13 +657,13 @@ export function interactiveBlockToText(block: ParsedBlock): string {
   return block.components.map(componentToText).join("\n\n");
 }
 
-const BLOCK_RE = /```(?:trench-ui|json)[^\n]*\n([\s\S]*?)```/g;
+const BLOCK_RE = new RegExp("```(" + [...INTERACTIVE_LANGUAGES, "json"].join("|") + ")[^\\n]*\\n([\\s\\S]*?)```", "g");
 
-/** The message as the user would want it pasted: each valid trench-ui
+/** The message as the user would want it pasted: each valid interactive
  * block becomes readable Markdown instead of raw JSON. */
 export function contentForCopy(content: string): string {
-  return content.replace(BLOCK_RE, (whole, json: string) => {
-    if (!whole.startsWith("```trench-ui") && !looksLikeInteractiveJson(json)) return whole;
+  return content.replace(BLOCK_RE, (whole, language: string, json: string) => {
+    if (!isInteractiveLanguage(language) && !looksLikeInteractiveJson(json)) return whole;
     const parsed = parseInteractiveBlock(json);
     return parsed ? interactiveBlockToText(parsed) : whole;
   });

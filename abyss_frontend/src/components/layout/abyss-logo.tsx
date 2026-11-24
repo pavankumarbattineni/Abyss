@@ -4,8 +4,7 @@ import { cn } from "@/lib/utils";
  * Abyss's mark, "the descent": a ring with a solid disc sitting low inside
  * it and a Tomato point at the deepest spot -- looking down into a well that
  * recedes into depth, with the spark of intelligence brought up from the
- * bottom. Built like Trench's mark (an ink symbol on a brand-colour tile) so
- * the two apps read as siblings, but its own symbol.
+ * bottom. An ink symbol on a brand-colour tile.
  *
  * Colours come from the theme tokens, so the tile follows light/dark mode.
  * Keep in sync with src/app/icon.svg (the favicon, which needs fixed colours).

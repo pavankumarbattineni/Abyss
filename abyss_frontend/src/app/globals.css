@@ -4,9 +4,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Abyss shares Trench's design language (type, radii, component styles) in
-   its own palette: Sage #9CAF88 (brand fills -- dark ink on top, like
-   Trench's lime), Off-White #F7F5EF (light surfaces) and Tomato #E8412C
+/* Abyss's design language (type, radii, component styles) in its
+   palette: Sage #9CAF88 (brand fills -- dark ink on top), Off-White #F7F5EF (light surfaces) and Tomato #E8412C
    (sparing highlights: focus ring, active markers, brand mark, live states).
    Every text pairing is WCAG-checked; raw sage is too light for text on
    off-white, so sage-coloured text uses --sage-text. */
@@ -103,8 +102,8 @@
   --shadow-elevated: 0 12px 32px rgba(29, 39, 25, 0.1);
   --radius: 0.75rem;
 
-  /* Categorical series for answer charts -- CVD-validated order (same as
-     Trench); the dark column is the same hues stepped for the dark surface. */
+  /* Categorical series for answer charts -- CVD-validated order; the dark
+     column is the same hues stepped for the dark surface. */
   --viz-1: #2a78d6;
   --viz-2: #eb6834;
   --viz-3: #1baf7a;

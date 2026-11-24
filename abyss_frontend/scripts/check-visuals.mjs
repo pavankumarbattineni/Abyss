@@ -3,8 +3,8 @@
  * a realistic spec for every format -- written the loose way models write
  * them (numbers as strings, ranges as objects, formulas with implicit
  * multiplication) -- must validate, render on the server without throwing,
- * draw no NaN/Infinity coordinates, and copy as text. The new trench-ui
- * charts (area, scatter, histogram, box plot) must validate too.
+ * draw no NaN/Infinity coordinates, and copy as text. The interactive
+ * (abyss-ui) charts (area, scatter, histogram, box plot) must validate too.
  * Runs before every build. Run on its own: node scripts/check-visuals.mjs
  */
 import { build } from "esbuild";
@@ -115,7 +115,7 @@ assert.ok(typo.ok && typo.data.molecules.length === 2 && typo.data.molecules[1].
 const lenient = m.parseVisual(JSON.stringify({ format: "plot", x: [5, 1], y: [0, "2pi"], functions: [{ y: "x" }] }));
 assert.ok(lenient.ok && lenient.data.x === undefined && Math.abs(lenient.data.y[1] - 2 * Math.PI) < 1e-9, JSON.stringify(lenient));
 
-// trench-ui charts.
+// Interactive (abyss-ui) charts.
 const block = m.parseInteractiveBlock(
   JSON.stringify({
     version: 1,
@@ -127,7 +127,7 @@ const block = m.parseInteractiveBlock(
     ],
   }),
 );
-assert.ok(block && block.skipped === 0, `trench-ui: ${JSON.stringify(block)}`);
+assert.ok(block && block.skipped === 0, `abyss-ui: ${JSON.stringify(block)}`);
 assert.equal(block.components.length, 4);
 // Tables as models also write them: columns as {key, label}, rows as objects.
 const objTable = m.parseInteractiveBlock(JSON.stringify({ version: 1, components: [{ type: "table",

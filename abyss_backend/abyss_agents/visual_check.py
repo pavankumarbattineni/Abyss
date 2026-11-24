@@ -1,4 +1,4 @@
-"""Checks the ```visual and ```trench-ui blocks in an answer (pure, no LangChain).
+"""Checks the ```visual and ```abyss-ui blocks in an answer (pure, no LangChain).
 
 The frontend validates every block with zod (abyss_frontend/src/lib/visuals/
 schemas.ts and src/lib/interactive.ts) and is lenient: optional fields that
@@ -18,7 +18,16 @@ from dataclasses import dataclass
 from abyss_agents.visual_specs import FORMATS, VISUAL_LANGUAGE
 from abyss_agents.web_images import TOKEN_PREFIX, verify_image_token
 
-INTERACTIVE_LANGUAGE = "trench-ui"
+INTERACTIVE_LANGUAGE = "abyss-ui"
+# Earlier names of the interactive block tag: answers saved with them are
+# still read (and a repaired one is written back under the current name).
+LEGACY_INTERACTIVE_LANGUAGES = ("trench-ui",)
+_BLOCK_LANGUAGES = "|".join(re.escape(x) for x in (VISUAL_LANGUAGE, INTERACTIVE_LANGUAGE, *LEGACY_INTERACTIVE_LANGUAGES))
+
+
+def block_language(fence: str) -> str:
+    """A fence's tag as the current block language (a legacy tag counts as the interactive one)."""
+    return INTERACTIVE_LANGUAGE if fence in LEGACY_INTERACTIVE_LANGUAGES else fence
 WIKIMEDIA_IMAGE = re.compile(r"^https://(upload|thumb)\.wikimedia\.org/")
 # A fenced block: ```lang (rest of the line) ... ``` -- what the chat renders.
 _FENCE = re.compile(r"```([\w-]*)[^\n]*\n(.*?)```", re.S)
@@ -26,7 +35,7 @@ _FENCE = re.compile(r"```([\w-]*)[^\n]*\n(.*?)```", re.S)
 
 @dataclass(frozen=True)
 class Block:
-    language: str  # "visual" or "trench-ui"
+    language: str  # "visual" or "abyss-ui"
     source: str  # the JSON between the fences
     text: str  # the whole fenced block, as it appears in the answer
     errors: tuple[str, ...]
@@ -359,6 +368,7 @@ def bare_images(data) -> dict | None:
 
 def check_block(language: str, source: str) -> tuple[list[str], str | None]:
     """(errors, format) for one block's JSON; no errors means the chat can draw it."""
+    language = block_language(language)
     try:
         data = lenient_json(source)
     except (json.JSONDecodeError, ValueError) as exc:
@@ -378,8 +388,8 @@ def check_block(language: str, source: str) -> tuple[list[str], str | None]:
 # JSON written on the fence line ("```visual {...}", even with the closing
 # fence on the same line): Markdown reads it as the fence's label and the
 # block renders empty. Same rules as abyss_frontend/src/lib/visuals/fences.ts.
-_ONE_LINE = re.compile(r"^([ \t]*)```(visual|trench-ui)[ \t]+([{\[].*?)[ \t]*```[ \t]*$", re.M)
-_OPENING = re.compile(r"^([ \t]*)```(visual|trench-ui)[ \t]+([{\[].*)$", re.M)
+_ONE_LINE = re.compile(r"^([ \t]*)```(" + _BLOCK_LANGUAGES + r")[ \t]+([{\[].*?)[ \t]*```[ \t]*$", re.M)
+_OPENING = re.compile(r"^([ \t]*)```(" + _BLOCK_LANGUAGES + r")[ \t]+([{\[].*)$", re.M)
 
 
 def fence_fixes(text: str) -> list[tuple[str, str]]:
@@ -400,12 +410,12 @@ def fence_fixes(text: str) -> list[tuple[str, str]]:
 def language_fixes(text: str) -> list[tuple[str, str]]:
     """(old, new) rewrites of a block written in the wrong language: a
     ```visual block whose "format" is really an interactive component
-    (comparison, table, bar_chart...) becomes a ```trench-ui block, and a
-    one-component ```trench-ui block whose "type" is really a visual format
+    (comparison, table, bar_chart...) becomes an ```abyss-ui block, and a
+    one-component ```abyss-ui block whose "type" is really a visual format
     becomes a ```visual block -- when the result is valid. No model call."""
     fixes = []
     for match in _FENCE.finditer(text or ""):
-        language, source = match.group(1), match.group(2)
+        language, source = block_language(match.group(1)), match.group(2)
         try:
             data = lenient_json(source)
         except ValueError:
@@ -429,10 +439,10 @@ def language_fixes(text: str) -> list[tuple[str, str]]:
 
 
 def find_blocks(text: str) -> list[Block]:
-    """Every ```visual / ```trench-ui block in the answer, with its problems."""
+    """Every ```visual / ```abyss-ui block in the answer, with its problems."""
     blocks = []
     for match in _FENCE.finditer(text or ""):
-        language = match.group(1)
+        language = block_language(match.group(1))
         if language not in (VISUAL_LANGUAGE, INTERACTIVE_LANGUAGE):
             continue
         errors, fmt = check_block(language, match.group(2))

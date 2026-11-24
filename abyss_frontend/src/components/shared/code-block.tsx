@@ -4,6 +4,7 @@ import { useMemo, useRef, type ReactNode } from "react";
 
 import { CopyButton } from "@/components/shared/copy-button";
 import { highlightCode } from "@/lib/highlight";
+import { isInteractiveLanguage } from "@/lib/interactive";
 import { TableActions } from "./block-actions";
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -47,7 +48,6 @@ const LANGUAGE_LABELS: Record<string, string> = {
   diff: "Diff",
   graphql: "GraphQL",
   dockerfile: "Dockerfile",
-  "trench-ui": "Interactive view (JSON)",
 };
 
 /** Pretty-prints JSON for copying when it parses; otherwise returns it as is. */
@@ -71,8 +71,9 @@ interface CodeBlockProps {
  * the code. Copies exactly what's shown (minus the trailing newline). */
 export function CodeBlock({ language, code, note }: CodeBlockProps) {
   const text = code.replace(/\n$/, "");
-  const label = LANGUAGE_LABELS[language.toLowerCase()] ?? (language || "Code");
-  const isJson = language === "json" || language === "trench-ui";
+  const isInteractive = isInteractiveLanguage(language.toLowerCase());
+  const label = isInteractive ? "Interactive view (JSON)" : (LANGUAGE_LABELS[language.toLowerCase()] ?? (language || "Code"));
+  const isJson = language === "json" || isInteractive;
   // Coloured tokens (keywords, strings, functions…); plain text if unknown.
   const highlighted = useMemo(() => highlightCode(text, language), [text, language]);
   return (

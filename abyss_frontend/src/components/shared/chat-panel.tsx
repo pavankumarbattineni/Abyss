@@ -615,7 +615,7 @@ function UserMessageText({ text }: { text: string }) {
   );
 }
 
-/** Time and copy under a message, as in Trench: time then copy for the
+/** Time and copy under a message: time then copy for the
  * user's messages (revealed on hover/focus, always shown on touch screens),
  * copy then time for the agent's. Copying an answer turns interactive views
  * into readable text instead of raw JSON. */
