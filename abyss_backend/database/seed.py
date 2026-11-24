@@ -23,12 +23,13 @@ logger = logging.getLogger(__name__)
 # "native" only after testing it.
 PLATFORM_DEFAULT = ("google", "gemini-3.5-flash-lite")
 # The platform's extra models, offered as "Default - 1" / "Default - 2" on its
-# key (provider_models.platform_slot; migrations 0010, 0011). Moved 2026-11-24:
-# Google now routes gemini-3.5-flash to 3.6 Flash and calls 3 Flash (preview)
-# legacy; both new ones take tool calls with native reasoning.
+# key (provider_models.platform_slot; migrations 0010, 0011). Slot 1 moved
+# 2026-11-24 to 3.6 Flash, which Google now routes gemini-3.5-flash to
+# (verified: native reasoning shows). Slot 2 stays on 3 Flash (preview): 3.8
+# Flash was tried but kept failing with 503/504 (high demand) at the time.
 PLATFORM_SLOTS: dict[int, tuple[str, str]] = {
     1: ("google", "gemini-3.6-flash"),
-    2: ("google", "gemini-3.8-flash"),
+    2: ("google", "gemini-3-flash-preview"),
 }
 
 # The BYOK model picker: every current model of the supported families, newest

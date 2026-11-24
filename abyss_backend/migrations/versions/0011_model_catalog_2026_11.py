@@ -6,8 +6,9 @@ From the providers' model, pricing and deprecation pages:
   same provider, so their chats keep working instead of failing with "your
   selected model is no longer available".
 - "Default - 1" moves to Gemini 3.6 Flash (Google now routes gemini-3.5-flash
-  to it) and "Default - 2" to Gemini 3.8 Flash (3 Flash preview is legacy);
-  both use native reasoning. gemini-3-flash-preview stays in the BYOK list.
+  to it), with native reasoning. "Default - 2" stays on Gemini 3 Flash
+  (preview): 3.8 Flash was tried for it but kept failing with 503/504 (high
+  demand); 3.8 Flash is in the BYOK list, with native reasoning.
 
 New models (GPT-6, Gemini 4 Neon...) are added by database/seed.py at startup;
 the ones this migration needs (replacements, new slots) are added here if missing.
@@ -37,8 +38,8 @@ RETIRED = {
     # Older than the supported families; Google routes it to 3.8 Flash from Dec 1, 2026.
     ('google', 'gemini-2.5-pro'): ('gemini-3.8-flash', 'Gemini 3.8 Flash'),
 }
-SLOTS = {1: ('gemini-3.6-flash', 'Gemini 3.6 Flash'), 2: ('gemini-3.8-flash', 'Gemini 3.8 Flash')}
-OLD_SLOTS = {1: 'gemini-3.5-flash', 2: 'gemini-3-flash-preview'}
+SLOTS = {1: ('gemini-3.6-flash', 'Gemini 3.6 Flash')}
+OLD_SLOTS = {1: 'gemini-3.5-flash'}
 NATIVE = ('gemini-3.6-flash', 'gemini-3.8-flash')
 
 
