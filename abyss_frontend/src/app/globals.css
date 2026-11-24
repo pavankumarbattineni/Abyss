@@ -198,6 +198,127 @@
   }
 }
 
+/* ── Home motion (app/home, components/pages/home) ──────────────────────────
+   "The descent", the mark's own story. On load the rings draw themselves from
+   the rim down into the well, the core settles, the Tomato spark rises into
+   place and the hero text arrives with it; then the spark stays live with a
+   faint ripple. Lower sections play once in view (OnView): the capabilities
+   settle, and "How a request runs" runs -- its steps light up in order, each
+   badge briefly wearing the Tomato active ring. Theme tokens only; only
+   transform, opacity and stroke animate. Every end state is the static design. */
+@keyframes descent-draw {
+  from { stroke-dasharray: 1; stroke-dashoffset: 1; }
+  99.9% { stroke-dasharray: 1; stroke-dashoffset: 0; }
+  /* Drawn: a plain stroke again, so no seam shows where the ring closes. */
+  to { stroke-dasharray: none; stroke-dashoffset: 0; }
+}
+@keyframes descent-settle {
+  from { opacity: 0; transform: scale(0.55); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes descent-rise {
+  from { opacity: 0; transform: translateY(72px); }
+  55% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+@keyframes descent-ripple {
+  0% { opacity: 0.6; transform: scale(1); }
+  60%, 100% { opacity: 0; transform: scale(3.4); }
+}
+@keyframes home-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes run-step {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+@keyframes run-badge {
+  0% { background-color: var(--muted); color: var(--muted-foreground); box-shadow: 0 0 0 0 transparent; }
+  35%, 55% { background-color: var(--primary); color: var(--primary-foreground); box-shadow: 0 0 0 3px var(--highlight); }
+  100% { background-color: var(--primary); color: var(--primary-foreground); box-shadow: 0 0 0 7px transparent; }
+}
+
+/* Depth: each layer follows the pointer by its --shift (DescentArt sets --depth-x/y). */
+.descent-layer {
+  transform: translate(
+    calc(var(--depth-x, 0) * var(--shift, 0) * 1px),
+    calc(var(--depth-y, 0) * var(--shift, 0) * 1px)
+  );
+  transition: transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.descent-ring,
+.descent-core,
+.descent-spark,
+.descent-ripple {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.descent-ring {
+  rotate: -90deg; /* each ring draws from its top */
+  animation: descent-draw 1000ms cubic-bezier(0.65, 0, 0.35, 1) both;
+  animation-delay: calc(var(--i, 0) * 110ms);
+}
+.descent-core {
+  animation: descent-settle 700ms cubic-bezier(0.22, 1, 0.36, 1) 480ms both;
+}
+.descent-spark {
+  animation: descent-rise 950ms cubic-bezier(0.22, 1, 0.36, 1) 700ms both;
+}
+.descent-ripple {
+  opacity: 0;
+  animation: descent-ripple 4.8s cubic-bezier(0.22, 1, 0.36, 1) 1.7s infinite;
+}
+.home-rise {
+  animation: home-rise 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 110ms + 150ms);
+}
+
+/* Waiting to be seen -- only where a script will reveal it, and never with
+   reduced motion (that page is final from the first paint, before any script). */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  [data-motion="idle"] .reveal-item {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  [data-motion="idle"] .run-step {
+    opacity: 0.35;
+  }
+  [data-motion="idle"] .run-badge {
+    background-color: var(--muted);
+    color: var(--muted-foreground);
+  }
+}
+[data-motion="on"] .reveal-item {
+  animation: home-rise 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 120ms);
+}
+[data-motion="on"] .run-step {
+  animation: run-step 450ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 480ms);
+}
+[data-motion="on"] .run-badge {
+  animation: run-badge 1000ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 480ms);
+}
+
+/* Reduced motion: the finished page, still (no delays either). */
+@media (prefers-reduced-motion: reduce) {
+  .home-rise,
+  .descent-ring,
+  .descent-core,
+  .descent-spark,
+  .descent-ripple,
+  [data-motion] .reveal-item,
+  [data-motion] .run-step,
+  [data-motion] .run-badge {
+    animation: none !important;
+  }
+  .descent-layer {
+    transition: none;
+  }
+}
+
 .react-flow__controls {
   --xy-controls-button-background-color: var(--card);
   --xy-controls-button-background-color-hover: var(--muted);
