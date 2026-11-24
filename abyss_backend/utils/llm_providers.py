@@ -18,7 +18,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from constants import GEMINI_THINKING_BUDGET, MODEL_REQUEST_TIMEOUT_SECONDS
+from constants import GEMINI_MIN_THINKING_LEVEL, GEMINI_THINKING_BUDGET, MODEL_REQUEST_TIMEOUT_SECONDS
 from langchain_openai import ChatOpenAI
 
 
@@ -98,12 +98,27 @@ def _build_anthropic(model: str, api_key: str, native_reasoning: bool) -> BaseCh
     )
 
 
+def _gemini_thinking(llm: ChatGoogleGenerativeAI) -> dict:
+    """Thinking settings that make this Gemini model return its thoughts, from
+    the model's own profile (no model names here): a thinking level for models
+    that have levels -- their default, at least GEMINI_MIN_THINKING_LEVEL --
+    and a token budget for older ones."""
+    profile = llm.profile or {}
+    levels = list(profile.get("reasoning_effort_levels") or [])
+    if not levels:
+        return {"include_thoughts": True, "thinking_budget": GEMINI_THINKING_BUDGET}
+    default = profile.get("reasoning_effort_default")
+    floor = GEMINI_MIN_THINKING_LEVEL if GEMINI_MIN_THINKING_LEVEL in levels else levels[-1]
+    level = max((lvl for lvl in (default, floor) if lvl in levels), key=levels.index)
+    return {"include_thoughts": True, "thinking_level": level}
+
+
 def _build_google(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
+    plain = ChatGoogleGenerativeAI(model=model, google_api_key=api_key, timeout=MODEL_REQUEST_TIMEOUT_SECONDS)
     if not native_reasoning:
-        return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, timeout=MODEL_REQUEST_TIMEOUT_SECONDS)
+        return plain
     return ChatGoogleGenerativeAI(
-        model=model, google_api_key=api_key, include_thoughts=True, thinking_budget=GEMINI_THINKING_BUDGET,
-        timeout=MODEL_REQUEST_TIMEOUT_SECONDS,
+        model=model, google_api_key=api_key, timeout=MODEL_REQUEST_TIMEOUT_SECONDS, **_gemini_thinking(plain),
     )
 
 

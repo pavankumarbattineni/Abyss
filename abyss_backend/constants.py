@@ -80,8 +80,13 @@ MAX_ANSWER_CONTINUATIONS = 4
 
 REASONING_MODE_PROMPT = "prompt"
 REASONING_MODE_NATIVE = "native"
-# Tokens a Gemini model may spend thinking in native mode. Without a budget,
-# Flash-Lite models don't think at all, so the reasoning panel stays empty.
+# Native thinking for Gemini (utils/llm_providers.py _gemini_thinking):
+# - Models with thinking levels (Gemini 3+) think at their own default level,
+#   raised to at least this one: below it (e.g. Flash-Lite's "minimal") they
+#   return no thoughts, so the thinking panel stays empty. A fixed token budget
+#   must NOT be sent to them -- with one they return no thoughts at all.
+# - Older models (Gemini 2.5) take a token budget instead.
+GEMINI_MIN_THINKING_LEVEL = "medium"
 GEMINI_THINKING_BUDGET = 1024
 
 # Tool Permission States (MCPTool.permission_state)
