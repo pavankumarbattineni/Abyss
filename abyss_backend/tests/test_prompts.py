@@ -106,7 +106,7 @@ def test_prompts_stay_within_their_size_budget():
     science/geo visual formats: 12 more names, which format fits what is being
     explained, the search_images rule, four more chart types, mhchem chemistry and the note that native
     graphs are interactive; +~110 (parent) for composing each answer for its
-    question, image galleries per section, find_places and parallel tool calls;
+    question, image galleries per section and parallel tool calls;
     +~45 (parent) for showing images of real, visible subjects per section;
     +~30 (with specialists) to present their results like any answer, and +~35
     (sub-agent) to include the concrete data behind its findings; +~40 (parent) as

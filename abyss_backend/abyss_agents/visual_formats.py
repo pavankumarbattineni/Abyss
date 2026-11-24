@@ -21,7 +21,7 @@ from abyss_agents.tool_display import background_step
 @tool("get_visual_format")
 def get_visual_format(name: str) -> str:
     """Get the spec for drawing a visual format. Call it before writing a ```visual block."""
-    # Several at once ("map, image") for an answer with several visuals.
+    # Several at once ("plot, image") for an answer with several visuals.
     names = list(dict.fromkeys(n.strip() for n in str(name).split(",") if n.strip()))[:4] or [""]
     return "\n\n".join(spec_for(n) or f"Unknown format {n!r}. Formats: {catalog()}." for n in names)
 
@@ -29,7 +29,7 @@ def get_visual_format(name: str) -> str:
 # The formats named in the tool's description come from the one catalog.
 get_visual_format.description = (
     f"Get the spec for drawing a visual format ({catalog()}); several at once as "
-    '"map, image". Call it before writing a ```visual block.'
+    '"plot, image". Call it before writing a ```visual block.'
 )
 
 

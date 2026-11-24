@@ -27,7 +27,6 @@ const RENDERERS = {
   "energy-levels": "EnergyLevelsVisual",
   circuit: "CircuitVisual",
   steps: "StepsVisual",
-  map: "MapVisual",
   image: "ImageVisual",
 };
 const entry = [

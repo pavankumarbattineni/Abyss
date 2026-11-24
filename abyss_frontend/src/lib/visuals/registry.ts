@@ -37,7 +37,6 @@ export const VISUAL_FORMATS: readonly VisualFormatMeta[] = [
   { name: "energy-levels", label: "Energy levels", description: "Orbital boxes and energy transitions" },
   { name: "circuit", label: "Circuit", description: "An electric circuit in standard symbols" },
   { name: "steps", label: "Step by step", description: "A derivation, proof or algorithm, one step at a time" },
-  { name: "map", label: "Map", description: "Places, countries and routes on a world map" },
   { name: "image", label: "Image", description: "A real, credited image from Wikimedia Commons or the web" },
 ];
 

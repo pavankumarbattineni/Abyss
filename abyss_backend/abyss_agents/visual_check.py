@@ -146,11 +146,6 @@ def _check_visual(data: dict) -> list[str]:
         _items(data, "loop", errors, 2)
     elif fmt == "steps":
         _items(data, "steps", errors, 1)
-    elif fmt == "map":
-        _any_of(data, ("places", "regions", "routes", "paths"), errors)
-        for i, p in enumerate(data.get("places") or []):
-            if not isinstance(p, dict) or not (_is_num(p.get("lat")) and _is_num(p.get("lon"))):
-                errors.append(f"places.{i}: needs numeric lat and lon")
     elif fmt == "image":
         images = data.get("images") if isinstance(data.get("images"), list) else [data]
         if not images:

@@ -37,7 +37,7 @@ export function AnswerTimeline({ content, trace, isStreaming, agentNames = {} }:
     agentNames[label] ?? (label === main ? "Agent" : humanizeIdentifier(label));
   const isMain = (label: string): boolean => label === main;
 
-  // A background step running now (preparing a visual, finding images or places): not shown
+  // A background step running now (preparing a visual, finding images): not shown
   // as a step, but the live heading says what's happening.
   const busyWith = isStreaming ? backgroundActivity(trace.timeline) : null;
 
@@ -313,7 +313,7 @@ function summarize(items: TimelineItem[], name: (label: string) => string): stri
 }
 
 /** What a tool call was: loading one of the user's skills (abyss_agents/skills.py
- * load_skill), or a tool. (Background steps -- visual formats, images, places --
+ * load_skill), or a tool. (Background steps -- visual formats, images --
  * never reach here: lib/reasoning visibleSteps.) */
 function describeCall(toolName: string, input: string | undefined): { type: "skill" | "tool"; name: string } {
   const arg = (() => {
