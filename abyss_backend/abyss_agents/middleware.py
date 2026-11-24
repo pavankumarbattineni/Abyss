@@ -257,6 +257,14 @@ def was_cut_off(message: AIMessage) -> bool:
     )
 
 
+def stopped_unfinished(message: AIMessage) -> bool:
+    """True when the reply isn't finished: cut off at the output limit, or
+    stopped inside a ``` block it never closed -- a finished answer never ends
+    there (a model can stop right after a gallery's JSON, with the rest unsaid)."""
+    text = message.text if isinstance(message.text, str) else str(message.text)
+    return was_cut_off(message) or in_open_code_block(text)
+
+
 def _blocks(content: Any) -> list:
     return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
 
@@ -463,9 +471,9 @@ class ContinueCutOffAnswer(AgentMiddleware):
             message = response.result[index]
             # A cut inside a tool call can't be resumed as text; the agent loop
             # (and ActOrAnswerGuard) handle a broken call.
-            if not was_cut_off(message) or message.tool_calls or message.invalid_tool_calls:
+            if not stopped_unfinished(message) or message.tool_calls or message.invalid_tool_calls:
                 return response
-            logger.warning("Reply hit the output limit; continuing it (%d/%d)", attempt, self.max_continuations)
+            logger.warning("Reply stopped unfinished; continuing it (%d/%d)", attempt, self.max_continuations)
             line = unfinished_line(message)
             partial = without_tail(message, line).model_copy(update={"tool_calls": [], "invalid_tool_calls": []})
             text = partial.text if isinstance(partial.text, str) else str(partial.text)

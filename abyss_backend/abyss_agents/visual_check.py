@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from abyss_agents.visual_specs import FORMATS, VISUAL_LANGUAGE
@@ -158,12 +159,13 @@ def image_src_ok(image: object) -> bool:
     return bool(WIKIMEDIA_IMAGE.match(src) or (src.startswith(TOKEN_PREFIX) and verify_image_token(src)))
 
 
-def image_fixes(text: str) -> list[tuple[str, str]]:
-    """(old, new) rewrites of image blocks holding images that didn't come from
-    search_images (an address the model wrote itself): those images are left
-    out, and a block with none left is removed. No model call -- a model can't
-    recover an image's real address, only the search can."""
-    fixes = []
+ImageCheck = Callable[[object], bool]
+# What a search result gives an image (the model's own alt and caption are kept).
+_SEARCH_FIELDS = ("src", "page", "author", "license", "source")
+
+
+def _image_blocks(text: str):
+    """(block text, data, its images) for every ```visual image block whose JSON parses."""
     for match in _FENCE.finditer(text or ""):
         if match.group(1) != VISUAL_LANGUAGE:
             continue
@@ -173,17 +175,134 @@ def image_fixes(text: str) -> list[tuple[str, str]]:
             continue
         if not isinstance(data, dict) or data.get("format") != "image":
             continue
-        if isinstance(data.get("images"), list):
-            kept = [img for img in data["images"] if image_src_ok(img)]
-            if len(kept) == len(data["images"]):
+        gallery = isinstance(data.get("images"), list)
+        images = [i for i in data["images"] if isinstance(i, dict)] if gallery else ([data] if "src" in data else [])
+        yield match.group(0), data, gallery, images
+
+
+def image_search_for(image: dict, block: dict) -> tuple[str, str] | None:
+    """The search that finds a real image for one the model wrote itself: its
+    own description (alt, caption or title, else the block's title), from the
+    source its made-up address pointed at -- a Wikimedia-like one: "open",
+    any other: "web". None when nothing describes it."""
+    words = next((str(v) for v in (image.get("alt"), image.get("caption"), image.get("title"), block.get("title"))
+                  if v and str(v).strip()), "")
+    query = " ".join(words.split())[:120]
+    if not query:
+        return None
+    return query, "open" if "wikimedia.org" in str(image.get("src", "")) else "web"
+
+
+def image_srcs(text: str) -> list[str]:
+    """Every image address in the answer's image blocks."""
+    return [str(i.get("src", "")).strip() for _, _, _, images in _image_blocks(text) for i in images]
+
+
+def image_searches(text: str, ok: ImageCheck = image_src_ok) -> list[tuple[str, str]]:
+    """(query, prefer) for every image in the answer that fails `ok`, each once."""
+    wanted = []
+    for _, data, _, images in _image_blocks(text):
+        for image in images:
+            search = None if ok(image) else image_search_for(image, data)
+            if search and search not in wanted:
+                wanted.append(search)
+    return wanted
+
+
+def image_fixes(
+    text: str, ok: ImageCheck = image_src_ok, found: dict[tuple[str, str], list[dict]] | None = None,
+) -> list[tuple[str, str]]:
+    """(old, new) rewrites of image blocks holding images that fail `ok` (an
+    address the model wrote itself instead of taking it from search_images).
+    Each such image becomes a real one from `found` -- the results of its
+    image_searches() entry, each result used once -- or, when there is none,
+    is left out; a block with no image left is removed. No model call: a model
+    can't recover an image's real address, only the search can."""
+    fixes = []
+    for block_text, data, gallery, images in _image_blocks(text):
+        used = {str(i.get("src")) for i in images if ok(i)}
+        kept, changed = [], False
+        for image in images:
+            if ok(image):
+                kept.append(image)
                 continue
-            new = f"```{VISUAL_LANGUAGE}\n{json.dumps({**data, 'images': kept}, ensure_ascii=False)}\n```" if kept else ""
-        elif "src" in data and not image_src_ok(data):
-            new = ""
-        else:
+            changed = True
+            search = image_search_for(image, data)
+            pick = next((r for r in (found or {}).get(search, []) if r.get("src") not in used), None) if search else None
+            if pick:
+                used.add(pick["src"])
+                own = {k: v for k, v in image.items() if k not in _SEARCH_FIELDS}
+                kept.append({**own, **{k: pick[k] for k in _SEARCH_FIELDS if pick.get(k) is not None}})
+        if not changed:
             continue
-        fixes.append((match.group(0), new))
+        if not kept:
+            new = ""
+        elif gallery:
+            new = f"```{VISUAL_LANGUAGE}\n{json.dumps({**data, 'images': kept}, ensure_ascii=False)}\n```"
+        else:
+            new = f"```{VISUAL_LANGUAGE}\n{json.dumps({**data, **kept[0]}, ensure_ascii=False)}\n```"
+        fixes.append((block_text, new))
     return fixes
+
+
+def unknown_format(source: str) -> bool:
+    """A visual block whose JSON is fine but whose format doesn't exist (e.g. "comparison")."""
+    try:
+        data = lenient_json(source)
+    except ValueError:
+        return False
+    return isinstance(data, dict) and isinstance(data.get("format"), str) and data["format"] not in FORMATS
+
+
+def _label(value: object) -> str:
+    return " ".join(str(value).split())
+
+
+_HEADS = ("title", "label", "name", "heading")
+
+
+def as_markdown(source: str) -> str | None:
+    """A visual that can't be drawn, as readable text instead of an error card:
+    its title in bold, then its content as (nested) bullets. None when the JSON
+    doesn't parse. The last resort after a failed repair -- the content stays."""
+    try:
+        data = lenient_json(source)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    lines: list[str] = []
+
+    def add(value: object, depth: int) -> None:
+        pad = "  " * depth
+        if isinstance(value, list):
+            for item in value:
+                add(item, depth)
+        elif isinstance(value, dict):
+            head = next((value[k] for k in _HEADS if isinstance(value.get(k), str) and value[k].strip()), None)
+            if head is not None:
+                lines.append(f"{pad}- **{_label(head)}**")
+                depth += 1
+                pad = "  " * depth
+            for key, item in value.items():
+                if key in _HEADS or key == "format" or item in (None, "", [], {}):
+                    continue
+                name = _label(key).replace("_", " ").capitalize()
+                if isinstance(item, (dict, list)):
+                    lines.append(f"{pad}- {name}:")
+                    add(item, depth + 1)
+                else:
+                    lines.append(f"{pad}- {name}: {_label(item)}")
+        elif value not in (None, ""):
+            lines.append(f"{pad}- {_label(value)}")
+
+    for key, value in data.items():
+        if key in ("format", "title", "version"):
+            continue
+        # The content lists themselves ("items", "points"...) need no heading of their own.
+        add(value if isinstance(value, list) else {key: value}, 0)
+    title = f"**{_label(data['title'])}**\n\n" if isinstance(data.get("title"), str) and data["title"].strip() else ""
+    return (title + "\n".join(lines)).strip() or None
 
 
 _CHART_FIELDS = {
@@ -275,6 +394,37 @@ def fence_fixes(text: str) -> list[tuple[str, str]]:
     for m in _OPENING.finditer(rest):
         indent, lang, body = m.groups()
         fixes.append((m.group(0), f"{indent}```{lang}\n{body}"))
+    return fixes
+
+
+def language_fixes(text: str) -> list[tuple[str, str]]:
+    """(old, new) rewrites of a block written in the wrong language: a
+    ```visual block whose "format" is really an interactive component
+    (comparison, table, bar_chart...) becomes a ```trench-ui block, and a
+    one-component ```trench-ui block whose "type" is really a visual format
+    becomes a ```visual block -- when the result is valid. No model call."""
+    fixes = []
+    for match in _FENCE.finditer(text or ""):
+        language, source = match.group(1), match.group(2)
+        try:
+            data = lenient_json(source)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if language == VISUAL_LANGUAGE and data.get("format") in _CHART_FIELDS and data["format"] not in FORMATS:
+            component = {"type": data["format"], **{k: v for k, v in data.items() if k != "format"}}
+            new_language, new_data = INTERACTIVE_LANGUAGE, {"version": 1, "components": [component]}
+        elif language == INTERACTIVE_LANGUAGE and len(data.get("components") or []) == 1 \
+                and isinstance(data["components"][0], dict) and data["components"][0].get("type") in FORMATS \
+                and data["components"][0]["type"] not in _CHART_FIELDS:
+            component = data["components"][0]
+            new_language, new_data = VISUAL_LANGUAGE, {"format": component["type"], **{k: v for k, v in component.items() if k != "type"}}
+        else:
+            continue
+        new_source = json.dumps(new_data, ensure_ascii=False)
+        if not check_block(new_language, new_source)[0]:
+            fixes.append((match.group(0), f"```{new_language}\n{new_source}\n```"))
     return fixes
 
 

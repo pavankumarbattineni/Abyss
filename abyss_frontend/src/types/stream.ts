@@ -16,12 +16,13 @@ export interface StreamDispatchDecisionEvent {
 
 export interface StreamToolStartEvent {
   type: "tool_start";
-  data: { tool_name: string; agent_name: string; at?: number; input?: string };
+  /** `background`: the tool's running status when it declared itself a background step (backend tool_display.py). */
+  data: { tool_name: string; agent_name: string; at?: number; input?: string; background?: string };
 }
 
 export interface StreamToolEndEvent {
   type: "tool_end";
-  data: { tool_name: string; agent_name: string; output?: string };
+  data: { tool_name: string; agent_name: string; output?: string; background?: string };
 }
 
 export interface StreamReasoningStartEvent {
@@ -196,6 +197,8 @@ export interface ReasoningToolCallStep {
   output: string;
   duration_ms: number;
   truncated: boolean;
+  /** Set for a background step: the status shown while it ran (see lib/reasoning isBackgroundStep). */
+  background?: string;
   /** Length of the answer text when this step began: where it sits in the answer (see lib/reasoning answerParts). */
   at?: number;
 }

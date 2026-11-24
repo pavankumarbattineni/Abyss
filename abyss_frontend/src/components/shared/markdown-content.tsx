@@ -12,9 +12,9 @@ import "katex/dist/katex.min.css";
 import "katex/contrib/mhchem";
 
 import { endsInOpenCodeBlock, previewKind } from "@/lib/code-preview";
-import { INTERACTIVE_LANGUAGE, looksLikeInteractiveJson } from "@/lib/interactive";
+import { INTERACTIVE_LANGUAGE, interactiveFromVisual, looksLikeInteractiveJson } from "@/lib/interactive";
 import { WIKIMEDIA_IMAGE } from "@/lib/visuals/schemas";
-import { looksLikeVisualJson, VISUAL_LANGUAGE } from "@/lib/visuals/parse";
+import { isVisualFormat, looksLikeVisualJson, VISUAL_LANGUAGE } from "@/lib/visuals/parse";
 import { normalizeMathDelimiters } from "@/lib/math-delimiters";
 import { splitInlineFenceJson } from "@/lib/visuals/fences";
 import { cn } from "@/lib/utils";
@@ -101,6 +101,9 @@ interface PositionedNode {
 function FencedBlock({ node, isStreaming, ...props }: { node?: unknown; isStreaming: boolean } & React.ComponentProps<"pre">) {
   const unfinishedFrom = useContext(UnfinishedTailContext);
   const block = fencedCode(node);
+  // An interactive component written as a visual: drawn as the component it is.
+  const moved = block?.language === VISUAL_LANGUAGE && !isStreaming ? interactiveFromVisual(block.code, isVisualFormat) : null;
+  if (moved) return <InteractiveBlock source={moved} isStreaming={false} />;
   if (
     block?.language === VISUAL_LANGUAGE ||
     (block?.language === "json" && !isStreaming && looksLikeVisualJson(block.code))

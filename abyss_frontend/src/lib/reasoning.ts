@@ -89,6 +89,7 @@ export function startToolCallSegment(
   toolName: string,
   at?: number,
   input?: string,
+  background?: string,
 ): ReasoningTrace {
   return push(trace, agentName, {
     kind: "tool_call",
@@ -98,6 +99,7 @@ export function startToolCallSegment(
     status: "running",
     at,
     input: input || undefined,
+    background: background || undefined,
   });
 }
 
@@ -151,6 +153,7 @@ export function applyReasoningStep(trace: ReasoningTrace, step: ReasoningStep): 
         output: step.output,
         durationMs: step.duration_ms || undefined,
         at: step.at,
+        background: step.background || undefined,
       });
     default:
       return trace;
@@ -210,20 +213,15 @@ function outsideCodeBlock(content: string, at: number): number {
 }
 
 /**
- * Steps the agent takes only to prepare what the answer shows: a visual's
- * format, images, places for a map. They run as always and stay in the saved
+ * Steps the agent takes only to prepare what the answer shows (a visual's
+ * format, images, places for a map): tools declare that themselves on the
+ * backend (abyss_agents/tool_display.py), and their calls carry `background`,
+ * the status to show while they run. They run as always and stay in the saved
  * reasoning (Tracing shows them), but the chat leaves them out of its steps --
- * the reader sees the visual or images themselves. While one runs, the chat
- * just says what it's doing (the value here).
+ * the reader sees the visual or images themselves.
  */
-const BACKGROUND_STEPS: Record<string, string> = {
-  get_visual_format: "Preparing visuals…",
-  search_images: "Finding images…",
-  find_places: "Finding places…",
-};
-
 export function isBackgroundStep(item: TimelineItem): boolean {
-  return item.kind === "tool_call" && Object.hasOwn(BACKGROUND_STEPS, item.toolName);
+  return item.kind === "tool_call" && !!item.background;
 }
 
 /** The steps the chat shows: everything but background steps. */
@@ -234,7 +232,7 @@ export function visibleSteps(timeline: TimelineItem[]): TimelineItem[] {
 /** What a running background step is doing ("Finding images…"), or null when none runs. */
 export function backgroundActivity(timeline: TimelineItem[]): string | null {
   const running = timeline.findLast((item) => isBackgroundStep(item) && item.kind === "tool_call" && item.status === "running");
-  return running?.kind === "tool_call" ? BACKGROUND_STEPS[running.toolName] : null;
+  return running?.kind === "tool_call" ? (running.background ?? null) : null;
 }
 
 // --- Presentation helpers ------------------------------------------------------

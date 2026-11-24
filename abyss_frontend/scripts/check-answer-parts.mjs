@@ -43,24 +43,25 @@ for (const [name, content, steps, expected] of cases) {
   assert.equal(shape(answerParts(content, steps)), expected, name);
 }
 
-// Background steps (a visual's format, images, places) run but are never listed;
-// while one runs, the chat only says what it's doing.
-const call = (id, toolName, status, at) => ({ kind: "tool_call", id, agent: "agent", toolName, status, at });
+// Background steps run but are never listed; while one runs, the chat only says
+// what it's doing. A tool declares that itself (backend tool_display.py): its
+// calls carry `background`, the status -- the chat knows no tool names.
+const call = (id, toolName, status, at, background) => ({ kind: "tool_call", id, agent: "agent", toolName, status, at, background });
 const turn = [
   step("a", 0),
-  call("f", "get_visual_format", "succeeded", 0),
-  call("i", "search_images", "succeeded", 9),
-  call("p", "find_places", "succeeded", 9),
+  call("f", "any_format_tool", "succeeded", 0, "Preparing visuals…"),
+  call("i", "any_image_tool", "succeeded", 9, "Finding images…"),
+  call("p", "a_future_tool", "succeeded", 9, "Doing something…"),
 ];
 const background = [
   ["background steps neither show nor split the text", () =>
     assert.equal(shape(answerParts(twoParts, visibleSteps(turn))), "S[a] T(Part one.\n\nPart two.)")],
   ["nothing running: no status", () => assert.equal(backgroundActivity(turn), null)],
-  ["a running image search is named", () =>
-    assert.equal(backgroundActivity([...turn, call("j", "search_images", "running", 9)]), "Finding images…")],
-  ["a real lookup stays a listed step", () => {
-    assert.equal(visibleSteps([call("x", "web_search", "running", 0)]).length, 1);
-    assert.equal(backgroundActivity([call("x", "web_search", "running", 0)]), null);
+  ["a running background step says its own status", () =>
+    assert.equal(backgroundActivity([...turn, call("j", "any_image_tool", "running", 9, "Finding images…")]), "Finding images…")],
+  ["a tool without the mark stays a listed step", () => {
+    assert.equal(visibleSteps([call("x", "search_images", "running", 0)]).length, 1);
+    assert.equal(backgroundActivity([call("x", "search_images", "running", 0)]), null);
   }],
 ];
 for (const [name, check] of background) {

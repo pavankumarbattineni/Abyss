@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
 from abyss_agents.visual_specs import catalog, requested_formats, spec_for
+from abyss_agents.tool_display import background_step
 
 
 @tool("get_visual_format")
@@ -82,3 +83,7 @@ class VisualFormatMiddleware(AgentMiddleware):
 
     async def awrap_model_call(self, request, handler: Callable[..., Awaitable]):
         return await handler(self._with_spec(request))
+
+
+# Only prepares what the answer shows: the chat lists no step for it (tool_display.py).
+background_step(get_visual_format, "Preparing visuals…")

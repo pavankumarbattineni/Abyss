@@ -38,6 +38,7 @@ from langchain_core.tools import tool
 
 from abyss_agents import web_images
 from abyss_agents.http_retry import describe, get_with_retry
+from abyss_agents.tool_display import background_step
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,26 @@ async def _gather_sources(client: httpx.AsyncClient, queries: list[str], limit: 
     return commons, web
 
 
+def clean_queries(queries: object) -> list[str]:
+    """Searches as the tool takes them: one string or a list, trimmed, deduplicated, at most MAX_QUERIES."""
+    if isinstance(queries, str):
+        queries = [queries]
+    cleaned = dict.fromkeys(" ".join(str(q or "").split())[:200] for q in queries or [])
+    return [q for q in cleaned if q][:MAX_QUERIES]
+
+
+async def find_images(queries: list[str], limit: int = 3, prefer: object = None) -> list[list[dict] | None]:
+    """Per query, its images (best first), [] when none match, None when every
+    source failed. What search_images returns, for callers that aren't the
+    model -- the visual repair finding real images for ones the model wrote
+    itself (visual_repair.py)."""
+    limit = max(1, min(MAX_RESULTS, int(limit or 3)))
+    prefer = preference(prefer)
+    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
+        commons, web = await _gather_sources(client, queries, limit, prefer)
+    return [combine(prefer, c, w, limit) for c, w in zip(commons, web)]
+
+
 @tool("search_images")
 async def search_images(queries: list[str], limit: int = 3, prefer: str | None = None) -> str:
     """Find real images: openly licensed photos and diagrams, and -- where web
@@ -287,22 +308,30 @@ async def search_images(queries: list[str], limit: int = 3, prefer: str | None =
     show them with ```visual {"format":"image"} blocks, copying those fields
     exactly.
     """
-    if isinstance(queries, str):
-        queries = [queries]
-    cleaned = list(dict.fromkeys(" ".join(str(q or "").split())[:200] for q in queries or []))
-    cleaned = [q for q in cleaned if q][:MAX_QUERIES]
+    cleaned = clean_queries(queries)
     if not cleaned:
         return "Give one or more searches, each a few keywords describing an image."
-    limit = max(1, min(MAX_RESULTS, int(limit or 3)))
-    prefer = preference(prefer)
-    async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
-        commons, web = await _gather_sources(client, cleaned, limit, prefer)
-    found = [combine(prefer, c, w, limit) for c, w in zip(commons, web)]
+    found = await find_images(cleaned, limit, prefer)
     if all(r is None for r in found):
         return "Image search is unavailable right now. Answer without images."
+    found = [[for_model(r) for r in results] if results else results for results in found]
     if len(cleaned) == 1:
         if not found[0]:
             return f'No images found for "{cleaned[0]}". Try other keywords, or answer without an image.'
         return json.dumps(found[0], ensure_ascii=False)
     out = {q: (r or "no images found -- try other keywords or skip this image") for q, r in zip(cleaned, found)}
     return json.dumps(out, ensure_ascii=False)
+
+
+# What the model copies into an image block (and the title, to know what each image shows).
+# The description and size only serve relevance and filtering here: a long description
+# is what models cut short mid-JSON when copying a result whole.
+_FOR_MODEL = ("src", "page", "title", "author", "license", "source")
+
+
+def for_model(result: dict) -> dict:
+    return {k: result[k] for k in _FOR_MODEL if result.get(k) not in (None, "") or k in ("author", "license")}
+
+
+# Only prepares what the answer shows: the chat lists no step for it (tool_display.py).
+background_step(search_images, "Finding images…")

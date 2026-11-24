@@ -485,3 +485,12 @@ def test_the_chat_shows_the_skipped_line_too_and_keeps_the_thought_out_of_the_co
     # The continuation's thought sits with its reply's start, not inside the visual block.
     thought = next(s for s in projector.reasoning_steps if s["content"] == "Completing the visual.")
     assert thought["at"] == 0
+
+
+def test_a_reply_that_stops_inside_an_open_block_is_unfinished():
+    from abyss_agents.middleware import stopped_unfinished
+
+    gallery = 'Baahubali\n```visual\n{"format":"image","images":[{"src":"x"}]}'
+    assert stopped_unfinished(AIMessage(gallery))  # stopped right after the JSON, fence never closed
+    assert not stopped_unfinished(AIMessage(gallery + "\n```\nThe story ..."))
+    assert not stopped_unfinished(AIMessage("A plain, finished answer."))

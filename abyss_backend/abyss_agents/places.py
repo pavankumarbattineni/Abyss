@@ -17,6 +17,7 @@ from langchain_core.tools import tool
 
 from abyss_agents.http_retry import get_with_retry
 from abyss_agents.images import TIMEOUT_SECONDS, USER_AGENT
+from abyss_agents.tool_display import background_step
 
 logger = logging.getLogger(__name__)
 
@@ -117,3 +118,7 @@ async def find_places(names: list[str]) -> str:
         [f if f else {"name": n, "error": "not found -- try a more specific name or leave it off the map"} for n, f in zip(cleaned, found)],
         ensure_ascii=False,
     )
+
+
+# Only prepares what the answer shows: the chat lists no step for it (tool_display.py).
+background_step(find_places, "Finding places…")
