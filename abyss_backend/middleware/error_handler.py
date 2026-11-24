@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette import status
 
 from schemas.oauth import ErrorResponse
+from utils.errors import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,8 @@ class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
     All branches return a JSONResponse directly — never re-raise — because
     BaseHTTPMiddleware converts any exception raised from dispatch() into a 500.
     HTTPExceptions are returned with their original status code and detail.
-    ValueErrors are returned as 422 with the error message.
+    NotFoundErrors (utils/errors.py) are returned as 404, other ValueErrors as
+    422, with the error message.
     All other exceptions are logged with full tracebacks and returned as 500.
     """
 
@@ -50,6 +52,18 @@ class GlobalErrorHandlerMiddleware(BaseHTTPMiddleware):
             )
             return JSONResponse(
                 status_code=http_exc.status_code,
+                content=error_response.model_dump()
+            )
+
+        except NotFoundError as e:
+            # A missing (e.g. deleted) resource: 404, so clients can tell it apart.
+            error_response = ErrorResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                status="NotFound",
+                message=str(e)
+            )
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
                 content=error_response.model_dump()
             )
 

@@ -4,7 +4,8 @@ export interface Thread {
   id: string;
   user_id: string;
   agent_id: string;
-  title: string;
+  /** Null until generated alongside the first answer (lib/threads threadLabel). */
+  title: string | null;
   created_at: string;
   /** Last use (a new message); thread lists are ordered by it. */
   updated_at: string;

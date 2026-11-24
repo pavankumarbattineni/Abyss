@@ -5,3 +5,4 @@ export * from "./use-reasoning-trace";
 export * from "./use-resizable-panel";
 export * from "./use-media-query";
 export * from "./use-stable-order";
+export * from "./use-thread-gone";

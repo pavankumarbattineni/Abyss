@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { threadService } from "@/services";
 import type { Agent, Thread } from "@/types";
 import { ThreadActions } from "./thread-actions";
+import { threadLabel } from "@/lib/threads";
 
 const COLLAPSED_WIDTH = 40;
 
@@ -116,7 +117,7 @@ export function ThreadSidebar({
                         >
                           <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
                           <span className="truncate text-sm text-foreground">
-                            {thread.title || "Untitled thread"}
+                            {threadLabel(thread)}
                           </span>
                         </Link>
                     </ThreadTooltip>

@@ -9,6 +9,7 @@ import { ThreadTooltip } from "@/components/shared/thread-tooltip";
 import { cn } from "@/lib/utils";
 import { threadService } from "@/services";
 import type { Thread } from "@/types";
+import { threadLabel } from "@/lib/threads";
 
 interface ChatThreadPopoverProps {
   agentId: string;
@@ -34,12 +35,12 @@ export function ChatThreadPopover({
       {activeThread ? (
         <ThreadTooltip thread={activeThread} side="bottom">
           <span tabIndex={0} className="truncate rounded-sm text-sm font-medium text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
-            {activeThread.title || "Untitled thread"}
+            {threadLabel(activeThread)}
           </span>
         </ThreadTooltip>
       ) : (
         <span className="truncate text-sm font-medium text-foreground">
-          {activeThreadId ? "Untitled thread" : "New conversation"}
+          {activeThreadId ? threadLabel(null) : "New conversation"}
         </span>
       )}
       <Popover open={open} onOpenChange={setOpen}>
@@ -82,7 +83,7 @@ export function ChatThreadPopover({
                 )}
               >
                 <MessageSquare className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{thread.title || "Untitled thread"}</span>
+                <span className="truncate">{threadLabel(thread)}</span>
               </button>
               </ThreadTooltip>
             ))

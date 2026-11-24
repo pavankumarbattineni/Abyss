@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { threadService } from "@/services";
 import type { Thread } from "@/types";
 import { RenameThreadDialog } from "./rename-thread-dialog";
+import { threadLabel } from "@/lib/threads";
 
 interface ThreadActionsProps {
   thread: Thread;
@@ -60,7 +61,7 @@ export function ThreadActions({ thread, agentId, isActive }: ThreadActionsProps)
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete thread"
-        description={`Delete "${thread.title || "Untitled thread"}"? This cannot be undone.`}
+        description={`Delete "${threadLabel(thread)}"? This cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
         loading={isDeleting}

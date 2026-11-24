@@ -49,6 +49,7 @@ from abyss_agents.history import SUMMARY_EVENT
 from services.stream_projector import StreamProjector
 from utils.llm_providers import PROVIDERS, classify_llm_error
 from utils.thread_title import TITLE_SYSTEM_PROMPT, clean_title, fallback_title, title_request
+from utils.errors import NotFoundError
 import utils.stream_manager as stream_manager
 
 logger = logging.getLogger(__name__)
@@ -197,7 +198,7 @@ async def _load_pending_interrupts(
     )
     thread = thread_result.scalar_one_or_none()
     if not thread:
-        raise ValueError("Thread not found")
+        raise NotFoundError("Thread not found")
 
     agent_result = await session.execute(
         select(Agent).where(Agent.id == thread.agent_id, Agent.is_active == True)
@@ -1017,7 +1018,7 @@ class ChatService:
         )
         thread = thread_result.scalar_one_or_none()
         if not thread:
-            raise ValueError("Thread not found")
+            raise NotFoundError("Thread not found")
 
         agent_result = await session.execute(
             select(Agent).where(Agent.id == thread.agent_id, Agent.is_active == True)
@@ -1324,7 +1325,7 @@ class ChatService:
             )
         )
         if not thread_result.scalar_one_or_none():
-            raise ValueError("Thread not found")
+            raise NotFoundError("Thread not found")
 
         msg_result = await session.execute(
             select(Message)

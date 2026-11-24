@@ -7,6 +7,7 @@ import { useNow } from "@/hooks/use-now";
 import { formatFullDateTime } from "@/lib/relative-time";
 import { parseServerDate } from "@/lib/server-date";
 import type { Thread } from "@/types";
+import { threadLabel } from "@/lib/threads";
 
 interface ThreadTooltipProps {
   thread: Pick<Thread, "title" | "created_at"> & Partial<Pick<Thread, "updated_at">>;
@@ -29,7 +30,7 @@ export function ThreadTooltip({ thread, children, side = "right" }: ThreadToolti
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side={side} sideOffset={8} className="flex max-w-72 flex-col items-start gap-0.5 break-words">
-        <span className="font-medium">{thread.title || "Untitled thread"}</span>
+        <span className="font-medium">{threadLabel(thread)}</span>
         {valid && (
           <>
             <span className="text-background/75 tabular-nums">
