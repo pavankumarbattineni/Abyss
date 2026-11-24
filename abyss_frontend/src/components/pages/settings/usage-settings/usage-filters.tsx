@@ -114,7 +114,7 @@ export function UsageFilters({ value, onChange, onDownload, isDownloading }: Usa
         <Input
           value={value.model}
           onChange={(event) => onChange({ ...value, model: event.target.value })}
-          placeholder="e.g. gpt-5-mini"
+          placeholder="e.g. gemini-3.8-flash"
           className="h-8 w-36 text-xs"
         />
       </div>

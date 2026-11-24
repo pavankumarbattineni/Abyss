@@ -76,12 +76,13 @@ _ANTHROPIC_MIN_MAX_TOKENS = 16000
 
 
 def _build_openai(model: str, api_key: str, native_reasoning: bool) -> BaseChatModel:
-    if not native_reasoning:
-        return ChatOpenAI(model=model, api_key=api_key, timeout=MODEL_REQUEST_TIMEOUT_SECONDS)
-    # Reasoning summaries are only exposed through the Responses API.
+    # Always the Responses API: GPT-6 models can't call tools through Chat
+    # Completions ("Tool calling requires the Responses API"), and Abyss's
+    # agents need tools. Every GPT-5.x model supports it too, and it is the
+    # only way to get reasoning summaries.
+    reasoning = {"reasoning": {"effort": "medium", "summary": "auto"}} if native_reasoning else {}
     return ChatOpenAI(
-        model=model, api_key=api_key, use_responses_api=True, timeout=MODEL_REQUEST_TIMEOUT_SECONDS,
-        reasoning={"effort": "medium", "summary": "auto"},
+        model=model, api_key=api_key, use_responses_api=True, timeout=MODEL_REQUEST_TIMEOUT_SECONDS, **reasoning,
     )
 
 
@@ -100,11 +101,17 @@ def _build_anthropic(model: str, api_key: str, native_reasoning: bool) -> BaseCh
 
 def _gemini_thinking(llm: ChatGoogleGenerativeAI) -> dict:
     """Thinking settings that make this Gemini model return its thoughts, from
-    the model's own profile (no model names here): a thinking level for models
-    that have levels -- their default, at least GEMINI_MIN_THINKING_LEVEL --
-    and a token budget for older ones."""
+    the model's own profile (no model names here):
+    - levels in its profile (Gemini 3+): its default level, at least
+      GEMINI_MIN_THINKING_LEVEL;
+    - a profile without levels (Gemini 2.5): a token budget;
+    - no profile at all: a model newer than the installed library (e.g.
+      Gemini 3.8, Gemini 4), which takes thinking levels like every current
+      Gemini model -- never the budget, with which they return no thoughts."""
     profile = llm.profile or {}
     levels = list(profile.get("reasoning_effort_levels") or [])
+    if not profile:
+        return {"include_thoughts": True, "thinking_level": GEMINI_MIN_THINKING_LEVEL}
     if not levels:
         return {"include_thoughts": True, "thinking_budget": GEMINI_THINKING_BUDGET}
     default = profile.get("reasoning_effort_default")
