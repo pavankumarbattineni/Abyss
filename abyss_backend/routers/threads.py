@@ -141,7 +141,8 @@ async def send_message(
         StreamStartResponse with message_id, stream_id, status="PENDING".
 
     Raises:
-        HTTPException: 422 if message is empty or thread/agent not found.
+        HTTPException: 422 if the message is empty or the agent is unavailable;
+            404 if the thread doesn't exist (e.g. deleted while open).
     """
     if not request.message.strip():
         raise HTTPException(
