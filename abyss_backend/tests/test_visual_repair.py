@@ -279,3 +279,15 @@ def test_an_image_address_that_is_a_web_page_is_unusable():
     assert is_unusable(200, "text/html; charset=UTF-8")  # thumb.wikimedia.org/wiki/File:... is a page
     assert not is_unusable(200, "image/jpeg")
     assert not is_unusable(429, "text/html") and not is_unusable(503, "")  # busy: never dropped for that
+
+
+def test_a_made_up_image_in_a_gallery_under_another_key_is_still_replaced(monkeypatch):
+    # Seen live: the gallery under "items" (the chat draws it), one address rewritten by the model.
+    rewritten = "https://thumb.wikimedia.org/wikipedia/commons/8/85/Human_heart_male_adult_autopsy.jpg"
+    good = "https://upload.wikimedia.org/wikipedia/commons/3/3c/Gray505.png"
+    block = fence("visual", {"format": "image", "items": [{"src": good, "page": "p", "title": "Gray505"},
+                                                        {"src": rewritten, "page": "p", "title": "Human heart male adult autopsy"}]})
+    text, calls = _run_with(block, found={"Human heart male adult autopsy": [REAL]}, missing={rewritten}, monkeypatch=monkeypatch)
+    data = json.loads(find_blocks(text)[0].source)
+    assert [i["src"] for i in data["images"]] == [good, REAL["src"]] and "items" not in data
+    assert calls == [[("Human heart male adult autopsy", ["wikidata", "commons", "openverse"])]]

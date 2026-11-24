@@ -182,6 +182,9 @@ def _image_blocks(text: str):
             data = lenient_json(match.group(2))
         except ValueError:  # broken JSON: the model repair's job (JSONDecodeError is a ValueError)
             continue
+        # The same lenient reading as the check and the chat: a gallery under
+        # another key ("items"...) or bare search results count as image blocks.
+        data = bare_images(data) or data
         if not isinstance(data, dict) or data.get("format") != "image":
             continue
         gallery = isinstance(data.get("images"), list)
@@ -362,7 +365,7 @@ def bare_images(data) -> dict | None:
         # The image list under another name ("items", "queries"...): whichever list holds images.
         key = next((k for k, v in data.items() if isinstance(v, list) and v and all(is_image(i) for i in v)), None)
         if key:
-            return {**data, "images": data[key]}
+            return {**{k: v for k, v in data.items() if k != key}, "images": data[key]}
     return None
 
 
