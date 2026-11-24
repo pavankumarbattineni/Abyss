@@ -8,9 +8,11 @@ import { ChatPanel } from "@/components/shared/chat-panel";
 import { handOverDraft } from "@/lib/drafts";
 import {
   COMPACT_QUERY,
+  retryUnlessThreadGone,
   useChatStream,
   useMediaQuery,
   useResizablePanel,
+  useThreadGone,
 } from "@/hooks";
 import { mergeMessages } from "@/lib/chat-messages";
 import { cn } from "@/lib/utils";
@@ -29,11 +31,14 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
     queryKey: ["agent", agentId],
     queryFn: () => agentService.getAgent(agentId),
   });
-  const { data: messages, isLoading: isMessagesLoading } = useQuery<Message[]>({
+  const { data: messages, isLoading: isMessagesLoading, error: messagesError } = useQuery<Message[]>({
     queryKey: ["thread-messages", threadId],
     queryFn: () => threadService.getMessages(threadId as string),
     enabled: !!threadId,
+    retry: retryUnlessThreadGone,
   });
+  // A deleted thread (another tab, a stale link): to a new chat instead of a dead page.
+  useThreadGone(agentId, threadId, messagesError, () => router.replace(`/agents/${agentId}`));
   const [collapsed, setCollapsed] = useState<boolean>(false);
   // Phones and tablets: the thread list starts closed and opens over the
   // chat, so it never squeezes the chat next to the main sidebar.
@@ -73,6 +78,8 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
       handOverDraft(`${agentId}:new`, `${agentId}:${newThreadId}`);
       router.replace(`/agents/${agentId}/threads/${newThreadId}?streamId=${encodeURIComponent(streamId)}`);
     },
+    // The open thread was deleted: the question waits in a new chat's input.
+    onThreadGone: () => router.replace(`/agents/${agentId}`),
   });
 
   const hasActiveConversation =

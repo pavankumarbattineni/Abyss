@@ -5,13 +5,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useQueryState } from "nuqs";
 import { toast } from "sonner";
 
+import { writeDraft } from "@/lib/drafts";
+import { forgetThread, isThreadGone, listNewThread, newThread, setThreadTitle } from "@/lib/threads";
 import { streamService, threadService } from "@/services";
 import type {
   Message,
   ReasoningTrace,
   StreamEvent,
   StreamToolInterrupt,
-  Thread,
   ToolApprovalPayload,
 } from "@/types";
 import { useReasoningTrace } from "./use-reasoning-trace";
@@ -27,6 +28,8 @@ interface UseChatStreamOptions {
    * Without it, the first answer streams in place and onThreadCreated fires when it's done.
    */
   onThreadStarted?: (threadId: string, streamId: string) => void;
+  /** Called when the open thread turns out to be deleted; the caller moves to a new chat. */
+  onThreadGone?: () => void;
 }
 
 interface UseChatStreamResult {
@@ -49,6 +52,7 @@ export function useChatStream({
   threadId,
   onThreadCreated,
   onThreadStarted,
+  onThreadGone,
 }: UseChatStreamOptions): UseChatStreamResult {
   const queryClient = useQueryClient();
   const reasoning = useReasoningTrace();
@@ -144,16 +148,10 @@ export function useChatStream({
           return lastUser === -1 ? [summary, ...prev] : [...prev.slice(0, lastUser), summary, ...prev.slice(lastUser)];
         });
       } else if (event.type === "thread_title") {
-        // The title arrives while the answer is still streaming -- possibly before the
-        // sidebar has listed the new thread. Then refetch (the title is already saved).
-        const listed = queryClient
-          .getQueryData<Thread[]>(["threads", agentId])
-          ?.some((item) => item.id === resolvedThreadId);
-        if (listed) {
-          queryClient.setQueryData<Thread[]>(["threads", agentId], (prev) =>
-            prev?.map((item) => (item.id === resolvedThreadId ? { ...item, title: event.data.title } : item)),
-          );
-        } else {
+        // The title arrives while the answer is still streaming and replaces "New thread"
+        // in place. If the list was fetched again meanwhile without the thread, refetch
+        // (the title is already saved).
+        if (!setThreadTitle(queryClient, agentId, resolvedThreadId, event.data.title)) {
           void queryClient.invalidateQueries({ queryKey: ["threads", agentId] });
         }
       } else if (event.type === "done") {
@@ -363,6 +361,8 @@ export function useChatStream({
       if (!activeThreadId) {
         const created = await threadService.createThread({ agent_id: agentId });
         activeThreadId = created.thread_id;
+        // Listed at once as a new thread; its title streams in (thread_title) a moment later.
+        listNewThread(queryClient, newThread(activeThreadId, agentId));
       }
       const resolvedThreadId = activeThreadId;
       activeThreadIdRef.current = resolvedThreadId;
@@ -401,9 +401,19 @@ export function useChatStream({
         stream_id,
         createStreamHandler(resolvedThreadId, isNewThread),
       );
-    } catch {
-      toast.error("Failed to send message. Please try again.");
+    } catch (error) {
       setIsSending(false);
+      if (threadId && isThreadGone(error)) {
+        // The chat was deleted (here or elsewhere) while open: nothing is lost -- the
+        // question goes to a new chat's input, and the chat leaves the lists.
+        setPendingMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
+        writeDraft(`${agentId}:new`, text);
+        forgetThread(queryClient, agentId, threadId);
+        toast.info("This chat was deleted. Your question is ready in a new chat.");
+        onThreadGone?.();
+      } else {
+        toast.error("Failed to send message. Please try again.");
+      }
     } finally {
       sendInFlightRef.current = false;
     }

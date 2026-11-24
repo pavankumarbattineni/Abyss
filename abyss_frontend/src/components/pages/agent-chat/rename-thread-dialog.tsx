@@ -49,11 +49,11 @@ export function RenameThreadDialog({
     formState: { errors },
   } = useForm<RenameThreadFormValues>({
     resolver: zodResolver(renameThreadSchema),
-    defaultValues: { title: thread.title },
+    defaultValues: { title: thread.title ?? "" },
   });
 
   useEffect(() => {
-    if (open) reset({ title: thread.title });
+    if (open) reset({ title: thread.title ?? "" });
   }, [open, thread.title, reset]);
 
   const { mutate, isPending } = useMutation({

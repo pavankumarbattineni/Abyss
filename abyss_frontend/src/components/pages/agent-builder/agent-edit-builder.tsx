@@ -13,7 +13,7 @@ import { AgentAvatar } from "@/components/layout";
 import { ChatPanel } from "@/components/shared/chat-panel";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Skeleton } from "@/components/ui";
-import { useChatStream, useResizablePanel } from "@/hooks";
+import { retryUnlessThreadGone, useChatStream, useResizablePanel, useThreadGone } from "@/hooks";
 import { mergeMessages } from "@/lib/chat-messages";
 import { cn, getApiErrorMessage } from "@/lib/utils";
 import { agentService, threadService } from "@/services";
@@ -78,13 +78,21 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
     agentId,
     threadId: chatThreadId,
     onThreadCreated: setChatThreadId,
+    onThreadGone: () => setChatThreadId(undefined),
   });
 
-  const { data: chatHistory, isLoading: isChatHistoryLoading } = useQuery<Message[]>({
+  const {
+    data: chatHistory,
+    isLoading: isChatHistoryLoading,
+    error: chatHistoryError,
+  } = useQuery<Message[]>({
     queryKey: ["thread-messages", chatThreadId],
     queryFn: () => threadService.getMessages(chatThreadId as string),
     enabled: !!chatThreadId,
+    retry: retryUnlessThreadGone,
   });
+  // The test chat's thread deleted meanwhile: back to a new conversation.
+  useThreadGone(agentId, chatThreadId, chatHistoryError, () => setChatThreadId(undefined));
 
   const hasChatActive =
     !!chatThreadId || chatMessages.length > 0 || isChatSending || isChatStreaming;
@@ -395,6 +403,9 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
                 pendingApprovals={chatPendingApprovals}
                 isResolvingApproval={isChatResolvingApproval}
                 onResolveApproval={resolveChatApprovals}
+                // Same keys as the agent's chat page: an unsent question survives moving
+                // to a new conversation (e.g. when the open thread was deleted).
+                draftKey={`${agentId}:${chatThreadId ?? "new"}`}
               />
             </div>
             <div
