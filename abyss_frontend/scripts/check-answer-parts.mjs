@@ -20,7 +20,7 @@ const bundled = await build({
   platform: "node",
   logLevel: "silent",
 });
-const { answerParts } = await import("data:text/javascript;base64," + Buffer.from(bundled.outputFiles[0].text).toString("base64"));
+const { answerParts, visibleSteps, backgroundActivity } = await import("data:text/javascript;base64," + Buffer.from(bundled.outputFiles[0].text).toString("base64"));
 
 const step = (id, at) => ({ kind: "tool_call", id, agent: "agent", toolName: "search", status: "succeeded", at });
 const shape = (parts) =>
@@ -42,4 +42,33 @@ const cases = [
 for (const [name, content, steps, expected] of cases) {
   assert.equal(shape(answerParts(content, steps)), expected, name);
 }
-console.log(`answer layout check: all ${cases.length} cases pass`);
+
+// Background steps (a visual's format, images, places) run but are never listed;
+// while one runs, the chat only says what it's doing.
+const call = (id, toolName, status, at) => ({ kind: "tool_call", id, agent: "agent", toolName, status, at });
+const turn = [
+  step("a", 0),
+  call("f", "get_visual_format", "succeeded", 0),
+  call("i", "search_images", "succeeded", 9),
+  call("p", "find_places", "succeeded", 9),
+];
+const background = [
+  ["background steps neither show nor split the text", () =>
+    assert.equal(shape(answerParts(twoParts, visibleSteps(turn))), "S[a] T(Part one.\n\nPart two.)")],
+  ["nothing running: no status", () => assert.equal(backgroundActivity(turn), null)],
+  ["a running image search is named", () =>
+    assert.equal(backgroundActivity([...turn, call("j", "search_images", "running", 9)]), "Finding images…")],
+  ["a real lookup stays a listed step", () => {
+    assert.equal(visibleSteps([call("x", "web_search", "running", 0)]).length, 1);
+    assert.equal(backgroundActivity([call("x", "web_search", "running", 0)]), null);
+  }],
+];
+for (const [name, check] of background) {
+  try {
+    check();
+  } catch (error) {
+    error.message = `${name}: ${error.message}`;
+    throw error;
+  }
+}
+console.log(`answer layout check: all ${cases.length + background.length} cases pass`);

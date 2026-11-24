@@ -146,12 +146,44 @@ def _check_visual(data: dict) -> list[str]:
         if not images:
             errors.append("images: needs at least one image")
         for i, img in enumerate(images):
-            src = img.get("src", "") if isinstance(img, dict) else ""
-            src = str(src).strip()
-            # Wikimedia, or a web image search_images signed (made-up tokens fail the check).
-            if not (WIKIMEDIA_IMAGE.match(src) or (src.startswith(TOKEN_PREFIX) and verify_image_token(src))):
+            if not image_src_ok(img):
                 errors.append(f"{'images.' + str(i) + '.' if 'images' in data else ''}src: must be an image URL from search_images")
     return errors
+
+
+def image_src_ok(image: object) -> bool:
+    """An image from search_images: on Wikimedia, or a web image token this
+    server signed (made-up or rewritten addresses fail)."""
+    src = str(image.get("src", "") if isinstance(image, dict) else "").strip()
+    return bool(WIKIMEDIA_IMAGE.match(src) or (src.startswith(TOKEN_PREFIX) and verify_image_token(src)))
+
+
+def image_fixes(text: str) -> list[tuple[str, str]]:
+    """(old, new) rewrites of image blocks holding images that didn't come from
+    search_images (an address the model wrote itself): those images are left
+    out, and a block with none left is removed. No model call -- a model can't
+    recover an image's real address, only the search can."""
+    fixes = []
+    for match in _FENCE.finditer(text or ""):
+        if match.group(1) != VISUAL_LANGUAGE:
+            continue
+        try:
+            data = lenient_json(match.group(2))
+        except ValueError:  # broken JSON: the model repair's job (JSONDecodeError is a ValueError)
+            continue
+        if not isinstance(data, dict) or data.get("format") != "image":
+            continue
+        if isinstance(data.get("images"), list):
+            kept = [img for img in data["images"] if image_src_ok(img)]
+            if len(kept) == len(data["images"]):
+                continue
+            new = f"```{VISUAL_LANGUAGE}\n{json.dumps({**data, 'images': kept}, ensure_ascii=False)}\n```" if kept else ""
+        elif "src" in data and not image_src_ok(data):
+            new = ""
+        else:
+            continue
+        fixes.append((match.group(0), new))
+    return fixes
 
 
 _CHART_FIELDS = {

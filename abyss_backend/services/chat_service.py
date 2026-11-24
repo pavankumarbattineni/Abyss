@@ -31,6 +31,7 @@ from constants import (
     SUB_AGENT_TIMEOUT_SECONDS,
     THREAD_TITLE_INPUT_MAX_CHARS,
     THREAD_TITLE_OUTPUT_MAX_CHARS,
+    THREAD_TITLE_WAIT_SECONDS,
     TOKEN_FLUSH_INTERVAL,
 )
 from database.checkpointer import get_checkpointer
@@ -287,6 +288,59 @@ async def _generate_thread_title(
     except Exception as exc:
         logger.warning("Thread title generation failed: %s", exc)
         return None
+
+
+# Title tasks, kept referenced until done (asyncio holds only weak references).
+_title_tasks: set[asyncio.Task] = set()
+
+
+async def _title_thread(
+    thread_id: str,
+    opening_message: str,
+    trace_meta: dict | None,
+    trace_ids: list[str],
+    usage: TitleUsage,
+    on_title: Callable[[str], None],
+) -> None:
+    """Generate the thread's title and save it in a session of its own, then
+    tell the stream (on_title). Runs alongside the answer: it never waits for
+    it, and nothing that happens to the answer (stop, failure) undoes it. A
+    title the user set meanwhile is kept."""
+    from database.session import async_session_maker
+
+    title = await _generate_thread_title(opening_message, trace_meta, trace_ids, usage)
+    if not title:
+        return
+    try:
+        async with async_session_maker() as session:
+            saved = await session.execute(
+                update(Thread).where(Thread.id == thread_id, Thread.title.is_(None)).values(title=title)
+            )
+            await session.commit()
+    except Exception:
+        logger.exception("Thread %s: couldn't save the generated title", thread_id)
+        return
+    if saved.rowcount:
+        on_title(title)
+
+
+def _start_title_task(*args, **kwargs) -> asyncio.Task:
+    task = asyncio.create_task(_title_thread(*args, **kwargs))
+    _title_tasks.add(task)
+    task.add_done_callback(_title_tasks.discard)
+    return task
+
+
+async def _await_title(task: asyncio.Task | None) -> None:
+    """Let a running title task finish (bounded), so its event comes before
+    "done" and its tokens count on the run. Shielded: stopping the run never
+    stops the title."""
+    if task is None or task.done():
+        return
+    try:
+        await asyncio.wait_for(asyncio.shield(task), THREAD_TITLE_WAIT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.warning("Thread title still running after %ss; the answer finishes without it", THREAD_TITLE_WAIT_SECONDS)
 
 
 def _approval_payload(interrupts) -> dict:
@@ -572,21 +626,34 @@ async def _run_generation(
         llm_provider_value: str | None = None  # set once resolved below; visible in except blocks too
         llm_model_value: str | None = None
         llm_source_value: str | None = None
+        # A new thread's title is generated alongside its first answer
+        # (_title_thread). Its tokens count on this run, priced at the platform
+        # default's rate, so Usage totals match Tracing (its own trace there).
+        title_usage = TitleUsage()
+        title_task: asyncio.Task | None = None
+        stream_open = True  # the title's event is sent only while the stream is live
+
+        def emit_title(title: str) -> None:
+            if stream_open:
+                projector._emit("thread_title", {"title": title})
 
         def usage_values() -> dict:
             return dict(
-                input_tokens=projector.input_tokens,
-                cache_read_tokens=projector.cache_read_tokens,
-                output_tokens=projector.output_tokens,
+                input_tokens=projector.input_tokens + title_usage.input_tokens,
+                cache_read_tokens=projector.cache_read_tokens + title_usage.cache_read_tokens,
+                output_tokens=projector.output_tokens + title_usage.output_tokens,
                 llm_source=llm_source_value,
                 llm_provider=llm_provider_value,
                 llm_model=llm_model_value,
             )
 
         def run_cost_usd() -> float | None:
-            return _compute_cost_usd(
-                llm_provider_value, llm_model_value,
-                projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
+            return _add_costs(
+                _compute_cost_usd(
+                    llm_provider_value, llm_model_value,
+                    projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
+                ),
+                title_usage.cost_usd() if title_usage.input_tokens or title_usage.output_tokens else None,
             )
 
         run_state = _RunState(
@@ -643,6 +710,21 @@ async def _run_generation(
                 "agent_name": agent_record.name,
                 "stream_id": stream_id,
             }
+
+            # A new thread's title starts now, alongside the answer -- not after it.
+            if resume_map is None:
+                current_title = await session.execute(select(Thread.title).where(Thread.id == thread_id))
+                if current_title.scalar_one_or_none() is None:
+                    opening = await session.execute(
+                        select(Message.content)
+                        .where(Message.thread_id == thread_id, Message.role == "user")
+                        .order_by(Message.created_at.asc())
+                        .limit(1)
+                    )
+                    title_task = _start_title_task(
+                        thread_id, opening.scalar_one_or_none() or user_message,
+                        trace_meta, trace_ids, title_usage, emit_title,
+                    )
 
             llm_resolution = await resolve_llm_for_agent(session, agent_record, enable_thinking)
             # Unlike tokens/reasoning, provider/model/source don't need
@@ -724,6 +806,7 @@ async def _run_generation(
             # interrupts, not via an exception.
             state_snapshot = await graph.aget_state(thread_config)
             if state_snapshot.interrupts:
+                await _await_title(title_task)
                 paused = await session.execute(
                     update(StreamRecord)
                     .where(StreamRecord.id == stream_id, StreamRecord.status.in_(_ACTIVE_STATUSES))
@@ -755,50 +838,13 @@ async def _run_generation(
             session.add(assistant_msg)
             await session.flush()
 
-            # ── Auto-generate thread title on first completed exchange ────────
-            # Only triggered when the thread has no title yet; best-effort (any
-            # LLM failure is swallowed so the stream still completes normally).
-            generated_title: str | None = None
-            title_usage = TitleUsage()
-            title_check = await session.execute(
-                select(Thread.title).where(Thread.id == thread_id)
-            )
-            if title_check.scalar_one_or_none() is None:
-                opening_message = await session.execute(
-                    select(Message.content)
-                    .where(Message.thread_id == thread_id, Message.role == "user")
-                    .order_by(Message.created_at.asc())
-                    .limit(1)
-                )
-                title_source = opening_message.scalar_one_or_none() or user_message
-                generated_title = await _generate_thread_title(title_source, trace_meta, trace_ids, title_usage)
-                if generated_title:
-                    await session.execute(
-                        update(Thread)
-                        .where(Thread.id == thread_id)
-                        .values(title=generated_title)
-                    )
-
-            # thread_title must be emitted BEFORE done — SSE consumers stop on done
-            if generated_title:
-                projector._emit("thread_title", {"title": generated_title})
-
+            # The title, started with the answer, is normally ready by now; its
+            # event must come before "done" (SSE consumers stop on done).
+            await _await_title(title_task)
             projector._emit("done", {"message_id": assistant_msg.id, "total_chunks": projector.chunk_index})
 
-            # The run's cost includes the title call (priced at the platform
-            # default's rate, which may differ from the selected model's), so
-            # Usage totals match Tracing, where the title is its own trace.
-            cost_usd = _add_costs(
-                _compute_cost_usd(
-                    llm_provider_value, llm_model_value,
-                    projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
-                ),
-                title_usage.cost_usd() if title_usage.input_tokens or title_usage.output_tokens else None,
-            )
+            cost_usd = run_cost_usd()
             run_usage = usage_values()
-            run_usage["input_tokens"] += title_usage.input_tokens
-            run_usage["cache_read_tokens"] += title_usage.cache_read_tokens
-            run_usage["output_tokens"] += title_usage.output_tokens
             completed = await session.execute(
                 update(StreamRecord)
                 .where(StreamRecord.id == stream_id, StreamRecord.status.in_(_ACTIVE_STATUSES))
@@ -819,7 +865,7 @@ async def _run_generation(
                 await session.rollback()
                 stream_manager.signal_done(stream_id)
                 return
-            await session.commit()  # title update + StreamRecord COMPLETED in one transaction
+            await session.commit()
             stream_manager.signal_done(stream_id)
             logger.info("Stream %s completed (%d chunks)", stream_id, projector.chunk_index)
 
@@ -886,18 +932,15 @@ async def _run_generation(
                 await session.flush()
                 notice_id = notice_msg.id
                 # A failed run still consumed real tokens up to the point of
-                # failure (e.g. the model answered but content assembly or
-                # title generation errored afterward) — record and cost them.
+                # failure (e.g. the model answered but content assembly
+                # errored afterward) — record and cost them.
                 failed = await session.execute(
                     update(StreamRecord)
                     .where(StreamRecord.id == stream_id, StreamRecord.status.in_(_ACTIVE_STATUSES))
                     .values(
                         status=STREAM_STATUS_FAILED,
                         error_message=error_msg,
-                        cost_usd=_compute_cost_usd(
-                            llm_provider_value, llm_model_value,
-                            projector.input_tokens, projector.cache_read_tokens, projector.output_tokens,
-                        ),
+                        cost_usd=run_cost_usd(),
                         updated_at=utcnow(),
                         **failed_values,
                         **usage_values(),
@@ -915,6 +958,7 @@ async def _run_generation(
             stream_manager.signal_done(stream_id)
 
         finally:
+            stream_open = False
             _schedule_trace_sync(trace_ids, (trace_meta or {}).get("user_id"))
             # Keep in-memory buffer alive for 5 minutes so reconnecting clients
             # can replay; then clean up all state for this stream. Skipped when

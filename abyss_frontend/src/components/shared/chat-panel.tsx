@@ -20,7 +20,14 @@ import { useQuery } from "@tanstack/react-query";
 
 import { AgentAvatar } from "@/components/layout";
 import { Button, Heading, Skeleton, Textarea } from "@/components/ui";
-import { buildReasoningTrace, EMPTY_REASONING_TRACE, settleAllLanes, toToolName } from "@/lib/reasoning";
+import {
+  backgroundActivity,
+  buildReasoningTrace,
+  EMPTY_REASONING_TRACE,
+  settleAllLanes,
+  toToolName,
+  visibleSteps,
+} from "@/lib/reasoning";
 import { cn } from "@/lib/utils";
 import type { Agent, Message, ReasoningTrace, StreamToolInterrupt, ToolApprovalPayload } from "@/types";
 import { contentForCopy } from "@/lib/interactive";
@@ -480,8 +487,10 @@ export function ChatPanel({
                           onSubmit={(approvals) => onResolveApproval?.(approvals)}
                         />
                       ) : (
+                        // Nothing shown yet (background steps aren't listed): the waiting dots.
                         !streamingContent &&
-                        reasoningTrace.timeline.length === 0 && (
+                        visibleSteps(reasoningTrace.timeline).length === 0 &&
+                        !backgroundActivity(reasoningTrace.timeline) && (
                           <div className="flex items-center gap-1 py-1">
                             <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" />
                             <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground delay-150" />

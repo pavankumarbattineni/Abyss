@@ -22,7 +22,7 @@ from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from abyss_agents.visual_check import INTERACTIVE_LANGUAGE, check_block, fence_fixes, find_blocks
+from abyss_agents.visual_check import INTERACTIVE_LANGUAGE, check_block, fence_fixes, find_blocks, image_fixes
 from abyss_agents.visual_specs import spec_for
 
 logger = logging.getLogger(__name__)
@@ -97,11 +97,13 @@ class VisualRepairMiddleware(AgentMiddleware):
         if message.tool_calls:  # not the final answer yet
             return response
         text = original = _text_of(message)
-        # JSON written on the fence line: moved onto its own line (no model call).
-        for old, new in fence_fixes(text):
-            if old in text:
-                text = text.replace(old, new, 1)
-                await _tell_chat(old, new)
+        # No model call: JSON written on the fence line moves onto its own line,
+        # and images that didn't come from search_images are left out.
+        for fixes in (fence_fixes, image_fixes):
+            for old, new in fixes(text):
+                if old in text:
+                    text = text.replace(old, new, 1)
+                    await _tell_chat(old, new)
         broken = [b for b in find_blocks(text) if b.errors][:MAX_REPAIRS]
         for block in broken:
             fixed = await self._repair(block)

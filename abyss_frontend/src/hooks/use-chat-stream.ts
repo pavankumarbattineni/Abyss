@@ -144,15 +144,18 @@ export function useChatStream({
           return lastUser === -1 ? [summary, ...prev] : [...prev.slice(0, lastUser), summary, ...prev.slice(lastUser)];
         });
       } else if (event.type === "thread_title") {
-        queryClient.setQueryData<Thread[]>(["threads", agentId], (prev) =>
-          prev
-            ? prev.map((item) =>
-                item.id === resolvedThreadId
-                  ? { ...item, title: event.data.title }
-                  : item,
-              )
-            : prev,
-        );
+        // The title arrives while the answer is still streaming -- possibly before the
+        // sidebar has listed the new thread. Then refetch (the title is already saved).
+        const listed = queryClient
+          .getQueryData<Thread[]>(["threads", agentId])
+          ?.some((item) => item.id === resolvedThreadId);
+        if (listed) {
+          queryClient.setQueryData<Thread[]>(["threads", agentId], (prev) =>
+            prev?.map((item) => (item.id === resolvedThreadId ? { ...item, title: event.data.title } : item)),
+          );
+        } else {
+          void queryClient.invalidateQueries({ queryKey: ["threads", agentId] });
+        }
       } else if (event.type === "done") {
         const assistantMessage: Message = {
           id: event.data.message_id,
@@ -219,6 +222,8 @@ export function useChatStream({
         setIsStreaming(false);
         setStreamingContent("");
         setStreamIdParam(null);
+        // A stopped or failed first answer still gets its title (generated alongside it).
+        void queryClient.invalidateQueries({ queryKey: ["threads", agentId] });
       } else if (event.type === "tool_approval_required") {
         // The event only signals that the backend has paused — an SSE reconnect can replay
         // history, so the event's own payload isn't trustworthy as "this is pending right now."

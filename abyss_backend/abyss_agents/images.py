@@ -1,14 +1,21 @@
 """The `search_images` tool: real images for the `image` visual.
 
-Two sources, searched at the same time for every subject:
-  - Wikimedia Commons: openly licensed photos, drawings and diagrams, each with
-    the author and licence it asks to be credited. The frontend loads them
-    straight from upload./thumb.wikimedia.org.
-  - The web (Brave Search, abyss_agents/web_images.py), when configured:
-    posters, stills, products -- what Commons doesn't have. They are credited
-    to their site and loaded through the signed image proxy.
-Results alternate between the two, best match first, and only images whose
-title or description names the subject are kept (relevant()).
+Two sources:
+  - Wikimedia Commons ("open"): openly licensed photos, drawings and diagrams,
+    each with the author and licence it asks to be credited -- best for
+    science, nature, landmarks, history and real people. The frontend loads
+    them straight from upload./thumb.wikimedia.org.
+  - The web ("web": Brave Search, abyss_agents/web_images.py), when
+    configured: posters, stills, characters, products, brands -- what Commons
+    doesn't have. Credited to their site, loaded through the signed image proxy.
+
+The agent's model, which already knows what the question is about, says which
+source suits each call (`prefer`); no separate classifier. The preferred
+source fills the gallery first and the other only tops it up, so a wrong
+preference costs a little quality, never all the images. Without a preference
+both alternate. Whichever is used, only images whose title, description or
+page names the subject are kept (relevant()), and an image both sources found
+appears once.
 
 The model never invents image URLs: the frontend accepts only Wikimedia
 addresses and tokens this server signed (abyss_frontend/src/lib/visuals/schemas.ts,
@@ -82,11 +89,18 @@ def _words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", text.lower().replace("_", " ")) if len(w) >= 3 or w.isdigit()}
 
 
+def _about(result: dict) -> str:
+    """What a result says it shows: its title, description and page address
+    (a web page's path often names the film or product: /interstellar-review)."""
+    page = urlsplit(result.get("page") or "").path.replace("-", " ").replace("/", " ")
+    return f"{result.get('title', '')} {result.get('description', '')} {page}"
+
+
 def relevant(query: str, results: list[dict], limit: int) -> list[dict]:
-    """Only results whose title or description names the query's subject (one of
-    its distinctive words), most matching words first -- so an image is never
-    unrelated to what was searched. Order is kept among equals (the source's
-    own ranking)."""
+    """Only results whose title, description or page names the query's subject
+    (one of its distinctive words), most matching words first -- so an image is
+    never unrelated to what was searched. Order is kept among equals (the
+    source's own ranking)."""
     subject = _words(query) - _GENERIC
     if not subject:
         return results[:limit]
@@ -94,7 +108,7 @@ def relevant(query: str, results: list[dict], limit: int) -> list[dict]:
     wanted = {stem(w) for w in subject}
     scored = []
     for i, r in enumerate(results):
-        hits = len(wanted & {stem(w) for w in _words(f"{r.get('title', '')} {r.get('description', '')}")})
+        hits = len(wanted & {stem(w) for w in _words(_about(r))})
         if hits:
             scored.append((-hits, i, r))
     return [r for _, _, r in sorted(scored)][:limit]
@@ -197,25 +211,77 @@ async def _all(source: str, search: Search, client: httpx.AsyncClient, queries: 
     return await asyncio.gather(*(_cached(source, search, client, gate, q, limit) for q in queries))
 
 
-def _merge(commons: list[dict] | None, web: list[dict] | None, limit: int) -> list[dict] | None:
-    """Both sources alternating (Commons first); None only when every source failed."""
+
+
+PREFER_WEB = "web"  # posters, stills, characters, products, brands, games
+PREFER_OPEN = "open"  # openly licensed: science, nature, landmarks, history, real people
+# Below this many images for a query, the preferred source gets topped up.
+_TOP_UP_BELOW = 2
+
+
+def preference(value: object) -> str | None:
+    """The source asked for: PREFER_WEB, PREFER_OPEN, or None (balanced) for anything else."""
+    text = str(value or "").strip().lower()
+    return text if text in (PREFER_WEB, PREFER_OPEN) else None
+
+
+def combine(prefer: str | None, commons: list[dict] | None, web: list[dict] | None, limit: int) -> list[dict] | None:
+    """One query's gallery from both sources' results: the preferred source
+    first and the other filling what's left, or both alternating without a
+    preference. None only when every source searched failed."""
     if commons is None and web is None:
         return None
-    return interleave(commons or [], web or [], limit)
+    commons, web = commons or [], web or []
+    if prefer == PREFER_WEB:
+        return (web + commons)[:limit]
+    if prefer == PREFER_OPEN:
+        return (commons + web)[:limit]
+    return interleave(commons, web, limit)
+
+
+async def _gather_sources(client: httpx.AsyncClient, queries: list[str], limit: int, prefer: str | None) -> tuple[list, list]:
+    """(Commons results, web results) per query.
+
+    - Web off: Commons only.
+    - "open": Commons first; the web only for queries Commons came back short
+      on -- most "open" searches never use the web quota.
+    - "web" or balanced: both at once (Commons costs nothing, and the top-up
+      is then ready without a second wait).
+    """
+    none = [None] * len(queries)
+    if not web_images.brave_api_key():
+        return await _all("commons", _commons, client, queries, limit), none
+    if prefer == PREFER_OPEN:
+        commons = await _all("commons", _commons, client, queries, limit)
+        short = [q for q, found in zip(queries, commons) if len(found or []) < min(limit, _TOP_UP_BELOW)]
+        if not short:
+            return commons, none
+        extra = dict(zip(short, await _all("web", _web, client, short, limit)))
+        return commons, [extra.get(q) for q in queries]
+    commons, web = await asyncio.gather(
+        _all("commons", _commons, client, queries, limit),
+        _all("web", _web, client, queries, limit),
+    )
+    return commons, web
 
 
 @tool("search_images")
-async def search_images(queries: list[str], limit: int = 3) -> str:
-    """Find real images (photos, diagrams, illustrations, and -- where web image
-    search is on -- posters and stills).
+async def search_images(queries: list[str], limit: int = 3, prefer: str | None = None) -> str:
+    """Find real images: openly licensed photos and diagrams, and -- where web
+    image search is on -- posters, stills and product images from the web.
 
     Use it when seeing the real thing helps: a place, landmark, person,
     organism, artwork, object, historical photo, or a labelled diagram.
     `queries`: one to five searches at once, each a few English keywords
     naming one subject (e.g. ["mitochondrion diagram", "Taj Mahal"]) -- one
-    per subject. For a film, series, book or game, search the work itself and
-    also what has real photos: its lead actors, filming locations and sets,
-    its author (e.g. ["Harry Potter film", "Daniel Radcliffe", "Alnwick Castle"]).
+    per subject. For a film, series, book or game, search the work itself
+    (e.g. ["Interstellar film"]); its people or places are subjects of their own.
+    `prefer`: set it whenever the subjects clearly suit one source --
+      "web" for films, series, games and their characters or scenes, products,
+      brands, album or book covers;
+      "open" for science, anatomy, nature, landmarks, history and real people;
+      omit only when unsure or mixed. The other source only tops up a short result.
+    Subjects needing different sources go in separate calls, made together.
     Returns up to `limit` (1-8) images per query, best match first, each with
     src, page, author and license (and `source`, the site, for web images):
     show them with ```visual {"format":"image"} blocks, copying those fields
@@ -228,13 +294,10 @@ async def search_images(queries: list[str], limit: int = 3) -> str:
     if not cleaned:
         return "Give one or more searches, each a few keywords describing an image."
     limit = max(1, min(MAX_RESULTS, int(limit or 3)))
+    prefer = preference(prefer)
     async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": USER_AGENT}) as client:
-        searches = [_all("commons", _commons, client, cleaned, limit)]
-        if web_images.brave_api_key():
-            searches.append(_all("web", _web, client, cleaned, limit))
-        by_source = await asyncio.gather(*searches)
-    web = by_source[1] if len(by_source) > 1 else [None] * len(cleaned)
-    found = [_merge(c, w, limit) for c, w in zip(by_source[0], web)]
+        commons, web = await _gather_sources(client, cleaned, limit, prefer)
+    found = [combine(prefer, c, w, limit) for c, w in zip(commons, web)]
     if all(r is None for r in found):
         return "Image search is unavailable right now. Answer without images."
     if len(cleaned) == 1:

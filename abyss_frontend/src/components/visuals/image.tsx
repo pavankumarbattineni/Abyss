@@ -11,6 +11,18 @@ function imageAddress(src: string): string {
   return PROXIED_IMAGE.test(src) ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1/images/proxy?t=${encodeURIComponent(src)}` : src;
 }
 
+/** The site an image is credited to: Wikimedia Commons for its own files; for a web
+ *  image, its site as the search gave it -- or, when the model left that out, its page's. */
+function sourceOf(image: WikimediaImage): string {
+  if (!PROXIED_IMAGE.test(image.src)) return "Wikimedia Commons";
+  if (image.source) return image.source;
+  try {
+    return new URL(image.page ?? "").hostname.replace(/^www\./, "") || "the web";
+  } catch {
+    return "the web";
+  }
+}
+
 // Wikimedia's image servers throttle a burst of downloads (HTTP 429): a
 // failed image is loaded again after these pauses before it counts as failed.
 const RETRY_DELAYS_MS = [2000, 5000, 10000];
@@ -18,7 +30,10 @@ const RETRY_DELAYS_MS = [2000, 5000, 10000];
 function Credited({ image, title, compact }: { image: WikimediaImage; title?: string; compact: boolean }) {
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
-  const credit = [image.author, image.license].filter(Boolean).join(" · ");
+  const source = sourceOf(image);
+  // A web image is always credited to its owner, even if the model dropped the licence.
+  const license = image.license || (PROXIED_IMAGE.test(image.src) ? "© its owner" : undefined);
+  const credit = [image.author, license].filter(Boolean).join(" · ");
   const retryTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(retryTimer.current), []);
   const onError = () => {
@@ -33,7 +48,7 @@ function Credited({ image, title, compact }: { image: WikimediaImage; title?: st
       {failed ? (
         <div className="flex h-40 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-border text-xs text-muted-foreground">
           <ImageOff className="size-5" />
-          The image couldn&apos;t be loaded from Wikimedia.
+          The image couldn&apos;t be loaded from {source}.
         </div>
       ) : (
         // eslint-disable-next-line @next/next/no-img-element -- a remote, credited image shown as is
@@ -59,10 +74,10 @@ function Credited({ image, title, compact }: { image: WikimediaImage; title?: st
             <span className="block text-xs text-muted-foreground">
               {image.page ? (
                 <a href={image.page} target="_blank" rel="noopener noreferrer" className="underline decoration-border underline-offset-2 hover:text-foreground">
-                  {credit}, via {image.source ?? "Wikimedia Commons"}
+                  {credit}, via {source}
                 </a>
               ) : (
-                `${credit}, via ${image.source ?? "Wikimedia Commons"}`
+                `${credit}, via ${source}`
               )}
             </span>
           )}
@@ -73,11 +88,12 @@ function Credited({ image, title, compact }: { image: WikimediaImage; title?: st
 }
 
 /**
- * Real images from Wikimedia Commons (found with the agent's search_images
- * tool; the schema only accepts Wikimedia's image hosts): one image, or a
- * horizontal carousel of up to eight. Each carries the credit its open
- * licence requires -- author and licence, linked to the file's page -- and
- * loads straight from Wikimedia; a failed load says so.
+ * Real images found with the agent's search_images tool (the schema accepts
+ * only Wikimedia's image hosts and web image tokens the server signed): one
+ * image, or a horizontal carousel of up to eight. Wikimedia images carry the
+ * credit their open licence requires and load straight from Wikimedia; web
+ * images are credited to their site and load through the image proxy. Each
+ * credit links to the image's page; a failed load says so.
  */
 export function ImageVisual({ data }: { data: ImageData }) {
   if (data.images.length > 1) return <Carousel images={data.images} title={data.title} />;

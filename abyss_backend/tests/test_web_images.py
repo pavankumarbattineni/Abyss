@@ -183,3 +183,130 @@ def test_no_results_message_names_no_single_source(monkeypatch):
     _route(monkeypatch, commons={}, brave={"results": []})
     out = asyncio.run(search_images.ainvoke({"queries": ["Harry Potter poster"]}))
     assert out.startswith('No images found for "Harry Potter poster"') and "Wikimedia" not in out
+
+
+# ── Source choice (`prefer`) ──────────────────────────────────────────────────
+
+def _commons_pages(title, n):
+    return {"query": {"pages": [
+        {"index": i, "title": f"File:{title} {i}.jpg", "imageinfo": [{"mime": "image/jpeg",
+         "url": f"https://upload.wikimedia.org/{i}.jpg", "descriptionurl": "https://commons.wikimedia.org/x"}]}
+        for i in range(1, n + 1)]}}
+
+
+def _web_results(title, n):
+    return {"results": [{"title": f"{title} still {i}", "url": f"https://film.example.com/{i}",
+                         "properties": {"url": f"https://img.example.com/{i}.jpg", "width": 800, "height": 450}}
+                        for i in range(1, n + 1)]}
+
+
+def _search(**args):
+    return json.loads(asyncio.run(search_images.ainvoke(args)))
+
+
+def test_prefer_web_fills_from_the_web_first_and_commons_tops_up(monkeypatch):
+    _route(monkeypatch, commons=_commons_pages("Interstellar", 3), brave=_web_results("Interstellar", 2))
+    out = _search(queries=["Interstellar film"], limit=4, prefer="web")
+    assert ["source" in r for r in out] == [True, True, False, False]
+
+
+def test_prefer_open_never_spends_web_quota_when_commons_has_enough(monkeypatch):
+    seen = _route(monkeypatch, commons=_commons_pages("Human heart", 3), brave=_web_results("Human heart", 3))
+    out = _search(queries=["human heart diagram"], limit=3, prefer="open")
+    assert "api.search.brave.com" not in seen and not any("source" in r for r in out)
+
+
+def test_prefer_open_tops_up_from_the_web_when_commons_comes_back_short(monkeypatch):
+    seen = _route(monkeypatch, commons=_commons_pages("Batmobile", 1), brave=_web_results("Batmobile", 3))
+    out = _search(queries=["Batmobile"], limit=3, prefer="open")
+    # A wrong preference costs a little quality, never the images.
+    assert "api.search.brave.com" in seen and ["source" in r for r in out] == [False, True, True]
+
+
+def test_an_unknown_preference_is_balanced(monkeypatch):
+    _route(monkeypatch, commons=_commons_pages("Kyoto temple", 2), brave=_web_results("Kyoto temple", 2))
+    out = _search(queries=["Kyoto temple"], limit=4, prefer="both please")
+    assert ["source" in r for r in out] == [False, True, False, True]
+
+
+def test_without_a_web_key_every_preference_uses_commons(monkeypatch):
+    seen = _route(monkeypatch, commons=_commons_pages("Interstellar", 2), brave=_web_results("Interstellar", 2))
+    monkeypatch.setattr(web_images, "brave_api_key", lambda: None)
+    out = _search(queries=["Interstellar film"], prefer="web")
+    assert "api.search.brave.com" not in seen and len(out) == 2
+
+
+def test_combine_only_fails_when_every_source_failed():
+    a, b = [{"t": "a"}], [{"t": "b"}]
+    assert images.combine("web", None, None, 3) is None
+    assert images.combine("web", a, None, 3) == a
+    assert images.combine("open", a, b, 3) == [a[0], b[0]]
+    assert images.combine(None, a, b, 1) == a
+
+
+# ── Web results quality ───────────────────────────────────────────────────────
+
+def test_copies_tiny_images_and_wikimedia_files_are_dropped_from_web_results():
+    payload = {"results": [
+        {"title": "Dune poster", "url": "https://a.example.com/dune", "properties": {"url": "https://a.example.com/img/dune-poster.jpg", "width": 1000, "height": 1500}},
+        {"title": "Dune poster", "url": "https://b.example.com/dune", "properties": {"url": "https://cdn.b.example.com/x/dune-poster.jpg", "width": 1000, "height": 1500}},
+        {"title": "Dune icon", "url": "https://c.example.com/dune", "properties": {"url": "https://c.example.com/dune.png", "width": 64, "height": 64}},
+        {"title": "Dune book", "url": "https://d.example.com/dune", "properties": {"url": "https://upload.wikimedia.org/dune.jpg", "width": 800, "height": 1200}},
+        {"title": "Dune still", "url": "https://e.example.com/dune", "properties": {"url": "https://e.example.com/still.jpg"}},
+    ]}
+    assert [r["source"] for r in parse_brave(payload)] == ["a.example.com", "e.example.com"]
+
+
+def test_a_web_page_address_can_show_the_image_is_relevant():
+    result = {"title": "Image 4", "description": "", "page": "https://example.com/reviews/interstellar-review"}
+    assert images.relevant("Interstellar film", [result], 3) == [result]
+
+
+# ── Tokens a model can only copy ──────────────────────────────────────────────
+
+def test_a_token_never_reveals_the_image_address():
+    import base64
+    url = "https://img.example.com/posters/interstellar.jpg"
+    token = sign_image_url(url)
+    body = token.removeprefix("abyss-image:").split(".")[0]
+    assert base64.urlsafe_b64encode(url.encode()).decode()[:12] not in body  # not base64 of the address
+    assert "interstellar" not in token and verify_image_token(token) == url
+    assert sign_image_url(url) != token  # a fresh nonce every time
+
+
+def test_tokens_from_before_encryption_still_load():
+    # Chats saved before encryption hold plain base64 tokens: still verified, never forgeable.
+    body = web_images._b64(b"https://img.example.com/old.jpg")
+    sig = web_images._b64(web_images.hmac.new(web_images._signing_key(), body.encode(), web_images.hashlib.sha256).digest()[:16])
+    assert verify_image_token(f"abyss-image:{body}.{sig}") == "https://img.example.com/old.jpg"
+    assert verify_image_token(f"abyss-image:{body}.{sig[:-2]}xx") is None
+
+
+def test_stock_photos_rehosted_on_other_sites_are_dropped():
+    payload = {"results": [{"title": "Gion Kyoto", "url": "https://blog.example.com/gion",
+                            "properties": {"url": "https://blog.example.com/uploads/AdobeStock_277982098.jpg"}}]}
+    assert parse_brave(payload) == []
+
+
+# ── Images the model wrote itself never reach the chat ────────────────────────
+
+def test_images_not_from_the_search_are_left_out_without_a_model_call():
+    from abyss_agents.visual_check import find_blocks, image_fixes
+
+    good = "https://upload.wikimedia.org/wikipedia/commons/a/ab/Kyoto.jpg"
+    raw = "https://blog.example.com/uploads/gion.jpg"
+    gallery = json.dumps({"format": "image", "images": [{"src": good, "page": "p"}, {"src": raw, "page": "p"}]})
+    single = json.dumps({"format": "image", "src": raw, "page": "p"})
+    text = f"Kyoto\n```visual\n{gallery}\n```\nGion\n```visual\n{single}\n```\nEnd"
+    for old, new in image_fixes(text):
+        text = text.replace(old, new, 1)
+    assert raw not in text and good in text and "Gion\n\nEnd" in text
+    assert [b.errors for b in find_blocks(text)] == [()]
+
+
+def test_broken_json_is_left_to_the_model_repair():
+    from abyss_agents.visual_check import image_fixes
+
+    # A header then a list with a raw line break inside a string: not valid JSON.
+    broken = '```visual\n{"format":"image"}\n[{"src":"https://x.example.com/a.jpg","title":"line\nbreak"}]\n```'
+    assert image_fixes(broken) == []

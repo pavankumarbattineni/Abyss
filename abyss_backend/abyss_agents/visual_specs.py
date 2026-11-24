@@ -276,7 +276,7 @@ _FORMATS: tuple[VisualFormat, ...] = (
     ),
     VisualFormat(
         "image",
-        "real photos or illustrations from Wikimedia Commons",
+        "real photos, illustrations, posters or stills found by search_images",
         '{"format":"image","title"?,"src","page","alt","caption"?,"author","license"} or, '
         'for a gallery of 2-8 images of one subject, {"format":"image","title"?,"images":'
         '[{"src","page","alt","caption"?,"author","license"}]}\n'

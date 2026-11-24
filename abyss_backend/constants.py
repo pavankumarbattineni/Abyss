@@ -122,6 +122,9 @@ LLM_CALL_RETRY_BACKOFF_SECONDS = 1.0
 
 THREAD_TITLE_INPUT_MAX_CHARS = 500
 THREAD_TITLE_OUTPUT_MAX_CHARS = 255
+# The title is generated alongside the answer; a finished answer waits at most
+# this long for it before "done" (it still reaches the thread list later).
+THREAD_TITLE_WAIT_SECONDS = 10
 TOKEN_FLUSH_INTERVAL = 50
 
 # Reasoning / Thinking Process
