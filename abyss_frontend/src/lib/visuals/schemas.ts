@@ -515,28 +515,6 @@ export const stepsSchema = z.object({
   ),
 });
 
-export const mapSchema = z.object({
-  ...base,
-  format: z.literal("map"),
-  /** Stages or regions: each colours its places and paths, with a legend that filters them. */
-  groups: optList(z.object({ id, label: text }), 8),
-  places: optList(z.object({ name: text, lat: num, lon: num, label: optText, detail: optText, group: id.optional().catch(undefined) }), 60),
-  /** A journey through places in order: names of `places`, or [lat, lon] points. */
-  paths: optList(
-    z.object({
-      via: z.array(z.union([z.string().trim().min(1), z.tuple([num, num])])).min(2).max(60),
-      label: optText,
-      group: id.optional().catch(undefined),
-      dashed: flag,
-    }),
-    12,
-  ),
-  /** Countries by name, shaded; `value` drives a colour scale. */
-  regions: optList(z.object({ name: text, value: num.optional().catch(undefined), label: optText }), 60),
-  routes: optList(z.object({ from: z.tuple([num, num]), to: z.tuple([num, num]), label: optText }), 12),
-  valueLabel: optText,
-});
-
 /** Only Wikimedia's servers: an image found with the search_images tool, never an arbitrary URL. */
 export const WIKIMEDIA_IMAGE = /^https:\/\/(upload|thumb)\.wikimedia\.org\//;
 /** A web image search_images found, loaded through the server's image proxy (signed by the server). */
@@ -605,7 +583,6 @@ export const VISUAL_SCHEMAS = {
   "energy-levels": energyLevelsSchema,
   circuit: circuitSchema,
   steps: stepsSchema,
-  map: mapSchema,
   image: imageSchema,
 } as const;
 
@@ -636,6 +613,5 @@ export type PeriodicTableData = VisualData<"periodic-table">;
 export type EnergyLevelsData = VisualData<"energy-levels">;
 export type CircuitData = VisualData<"circuit">;
 export type StepsData = VisualData<"steps">;
-export type MapData = VisualData<"map">;
 export type ImageData = VisualData<"image">;
 export type Param = z.output<typeof param>;

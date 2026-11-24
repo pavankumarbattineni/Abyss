@@ -326,6 +326,21 @@ export function useChatStream({
     const persistedStreamId = streamIdParamRef.current;
     if (threadId && persistedStreamId) {
       resumeStream(persistedStreamId, threadId, false, () => cancelled);
+    } else if (threadId) {
+      // Opened from the thread list or any other link (no ?streamId): an answer
+      // started earlier keeps running on the server while no page shows it, so
+      // ask the thread for one and pick it up where it is -- text, steps and all.
+      threadService
+        .getActiveStream(threadId)
+        .then((active) => {
+          // Not if a message sent meanwhile already opened its own stream.
+          if (!cancelled && active.stream_id && !streamIdRef.current) {
+            resumeStream(active.stream_id, threadId, false, () => cancelled);
+          }
+        })
+        .catch(() => {
+          // Nothing to pick up (or the thread is gone, which the page itself handles).
+        });
     }
 
     return () => {

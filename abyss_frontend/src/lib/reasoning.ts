@@ -214,7 +214,7 @@ function outsideCodeBlock(content: string, at: number): number {
 
 /**
  * Steps the agent takes only to prepare what the answer shows (a visual's
- * format, images, places for a map): tools declare that themselves on the
+ * format, its images): tools declare that themselves on the
  * backend (abyss_agents/tool_display.py), and their calls carry `background`,
  * the status to show while they run. They run as always and stay in the saved
  * reasoning (Tracing shows them), but the chat leaves them out of its steps --

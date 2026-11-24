@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_async_session
 from schemas.message import MessageCreate, MessageResponse
-from schemas.stream import StreamStartResponse
+from schemas.stream import ActiveStreamResponse, StreamStartResponse
 from schemas.thread import ThreadCreate, ThreadCreateResponse, ThreadResponse, ThreadUpdate
 from services.chat_service import ChatService
 from services.thread_service import ThreadService
@@ -172,3 +172,20 @@ async def get_messages(
         HTTPException: 422 if thread not found or not owned by user.
     """
     return await chat_service.get_messages(session, thread_id, user_id)
+
+
+@router.get("/{thread_id}/active-stream", response_model=ActiveStreamResponse)
+async def get_active_stream(
+    thread_id: str,
+    user_id: str = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The thread's answer in progress, if any (both fields null when none).
+
+    An answer keeps running when its page is left; a page opening the thread
+    later -- from the thread list or any link -- reconnects to it with this.
+
+    Raises:
+        HTTPException: 404 if the thread is not found or not owned by the user.
+    """
+    return await chat_service.get_active_stream(session, thread_id, user_id)

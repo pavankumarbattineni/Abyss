@@ -1,7 +1,7 @@
 """How the chat shows a tool's calls -- declared by the tool itself.
 
-A tool that only prepares what the answer shows (a visual's format, images,
-places for a map) marks itself as a background step, with the short status the
+A tool that only prepares what the answer shows (a visual's format, its
+images) marks itself as a background step, with the short status the
 chat says while it runs ("Finding images…"). The mark travels with the tool's
 stream events (tool metadata is part of every event LangChain emits for it):
 the stream projector passes it on, live and in the saved steps, and the chat

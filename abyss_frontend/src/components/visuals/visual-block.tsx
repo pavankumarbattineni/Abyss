@@ -31,7 +31,6 @@ import { CircuitVisual } from "./circuit";
 import { EnergyLevelsVisual } from "./energy-levels";
 import { GeometryVisual } from "./geometry";
 import { ImageVisual } from "./image";
-import { MapVisual } from "./map";
 import { MoleculeVisual } from "./molecule";
 import { NumberLineVisual } from "./number-line";
 import { PeriodicTableVisual } from "./periodic-table";
@@ -68,7 +67,6 @@ const RENDERERS: { [F in VisualFormatName]: ComponentType<{ data: VisualData<F> 
   "energy-levels": EnergyLevelsVisual,
   circuit: CircuitVisual,
   steps: StepsVisual,
-  map: MapVisual,
   image: ImageVisual,
 };
 

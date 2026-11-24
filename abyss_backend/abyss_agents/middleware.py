@@ -12,6 +12,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import asyncio
+import time
+from contextvars import ContextVar
 from uuid import uuid4
 
 import anyio
@@ -23,7 +25,9 @@ from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.types import Command
 
+from constants import MODEL_SILENCE_SECONDS
 from utils.fake_tool_call import has_written_call, strip_written_calls
+from utils.llm_providers import ModelStalled
 from utils.reasoning_splitter import sanitize_for_reasoning_tags
 from utils.tool_output import extract_tool_output
 
@@ -499,6 +503,50 @@ class ContinueCutOffAnswer(AgentMiddleware):
 # Provider trouble that passes: an outage or overload (503/529), a timeout, a
 # dropped connection. Waits before each new try.
 _RESTART_DELAYS = (3.0, 8.0, 20.0)
+
+
+class ModelActivity:
+    """When a model in this answer last produced output (a token or a thought,
+    the main agent's or a specialist's). The chat touches it for every model
+    chunk it streams (services/chat_service.py) and sets it for the run in
+    MODEL_ACTIVITY; _within_silence_limit reads it."""
+
+    def __init__(self) -> None:
+        self.last = time.monotonic()
+
+    def touch(self) -> None:
+        self.last = time.monotonic()
+
+
+MODEL_ACTIVITY: ContextVar[ModelActivity | None] = ContextVar("abyss_model_activity", default=None)
+
+
+async def _within_silence_limit(call: Awaitable[Any]) -> Any:
+    """Await a model call, giving it up (ModelStalled) once no model has
+    produced anything for MODEL_SILENCE_SECONDS since the call began. Without
+    a run's activity clock (tests, other callers) it simply awaits the call.
+
+    Silence is measured, not duration: an overloaded provider can hold a
+    request open for minutes before answering 503, while a long answer that
+    keeps streaming must never be cut."""
+    activity = MODEL_ACTIVITY.get()
+    if activity is None:
+        return await call
+    task = asyncio.ensure_future(call)
+    started = time.monotonic()
+    try:
+        while True:
+            remaining = MODEL_SILENCE_SECONDS - (time.monotonic() - max(started, activity.last))
+            if remaining <= 0:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                raise ModelStalled(f"no output from the model for {MODEL_SILENCE_SECONDS:g}s")
+            done, _ = await asyncio.wait({task}, timeout=remaining)
+            if done:
+                return task.result()
+    except asyncio.CancelledError:
+        task.cancel()
+        raise
 _PASSING_ERRORS = {"provider_unavailable", "provider_timeout", "provider_unreachable"}
 # Custom stream events between RestartFailedReply and the chat's stream
 # projector (services/stream_projector.py), which knows what was shown:
@@ -564,7 +612,9 @@ class RestartFailedReply(AgentMiddleware):
     """Tries a model call again when the provider fails part-way through it.
 
     A provider outage ("503 high demand"), timeout or dropped connection would
-    otherwise end the turn. After a short wait the call is made again, up to
+    otherwise end the turn. A call that stays silent (_within_silence_limit)
+    counts as a timeout, so a provider holding a request open doesn't stall
+    the answer for minutes. After a short wait the call is made again, up to
     len(_RESTART_DELAYS) times. When it had already shown part of the answer
     (`visible`: the main agent, whose text the user sees), that text stays:
     the next try continues it from the start of its last line, exactly as a
@@ -586,7 +636,7 @@ class RestartFailedReply(AgentMiddleware):
         tail, in_code, line = "", False, ""
         for attempt, delay in enumerate((*self.delays, None), start=1):
             try:
-                response = await handler(current)
+                response = await _within_silence_limit(handler(current))
             except GraphBubbleUp:
                 raise
             except Exception as exc:

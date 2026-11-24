@@ -263,21 +263,6 @@ _FORMATS: tuple[VisualFormat, ...] = (
         'being compared or swapped in "highlight", and "pointers" like {"i":0,"j":3}.',
     ),
     VisualFormat(
-        "map",
-        "an interactive world map: places, journeys, routes and countries",
-        '{"format":"map","title","groups"?:[{"id","label"}],'
-        '"places"?:[{"name","lat","lon","label"?,"detail"?,"group"?}],'
-        '"paths"?:[{"via":[place names in order],"label"?,"group"?,"dashed"?}],'
-        '"regions"?:[{"name":"country","value"?,"label"?}],'
-        '"routes"?:[{"from":[lat,lon],"to":[lat,lon],"label"?}],"valueLabel"?}\n'
-        "- Coordinates from the find_places tool (or ones you are certain of); never guess. "
-        '"detail": a sentence shown when the place is clicked.\n'
-        '- A journey or trade route: its places in order and one "paths" entry through '
-        'them by name. "groups" colour stages or regions (each place/path names its '
-        'group) with a legend that filters them. Countries by English name; "value" '
-        "shades them on a colour scale.",
-    ),
-    VisualFormat(
         "image",
         "real photos, illustrations, posters or stills found by search_images",
         '{"format":"image","title"?,"src","page","alt","caption"?,"author","license"} or, '

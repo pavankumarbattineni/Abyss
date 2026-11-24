@@ -224,6 +224,12 @@ export interface StreamPendingApproval {
   interrupts: StreamToolInterrupt[];
 }
 
+/** A thread's answer in progress, if any (both null when none). */
+export interface ActiveStreamResponse {
+  stream_id: string | null;
+  status: "PENDING" | "RUNNING" | "AWAITING_APPROVAL" | null;
+}
+
 export interface StreamStatusResponse {
   stream_id: string;
   status: StreamStatus;

@@ -25,6 +25,11 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # v9 is a rewrite (column types and table creation change across the
+      # data tables); it moves only as a planned migration, not a bump.
+      - dependency-name: "@tanstack/react-table"
+        update-types: ["version-update:semver-major"]
 
   # Base images in the Dockerfiles (python:3.13-slim, node:24-slim, uv)
   - package-ecosystem: docker

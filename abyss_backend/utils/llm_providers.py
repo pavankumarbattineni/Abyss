@@ -158,8 +158,15 @@ def get_provider_spec(provider: str) -> ProviderSpec:
     return spec
 
 
+class ModelStalled(Exception):
+    """A model call that produced nothing for MODEL_SILENCE_SECONDS
+    (abyss_agents/middleware.py RestartFailedReply gives up on it)."""
+
+
 def _classify_one(exc: BaseException) -> tuple[str, str] | tuple[None, None]:
     """Classify a single exception (no cause chain); see classify_llm_error."""
+    if isinstance(exc, ModelStalled):
+        return "provider_timeout", "The model stopped responding. Please try again in a minute, or pick another model."
     import anthropic
     import httpx
     import openai
@@ -193,6 +200,8 @@ def _classify_one(exc: BaseException) -> tuple[str, str] | tuple[None, None]:
         if exc.code == 404:
             return "model_not_found", "Google Gemini doesn't recognise this agent's model. Pick another model for the agent."
     if isinstance(exc, ServerError):
+        if exc.code == 503:
+            return "provider_unavailable", "Google Gemini is busy right now (high demand). Please try again in a minute, or pick another model."
         return "provider_unavailable", "Google Gemini is temporarily unavailable. Please try again shortly."
 
     if isinstance(exc, (httpx.TimeoutException,)):

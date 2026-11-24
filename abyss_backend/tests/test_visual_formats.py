@@ -12,7 +12,7 @@ EXPECTED = {
     "flowchart", "diagram", "blueprint", "tree", "timeline", "roadmap", "cycle", "layers",
     "iceberg", "decision-matrix", "canvas", "infographic", "handwritten", "sketchnotes",
     "exploded-view", "plot", "geometry", "vector-field", "number-line", "venn", "molecule",
-    "periodic-table", "energy-levels", "circuit", "steps", "map", "image",
+    "periodic-table", "energy-levels", "circuit", "steps", "image",
 }
 
 
@@ -116,6 +116,6 @@ def test_requested_format_keeps_its_short_answer_rule():
 
 
 def test_several_specs_in_one_call():
-    both = get_visual_format.invoke({"name": "map, image"})
-    assert '"format":"map"' in both and '"format":"image"' in both
+    both = get_visual_format.invoke({"name": "plot, image"})
+    assert '"format":"plot"' in both and '"format":"image"' in both
     assert "Unknown format 'pie'" in get_visual_format.invoke({"name": "plot, pie"})
