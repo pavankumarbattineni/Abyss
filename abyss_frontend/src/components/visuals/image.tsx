@@ -51,21 +51,32 @@ function Credited({ image, title, compact }: { image: WikimediaImage; title?: st
           The image couldn&apos;t be loaded from {source}.
         </div>
       ) : (
-        // eslint-disable-next-line @next/next/no-img-element -- a remote, credited image shown as is
-        <img
-          // A new element per attempt, so the browser requests the image again.
-          key={attempt}
-          src={imageAddress(image.src)}
-          alt={image.alt ?? image.caption ?? title ?? "Image"}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          crossOrigin="anonymous"
-          onError={onError}
-          className={cn(
-            "max-w-full rounded-lg bg-white",
-            compact ? "aspect-[4/3] w-full object-cover" : "max-h-[480px] w-auto object-contain",
-          )}
-        />
+        // The whole image, never cropped: it is scaled to fit (keeping its aspect
+        // ratio), never filled. In a gallery every image gets the same 4:3 frame
+        // -- so the cards line up -- and a taller or wider one is letterboxed
+        // inside it. The white backing (for transparent diagrams) sits behind the
+        // image only, not the empty part of the frame.
+        <div className={cn("relative w-full overflow-hidden rounded-lg", compact && "aspect-[4/3] bg-muted/40")}>
+          {/* Absolutely filling the frame gives the image a definite box to fit in
+              (a percentage max-height doesn't resolve against an aspect-ratio height). */}
+          <div className={cn("flex items-center justify-center", compact && "absolute inset-0")}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- a remote, credited image shown as is */}
+            <img
+              // A new element per attempt, so the browser requests the image again.
+              key={attempt}
+              src={imageAddress(image.src)}
+              alt={image.alt ?? image.caption ?? title ?? "Image"}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              crossOrigin="anonymous"
+              onError={onError}
+              className={cn(
+                "block h-auto w-auto max-w-full rounded-lg bg-white object-contain",
+                compact ? "max-h-full" : "max-h-[480px]",
+              )}
+            />
+          </div>
+        </div>
       )}
       {(image.caption || credit) && (
         <figcaption className="max-w-prose text-center text-[13px] leading-snug">

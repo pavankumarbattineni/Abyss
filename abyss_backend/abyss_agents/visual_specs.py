@@ -181,7 +181,10 @@ _FORMATS: tuple[VisualFormat, ...] = (
         '"circles"?:[{"center":P,"r","label"?}],"polygons"?:[{"points":[P,...],"label"?,"shade"?:true}],'
         '"angles"?:[{"vertex":P,"from":P,"to":P,"label"?,"right"?:true}],'
         '"boxes"?:[{"at":[x,y],"w","h","angle"?,"label"?}],"notes"?:[{"at":[x,y],"text"}],'
+        '"functions"?:[{"y":"formula in x","x"?:[min,max],"label"?,"dashed"?}],'
+        '"parametric"?:[{"x":"formula in t","y":"formula in t","t":[min,max],"label"?}],'
         '"transform"?:{"matrix":[[a,b],[c,d]],"label"?}}\n'
+        "- Curves (a cable, a trajectory, an arc) go in functions or parametric.\n"
         "- P is a point id or [x,y]; coordinates may be FORMULAS over params. Units are "
         "equal on both axes. Label sides with their lengths. Mark every angle with "
         '"angles" (an arc at its vertex, labelled) -- never with notes.\n'
