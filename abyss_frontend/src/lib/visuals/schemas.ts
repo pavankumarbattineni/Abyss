@@ -312,6 +312,10 @@ const param = z.object({
   animate: z.union([z.boolean(), num]).optional().catch(undefined),
 });
 
+/** Curves shared by plot and geometry: y = f(x) over an optional x range, and (x(t), y(t)). */
+const functionCurve = z.object({ y: text, label: optText, x: optRange, color: colorIndex, dashed: flag });
+const parametricCurve = z.object({ x: text, y: text, t: range, label: optText, color: colorIndex, dashed: flag });
+
 export const plotSchema = z.object({
   ...base,
   format: z.literal("plot"),
@@ -325,14 +329,8 @@ export const plotSchema = z.object({
   /** Equal units on both axes (circles stay round). */
   equal: flag,
   params: optList(param, 6),
-  functions: optList(
-    z.object({ y: text, label: optText, x: optRange, color: colorIndex, dashed: flag }),
-    8,
-  ),
-  parametric: optList(
-    z.object({ x: text, y: text, t: range, label: optText, color: colorIndex, dashed: flag }),
-    6,
-  ),
+  functions: optList(functionCurve, 8),
+  parametric: optList(parametricCurve, 6),
   polar: optList(z.object({ r: text, t: range, label: optText, color: colorIndex, dashed: flag }), 6),
   /** A shaded area: between y and y2 (default: the x-axis) from x[0] to x[1]. */
   areas: optList(
@@ -383,6 +381,9 @@ export const geometrySchema = z.object({
   ),
   /** Boxes for bodies in free-body diagrams; rotated by `angle` degrees. */
   boxes: optList(z.object({ at: xy, w: num, h: num, angle: num.optional().catch(undefined), label: optText }), 8),
+  /** Curves (a cable, a trajectory, an arc), as in plot. */
+  functions: optList(functionCurve, 8),
+  parametric: optList(parametricCurve, 6),
   notes: optList(z.object({ at: xy, text }), 12),
   /** A 2×2 matrix: a toggle shows everything before and after applying it. */
   transform: z
