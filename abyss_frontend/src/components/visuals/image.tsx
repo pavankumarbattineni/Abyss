@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { galleryFrame } from "@/lib/visuals/gallery-frame";
 import { PROXIED_IMAGE, type ImageData, type WikimediaImage } from "@/lib/visuals/schemas";
 
 /** Where the browser loads an image: Wikimedia directly, a web image through our proxy. */
@@ -11,11 +12,12 @@ function imageAddress(src: string): string {
   return PROXIED_IMAGE.test(src) ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1/images/proxy?t=${encodeURIComponent(src)}` : src;
 }
 
-/** The site an image is credited to: Wikimedia Commons for its own files; for a web
- *  image, its site as the search gave it -- or, when the model left that out, its page's. */
+/** The site an image is credited to: the one the search named (a Wikipedia poster,
+ *  a web image's site); otherwise Wikimedia Commons for its own files, or -- when the
+ *  model left the site out -- the page's. */
 function sourceOf(image: WikimediaImage): string {
-  if (!PROXIED_IMAGE.test(image.src)) return "Wikimedia Commons";
   if (image.source) return image.source;
+  if (!PROXIED_IMAGE.test(image.src)) return "Wikimedia Commons";
   try {
     return new URL(image.page ?? "").hostname.replace(/^www\./, "") || "the web";
   } catch {
@@ -27,7 +29,21 @@ function sourceOf(image: WikimediaImage): string {
 // failed image is loaded again after these pauses before it counts as failed.
 const RETRY_DELAYS_MS = [2000, 5000, 10000];
 
-function Credited({ image, title, compact }: { image: WikimediaImage; title?: string; compact: boolean }) {
+function Credited({
+  image,
+  title,
+  compact,
+  frame,
+  onShape,
+}: {
+  image: WikimediaImage;
+  title?: string;
+  compact: boolean;
+  /** In a gallery: the card shape all its images share (lib/visuals/gallery-frame.ts). */
+  frame?: number;
+  /** Reports the image's own shape (width / height) once it has loaded. */
+  onShape?: (ratio: number) => void;
+}) {
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
   const source = sourceOf(image);
@@ -52,11 +68,15 @@ function Credited({ image, title, compact }: { image: WikimediaImage; title?: st
         </div>
       ) : (
         // The whole image, never cropped: it is scaled to fit (keeping its aspect
-        // ratio), never filled. In a gallery every image gets the same 4:3 frame
-        // -- so the cards line up -- and a taller or wider one is letterboxed
+        // ratio), never filled. In a gallery every card shares one shape, taken
+        // from the gallery's own images -- so posters get tall cards and
+        // landscapes wide ones -- and an image of another shape is letterboxed
         // inside it. The white backing (for transparent diagrams) sits behind the
         // image only, not the empty part of the frame.
-        <div className={cn("relative w-full overflow-hidden rounded-lg", compact && "aspect-[4/3] bg-muted/40")}>
+        <div
+          className={cn("relative w-full overflow-hidden rounded-lg", compact && "bg-muted/40")}
+          style={compact ? { aspectRatio: frame ?? 4 / 3 } : undefined}
+        >
           {/* Absolutely filling the frame gives the image a definite box to fit in
               (a percentage max-height doesn't resolve against an aspect-ratio height). */}
           <div className={cn("flex items-center justify-center", compact && "absolute inset-0")}>
@@ -70,6 +90,10 @@ function Credited({ image, title, compact }: { image: WikimediaImage; title?: st
               referrerPolicy="no-referrer"
               crossOrigin="anonymous"
               onError={onError}
+              onLoad={(e) => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                if (w > 0 && h > 0) onShape?.(w / h);
+              }}
               className={cn(
                 "block h-auto w-auto max-w-full rounded-lg bg-white object-contain",
                 compact ? "max-h-full" : "max-h-[480px]",
@@ -126,6 +150,9 @@ const VISIBLE = 2;
 function Carousel({ images, title }: { images: WikimediaImage[]; title?: string }) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
+  // Each image's own shape once loaded; the cards share the gallery's shape.
+  const [shapes, setShapes] = useState<Record<number, number>>({});
+  const frame = galleryFrame(Object.values(shapes));
   // The last position still shows two images: it starts at the second-to-last.
   const lastStart = Math.max(0, images.length - VISIBLE);
   const go = (to: number) => {
@@ -158,7 +185,13 @@ function Carousel({ images, title }: { images: WikimediaImage[]; title?: string 
         {/* Two images in view at every width; the third and later scroll in. */}
         {images.map((image, i) => (
           <div key={`${image.src}-${i}`} className="w-[calc(50%-0.5rem)] shrink-0 snap-start" aria-label={`${i + 1} of ${images.length}`}>
-            <Credited image={image} title={title} compact />
+            <Credited
+              image={image}
+              title={title}
+              compact
+              frame={frame}
+              onShape={(ratio) => setShapes((prev) => (prev[i] === ratio ? prev : { ...prev, [i]: ratio }))}
+            />
           </div>
         ))}
       </div>

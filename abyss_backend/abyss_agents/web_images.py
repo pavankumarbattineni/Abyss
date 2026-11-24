@@ -100,9 +100,15 @@ def _unseal(body: str) -> str | None:
         return None
 
 
-def sign_image_url(url: str) -> str:
-    """abyss-image:<encrypted url>.<signature> -- what the chat loads through the proxy."""
-    body = _seal(url)
+# Between an image's address and its fallback copy inside a token (never part of a URL).
+_TARGET_SEP = "\n"
+
+
+def sign_image_url(url: str, fallback: str | None = None) -> str:
+    """abyss-image:<encrypted url>.<signature> -- what the chat loads through the proxy.
+    `fallback`: another copy of the same image (a search engine's cached copy),
+    which the proxy serves when the image's own site refuses or fails."""
+    body = _seal(url if not fallback else f"{url}{_TARGET_SEP}{fallback}")
     signature = _b64(hmac.new(_signing_key(), body.encode(), hashlib.sha256).digest()[:16])
     return f"{TOKEN_PREFIX}{body}.{signature}"
 
@@ -111,22 +117,29 @@ def verify_image_token(token: str) -> str | None:
     """The image URL a token stands for, or None when it wasn't signed by this server.
     Tokens from before encryption (a plain base64 address) still work, so images
     in chats saved earlier keep loading."""
+    targets = image_token_targets(token)
+    return targets[0] if targets else None
+
+
+def image_token_targets(token: str) -> list[str]:
+    """Every address a token stands for, in the order to try them (the image,
+    then its fallback copy); [] when it wasn't signed by this server."""
     if token.startswith(TOKEN_PREFIX):
         token = token[len(TOKEN_PREFIX):]
     body, _, signature = token.partition(".")
     if not body or not signature:
-        return None
+        return []
     expected = _b64(hmac.new(_signing_key(), body.encode(), hashlib.sha256).digest()[:16])
     if not hmac.compare_digest(signature, expected):
-        return None
+        return []
     if body.startswith(_SEALED):
-        url = _unseal(body)
+        payload = _unseal(body) or ""
     else:
         try:
-            url = _unb64(body).decode()
+            payload = _unb64(body).decode()
         except (ValueError, UnicodeDecodeError):
-            return None
-    return url if url and urlsplit(url).scheme in ("http", "https") else None
+            return []
+    return [u for u in payload.split(_TARGET_SEP) if u and urlsplit(u).scheme in ("http", "https")]
 
 
 def _too_small(width: object, height: object) -> bool:
@@ -169,7 +182,8 @@ def parse_brave(payload: dict) -> list[dict]:
             continue
         seen.add(key)
         out.append({
-            "src": sign_image_url(image_url),
+            # Brave's own cached copy is the fallback: it always loads, even when the site refuses.
+            "src": sign_image_url(image_url, (r.get("thumbnail") or {}).get("src")),
             "page": r.get("url") or "",
             "title": str(r.get("title") or "")[:160],
             "description": "",
@@ -178,6 +192,7 @@ def parse_brave(payload: dict) -> list[dict]:
             "source": site,
             "width": props.get("width"),
             "height": props.get("height"),
+            "key": image_url,
         })
     return out
 

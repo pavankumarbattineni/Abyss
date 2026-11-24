@@ -21,3 +21,18 @@ def _offline_image_checks(monkeypatch):
         return set()
 
     monkeypatch.setattr(visual_repair, "_missing", nothing_missing)
+
+
+@pytest.fixture(autouse=True)
+def _offline_image_sites(monkeypatch):
+    """The image-site filter never reaches a database in tests: nothing is
+    skipped or recorded (its best-effort path), whatever database is configured."""
+    from abyss_agents import image_sites
+
+    def no_database():
+        raise RuntimeError("no database in tests")
+
+    monkeypatch.setattr(image_sites, "_sessions", no_database)
+    monkeypatch.setattr(image_sites, "_loaded_at", 0.0)
+    image_sites._skipped.clear()
+    image_sites._failing.clear()

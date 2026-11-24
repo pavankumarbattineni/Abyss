@@ -18,7 +18,9 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from abyss_agents.web_images import verify_image_token
+from abyss_agents import image_sites
+
+from abyss_agents.web_images import image_token_targets
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/images", tags=["images"])
@@ -72,14 +74,26 @@ async def fetch_image(url: str) -> tuple[bytes, str]:
 
 @router.get("/proxy")
 async def image_proxy(t: str = Query(min_length=10, max_length=4096)) -> Response:
-    url = verify_image_token(t)
-    if not url:
+    targets = image_token_targets(t)
+    if not targets:
         raise HTTPException(status_code=403, detail="Unknown image")
-    try:
-        data, kind = await fetch_image(url)
-    except httpx.HTTPError as exc:
-        logger.warning("image proxy fetch failed: %s", type(exc).__name__)
-        raise HTTPException(status_code=502, detail="The image couldn't be fetched") from exc
+    # The image itself, then its fallback copy (a search engine's cached copy):
+    # a site refusing or failing still shows the picture. Each outcome teaches
+    # which sites to leave out of searches (abyss_agents/image_sites.py).
+    failure: HTTPException | None = None
+    for url in targets:
+        try:
+            data, kind = await fetch_image(url)
+        except (httpx.HTTPError, HTTPException) as exc:
+            if not (isinstance(exc, HTTPException) and exc.status_code == 400):  # 400: not a public address, never fetched
+                logger.warning("image proxy fetch failed: %s", getattr(exc, "detail", type(exc).__name__))
+                await image_sites.record(url, ok=False)
+            failure = exc if isinstance(exc, HTTPException) else HTTPException(status_code=502, detail="The image couldn't be fetched")
+            continue
+        await image_sites.record(url, ok=True)
+        break
+    else:
+        raise failure or HTTPException(status_code=502, detail="The image couldn't be fetched")
     return Response(
         content=data,
         media_type=kind,

@@ -167,15 +167,19 @@ async def _missing(srcs: list[str]) -> set[str]:
     return {s for s, is_gone in zip(srcs, results) if is_gone}
 
 
+# The sources to search again for a made-up image, from what its address imitated:
+# a Wikimedia file (an openly licensed picture) or a web image (a poster, a still).
+_REPLACEMENT_SOURCES = {"open": ["wikidata", "commons", "openverse"], "web": ["wikipedia"]}
+
+
 async def _search_all(wanted: list[tuple[str, str]]) -> dict[tuple[str, str], list[dict]]:
-    """The results of each (query, prefer) search, grouped into find_images calls by source."""
+    """The results of each (query, kind) search, in find_images calls of at most MAX_QUERIES."""
     found: dict[tuple[str, str], list[dict]] = {}
-    for prefer in dict.fromkeys(p for _, p in wanted):
-        queries = [q for q, p in wanted if p == prefer]
-        for start in range(0, len(queries), images.MAX_QUERIES):
-            chunk = queries[start:start + images.MAX_QUERIES]
-            for query, results in zip(chunk, await images.find_images(chunk, _REPLACEMENT_RESULTS, prefer)):
-                found[(query, prefer)] = results or []
+    for start in range(0, len(wanted), images.MAX_QUERIES):
+        chunk = wanted[start:start + images.MAX_QUERIES]
+        searches = [(query, _REPLACEMENT_SOURCES.get(kind, [])) for query, kind in chunk]
+        for want, results in zip(chunk, await images.find_images(searches, _REPLACEMENT_RESULTS)):
+            found[want] = results or []
     return found
 
 

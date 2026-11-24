@@ -369,3 +369,16 @@ class TraceSpan(Base):
     inputs_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     outputs_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     meta: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+
+class ImageSite(Base):
+    """How reliably a site's images load through the image proxy
+    (abyss_agents/image_sites.py): after repeated failures in a row, the
+    site's images are left out of searches until `skip_until`."""
+
+    __tablename__ = "image_sites"
+
+    host: Mapped[str] = mapped_column(String(255), primary_key=True)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skip_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)

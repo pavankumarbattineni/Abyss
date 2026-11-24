@@ -75,19 +75,6 @@ def test_web_images_top_up_a_subject_wikimedia_lacks(monkeypatch):
     assert [r["title"] for r in out] == ["Harry Potter and the Philosopher's Stone poster"]  # unrelated one filtered
 
 
-def test_both_sources_alternate_when_the_web_is_on(monkeypatch):
-    commons = {"query": {"pages": [
-        {"index": i, "title": f"File:Hobbiton set {i}.jpg", "imageinfo": [{"mime": "image/jpeg",
-         "url": f"https://upload.wikimedia.org/h{i}.jpg", "descriptionurl": "https://commons.wikimedia.org/x"}]}
-        for i in (1, 2, 3)]}}
-    web = {"results": [{"title": f"Hobbiton set still {i}", "url": f"https://film.example.com/{i}",
-                        "properties": {"url": f"https://img.example.com/{i}.jpg"}} for i in (1, 2, 3)]}
-    seen = _route(monkeypatch, commons=commons, brave=web)
-    out = json.loads(asyncio.run(search_images.ainvoke({"queries": ["Hobbiton set"], "limit": 4})))
-    assert "api.search.brave.com" in seen
-    # Wikimedia, web, Wikimedia, web -- open licences first, then the film's own imagery.
-    assert ["source" in r for r in out] == [False, True, False, True]
-
 
 def test_off_without_a_key(monkeypatch):
     seen = _route(monkeypatch, commons={}, brave=BRAVE, key="")
@@ -136,23 +123,6 @@ def test_stock_photo_sites_are_never_shown():
     assert [r["source"] for r in parse_brave(stock)] == ["cbr.com"]
 
 
-def test_both_sources_are_searched_at_the_same_time(monkeypatch):
-    # Each source's mock waits until the other has started: run one after the
-    # other, the first would time out.
-    started = {"commons": asyncio.Event(), "web": asyncio.Event()}
-
-    async def handler(request):
-        mine, other = ("web", "commons") if request.url.host == "api.search.brave.com" else ("commons", "web")
-        started[mine].set()
-        await asyncio.wait_for(started[other].wait(), timeout=2)
-        return httpx.Response(200, json=BRAVE if mine == "web" else {})
-
-    transport = httpx.MockTransport(handler)
-    monkeypatch.setattr(images.httpx, "AsyncClient", lambda **kw: _REAL_CLIENT(transport=transport, **kw))
-    monkeypatch.setattr(web_images, "brave_api_key", lambda: "test-key")
-    out = json.loads(asyncio.run(search_images.ainvoke({"queries": ["Harry Potter poster"]})))
-    assert [r["source"] for r in out] == ["example.com"]
-
 
 def test_a_throttled_web_search_is_retried(monkeypatch):
     calls = {"brave": 0}
@@ -169,14 +139,6 @@ def test_a_throttled_web_search_is_retried(monkeypatch):
     out = json.loads(asyncio.run(search_images.ainvoke({"queries": ["Harry Potter poster"]})))
     assert calls["brave"] == 2 and len(out) == 1
 
-
-def test_the_cache_stays_bounded_with_web_results(monkeypatch):
-    monkeypatch.setattr(images, "_CACHE_MAX", 3)
-    _route(monkeypatch, commons={}, brave=BRAVE)
-    for q in ("Harry Potter a", "Harry Potter b", "Harry Potter c"):
-        asyncio.run(search_images.ainvoke({"queries": [q]}))
-    assert len(images._cache) <= 3  # commons and web entries together
-    assert ("web:harry potter c", 3) in images._cache  # the newest stays
 
 
 def test_no_results_message_names_no_single_source(monkeypatch):
@@ -204,44 +166,10 @@ def _search(**args):
     return json.loads(asyncio.run(search_images.ainvoke(args)))
 
 
-def test_prefer_web_fills_from_the_web_first_and_commons_tops_up(monkeypatch):
-    _route(monkeypatch, commons=_commons_pages("Interstellar", 3), brave=_web_results("Interstellar", 2))
-    out = _search(queries=["Interstellar film"], limit=4, prefer="web")
-    assert ["source" in r for r in out] == [True, True, False, False]
 
 
-def test_prefer_open_never_spends_web_quota_when_commons_has_enough(monkeypatch):
-    seen = _route(monkeypatch, commons=_commons_pages("Human heart", 3), brave=_web_results("Human heart", 3))
-    out = _search(queries=["human heart diagram"], limit=3, prefer="open")
-    assert "api.search.brave.com" not in seen and not any("source" in r for r in out)
 
 
-def test_prefer_open_tops_up_from_the_web_when_commons_comes_back_short(monkeypatch):
-    seen = _route(monkeypatch, commons=_commons_pages("Batmobile", 1), brave=_web_results("Batmobile", 3))
-    out = _search(queries=["Batmobile"], limit=3, prefer="open")
-    # A wrong preference costs a little quality, never the images.
-    assert "api.search.brave.com" in seen and ["source" in r for r in out] == [False, True, True]
-
-
-def test_an_unknown_preference_is_balanced(monkeypatch):
-    _route(monkeypatch, commons=_commons_pages("Kyoto temple", 2), brave=_web_results("Kyoto temple", 2))
-    out = _search(queries=["Kyoto temple"], limit=4, prefer="both please")
-    assert ["source" in r for r in out] == [False, True, False, True]
-
-
-def test_without_a_web_key_every_preference_uses_commons(monkeypatch):
-    seen = _route(monkeypatch, commons=_commons_pages("Interstellar", 2), brave=_web_results("Interstellar", 2))
-    monkeypatch.setattr(web_images, "brave_api_key", lambda: None)
-    out = _search(queries=["Interstellar film"], prefer="web")
-    assert "api.search.brave.com" not in seen and len(out) == 2
-
-
-def test_combine_only_fails_when_every_source_failed():
-    a, b = [{"t": "a"}], [{"t": "b"}]
-    assert images.combine("web", None, None, 3) is None
-    assert images.combine("web", a, None, 3) == a
-    assert images.combine("open", a, b, 3) == [a[0], b[0]]
-    assert images.combine(None, a, b, 1) == a
 
 
 # ── Web results quality ───────────────────────────────────────────────────────

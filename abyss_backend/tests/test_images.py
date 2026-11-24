@@ -74,7 +74,8 @@ def test_only_wikimedia_https_hosts_pass():
 def _run(monkeypatch, handler, **args):
     transport = httpx.MockTransport(handler)
     monkeypatch.setattr(images.httpx, "AsyncClient", lambda **kw: _REAL_CLIENT(transport=transport, **kw))
-    return asyncio.run(search_images.ainvoke({"queries": ["mitochondrion"], **args}))
+    args.setdefault("queries", [{"query": "mitochondrion", "sources": ["commons"]}])
+    return asyncio.run(search_images.ainvoke(args))
 
 
 def test_tool_sends_only_the_keywords_and_returns_json(monkeypatch):
@@ -106,7 +107,7 @@ def test_several_queries_run_together_and_come_back_grouped(monkeypatch):
         seen.append(q)
         return httpx.Response(200, json=PAYLOAD if q.startswith("mitochondrion") else {})
 
-    out = json.loads(_run(monkeypatch, handler, queries=["mitochondrion", "kidney", "mitochondrion", ""]))
+    out = json.loads(_run(monkeypatch, handler, queries=[{"query": q, "sources": ["commons"]} for q in ("mitochondrion", "kidney", "mitochondrion", "")]))
     assert list(out) == ["mitochondrion", "kidney"] and len(seen) == 2  # no repeats, no blanks
     assert len(out["mitochondrion"]) == 2 and "no images found" in out["kidney"]
 
