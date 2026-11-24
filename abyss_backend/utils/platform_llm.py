@@ -32,7 +32,8 @@ def configured_default() -> tuple[str, str]:
     """(provider, model) the config names as the platform default."""
     if _llm_cfg.get("default_provider") and _llm_cfg.get("default_model"):
         return _llm_cfg["default_provider"], _llm_cfg["default_model"]
-    return "openai", _llm_cfg.get("openai_model", "gpt-5-mini")
+    # gpt-6.1-terra: OpenAI's replacement for gpt-5-mini (shut down Dec 11, 2026).
+    return "openai", _llm_cfg.get("openai_model", "gpt-6.1-terra")
 
 
 def build_platform_llm(provider: str, model: str, native_reasoning: bool = False) -> BaseChatModel:
