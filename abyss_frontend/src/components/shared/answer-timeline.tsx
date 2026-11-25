@@ -142,8 +142,9 @@ function ActivityGroup({
         />
       </button>
 
+      {/* A container: its rows lay out by the list's own width (StepRow). */}
       {open && (
-        <ol className="mt-1.5 min-w-0 divide-y divide-border-soft overflow-hidden rounded-xl border border-border-soft">
+        <ol className="@container mt-1.5 min-w-0 divide-y divide-border-soft overflow-hidden rounded-xl border border-border-soft">
           {items.map((item, index) => (
             <StepRow
               key={item.id}
@@ -159,7 +160,10 @@ function ActivityGroup({
   );
 }
 
-/** One step: a single line (what, on what, how long) that opens to its details. */
+/** One step: what, on what, how long -- opening to its details. The time and the
+ * arrow always show; the text gives way instead, shortened with "…" (the
+ * preview first, then the subject). In a narrow list (phones) the preview
+ * takes a line of its own under the label. */
 function StepRow({
   item,
   running,
@@ -176,7 +180,10 @@ function StepRow({
   // Distinct marks: thinking, a specialist, a skill (a playbook it followed), and any other tool.
   const Icon =
     item.kind === "thought" ? Brain : item.kind === "delegation" ? UsersRound : call?.type === "skill" ? BookOpenText : Wrench;
-  const who = nested ? `${displayName(item.agent)} · ` : "";
+  // A specialist's own steps sit indented under its "Asked" row, which names it:
+  // repeating the name on each would crowd out the step itself (screen readers
+  // still hear it).
+  const who = nested ? displayName(item.agent) : "";
 
   let verb: string;
   let subject = "";
@@ -222,13 +229,16 @@ function StepRow({
         ) : (
           <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         )}
-        <span className="shrink-0 text-muted-foreground">
-          {who}
-          {verb}
+        <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-center @md:gap-2.5">
+          <span className="flex min-w-0 items-center gap-2.5 @md:max-w-full @md:shrink-0">
+            <span className="shrink-0 text-muted-foreground">
+              {who && <span className="sr-only">{who}: </span>}
+              {verb}
+            </span>
+            {subject && <span className="min-w-0 truncate font-medium text-foreground">{subject}</span>}
+          </span>
+          {preview && <span className="min-w-0 truncate text-foreground/75 @md:flex-1">{preview}</span>}
         </span>
-        {subject && <span className="shrink-0 font-medium text-foreground">{subject}</span>}
-        {preview && <span className="min-w-0 flex-1 truncate text-foreground/75">{preview}</span>}
-        {!preview && <span className="flex-1" />}
         {duration && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{duration}</span>}
         {hasDetails && (
           <ChevronRight
