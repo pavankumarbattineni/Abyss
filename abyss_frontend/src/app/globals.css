@@ -48,6 +48,7 @@
   --color-surface-raised: var(--surface-raised);
   --color-surface-hover: var(--surface-hover);
   --color-bg-elevated: var(--bg-elevated);
+  --color-message-user: var(--message-user);
   --color-text-subtle: var(--text-subtle);
   /* Older aliases still used in a couple of places. */
   --color-bg1: var(--card);
@@ -73,6 +74,8 @@
   --surface-raised: #efece3;
   --surface-hover: #e9e6dc;
   --bg-elevated: #ffffff;
+  /* The user's own messages in a conversation (their bubble). */
+  --message-user: #efece3;
 
   --primary: #9caf88; /* Sage */
   --primary-foreground: #1d2719; /* 6.6:1 on sage */
@@ -114,51 +117,60 @@
   --viz-8: #e34948;
 }
 
+/* Dark: warm charcoal, in layers -- the sidebar recessed a step below the
+   page, the composer and menus raised a step above it, and the user's own
+   messages inset (darker than the page) so the conversation reads as
+   question-into-answer. Neutral surfaces leave the colour to Abyss's own
+   accents: sage fills and text, Tomato highlights. Contrast on the page:
+   text 13.2:1, secondary text 6.8:1, subtle text 5.2:1. */
 .dark {
-  --background: #0f130e;
-  --foreground: #eef1e8;
-  --card: #161b15;
-  --card-foreground: #eef1e8;
-  --popover: #161b15;
-  --popover-foreground: #eef1e8;
-  --surface: #161b15;
-  --surface-raised: #1e241c;
-  --surface-hover: #252c22;
-  --bg-elevated: #1a2018;
+  --background: #262624;
+  --foreground: #f0efea;
+  --card: #2c2b29;
+  --card-foreground: #f0efea;
+  --popover: #30302e;
+  --popover-foreground: #f0efea;
+  --surface: #1f1e1d; /* sidebar */
+  --surface-raised: #30302e; /* composer, raised panels */
+  --surface-hover: #3a3936;
+  --bg-elevated: #2c2b29;
+  --message-user: #141413; /* inset: 16:1 for its text */
 
   --primary: #9caf88;
   --primary-foreground: #141a12; /* 7.5:1 on sage */
-  --secondary: #1e241c;
-  --secondary-foreground: #eef1e8;
-  --muted: #1e241c;
-  --muted-foreground: #a3af9a; /* 8.2:1 on the background */
-  --accent: #222b1f;
-  --accent-foreground: #eef1e8;
-  --sage-text: #b5c6a3;
+  --secondary: #30302e;
+  --secondary-foreground: #f0efea;
+  --muted: #353431; /* hover fills, chips, code: lighter than the page */
+  --muted-foreground: #b0aea6; /* 5.2:1 or more on every surface */
+  --accent: #30352b; /* selected rows: a hint of sage */
+  --accent-foreground: #f0efea;
+  --sage-text: #b5c6a3; /* 8.4:1 */
 
   --highlight: #e8412c;
   --highlight-soft: rgba(232, 65, 44, 0.16);
-  --destructive: #c2321f;
-  --destructive-foreground: #ffffff;
-  --destructive-soft: rgba(242, 102, 79, 0.16);
+  /* Lighter than the light theme's: mostly text here (5.6:1 on the page);
+     the odd solid fill carries dark ink (6.9:1). */
+  --destructive: #f47a63;
+  --destructive-foreground: #141413;
+  --destructive-soft: rgba(244, 122, 99, 0.16);
   --success: #7fbf8b;
   --success-soft: rgba(127, 191, 139, 0.14);
   --warning: #e3b55a;
   --warning-soft: rgba(227, 181, 90, 0.14);
 
-  --border: rgba(238, 241, 232, 0.12);
-  --border-soft: rgba(238, 241, 232, 0.07);
-  --input: rgba(238, 241, 232, 0.16);
+  --border: rgba(240, 239, 234, 0.12);
+  --border-soft: rgba(240, 239, 234, 0.07);
+  --input: rgba(240, 239, 234, 0.16);
   --ring: #e8412c;
-  --text-subtle: #7f8a77;
-  --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --text-subtle: #9a988f; /* 4.5:1 or more on page, sidebar, cards, composer */
+  --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.45);
 
   --viz-1: #3987e5;
   --viz-2: #d95926;
   --viz-3: #199e70;
   --viz-4: #c98500;
   --viz-5: #d55181;
-  --viz-6: #008300;
+  --viz-6: #2c9c2c; /* stepped up: 3:1 or more on the charcoal cards */
   --viz-7: #9085e9;
   --viz-8: #e66767;
 }
@@ -348,7 +360,7 @@
   --code-keyword: #ff8db3;
   --code-string: #a7d68e;
   --code-number: #f5b97c;
-  --code-comment: #8d8a80;
+  --code-comment: #a6a398; /* 4.9:1 on code blocks (bg-muted) */
   --code-function: #8fb8f7;
   --code-type: #c9a6f5;
   --code-attr: #e8c27e;
