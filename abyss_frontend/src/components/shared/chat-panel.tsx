@@ -425,7 +425,7 @@ export function ChatPanel({
                         // The question in a compact bubble; the answer directly on the page (no card),
                         // as in ChatGPT and Claude. pt-1 lines its first line up with the avatar.
                         message.role === "user"
-                          ? "max-w-full overflow-x-auto rounded-2xl bg-muted px-4 py-2 text-sm text-foreground"
+                          ? "max-w-full overflow-x-auto rounded-2xl bg-message-user px-4 py-2 text-sm text-foreground"
                           : "w-full pt-1 text-foreground",
                       )}
                     >

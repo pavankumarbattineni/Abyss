@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   LogOut,
@@ -116,6 +117,9 @@ export function Sidebar() {
   const setMobileOpen = useSidebarStore((state) => state.setMobileOpen);
   const navItems = useSidebarStore((state) => state.navItems);
   const toggleCollapsed = useSidebarStore((state) => state.toggleCollapsed);
+  const recentsOpen = useSidebarStore((state) => state.recentsOpen);
+  const toggleRecents = useSidebarStore((state) => state.toggleRecents);
+  const showRecents = collapsed || recentsOpen;
   const { data: agents = [], isLoading } = useQuery<Agent[]>({
     queryKey: ["agents"],
     queryFn: () => agentService.getAgents(),
@@ -242,10 +246,24 @@ export function Sidebar() {
           </nav>
 
           <div className="flex items-center px-2 pb-1.5 pt-4">
+            {/* The agents, latest used first: a list that folds away. In the icon-only
+                sidebar it always shows (there's no heading to unfold it from). */}
             {!collapsed && (
-              <Heading as="span" size="xs">
-                Agents
-              </Heading>
+              <button
+                type="button"
+                onClick={toggleRecents}
+                aria-expanded={recentsOpen}
+                aria-controls="sidebar-recents"
+                className="-ml-1 flex items-center gap-1 rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <Heading as="span" size="xs" className="text-inherit">
+                  Recents
+                </Heading>
+                <ChevronDown
+                  className={cn("size-3.5 transition-transform duration-150", !recentsOpen && "-rotate-90")}
+                  aria-hidden="true"
+                />
+              </button>
             )}
             <NavTooltip label="New agent" show={collapsed}>
               <Button
@@ -263,8 +281,12 @@ export function Sidebar() {
             </NavTooltip>
           </div>
           {/* Only the agent list scrolls; the navigation above and the footer stay put. */}
+          {/* Folded: hidden but kept (its scroll position too); the spacer keeps the footer down. */}
+          {!showRecents && <div className="flex-1" />}
           <nav
-            aria-label="Agents"
+            id="sidebar-recents"
+            aria-label="Recents"
+            hidden={!showRecents}
             className="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-1 pb-1"
             {...holdAgentOrder}
           >
