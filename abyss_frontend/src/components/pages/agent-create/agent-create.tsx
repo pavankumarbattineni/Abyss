@@ -10,7 +10,6 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { AgentAvatar } from "@/components/layout";
 import { ChatPanel } from "@/components/shared/chat-panel";
 import { Button } from "@/components/ui";
 import { useResizablePanel } from "@/hooks";
@@ -190,7 +189,6 @@ export const AgentCreatePage = () => {
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <AgentAvatar name={draftAgent.name} className="size-8 text-xs" />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{draftAgent.name}</p>
           <p className="truncate text-xs text-muted-foreground">

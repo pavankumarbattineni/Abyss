@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
-import { AgentAvatar } from "@/components/layout";
 import { Button, Heading, Skeleton, Textarea } from "@/components/ui";
 import {
   backgroundActivity,
@@ -269,7 +268,6 @@ export function ChatPanel({
 
   const emptyHero = (
     <div className="flex w-full flex-col items-center gap-4">
-      <AgentAvatar name={agent?.name ?? "Agent"} className="size-14 text-lg" />
       <div className="flex flex-col gap-1">
         <Heading as="h2" size="lg">
           Start a chat with {agent?.name ?? "this agent"}
@@ -407,12 +405,6 @@ export function ChatPanel({
                       message.role === "user" && "flex-row-reverse",
                     )}
                   >
-                    {message.role === "assistant" && (
-                      <AgentAvatar
-                        name={agent?.name ?? "Agent"}
-                        className="size-8 shrink-0 text-xs @max-md:hidden"
-                      />
-                    )}
                     <div
                       className={cn(
                         "group/message flex min-w-0 flex-col gap-1",
@@ -423,10 +415,10 @@ export function ChatPanel({
                       className={cn(
                         "min-w-0 wrap-break-word",
                         // The question in a compact bubble; the answer directly on the page (no card),
-                        // as in ChatGPT and Claude. pt-1 lines its first line up with the avatar.
+                        // as in ChatGPT and Claude.
                         message.role === "user"
                           ? "max-w-full overflow-x-auto rounded-2xl bg-message-user px-4 py-2 text-sm text-foreground"
-                          : "w-full pt-1 text-foreground",
+                          : "w-full text-foreground",
                       )}
                     >
                       {message.role === "assistant" ? (
@@ -472,11 +464,7 @@ export function ChatPanel({
 
                 {isStreaming && (
                   <div className="flex min-w-0 items-start gap-3">
-                    <AgentAvatar
-                      name={agent?.name ?? "Agent"}
-                      className="size-8 shrink-0 text-xs @max-md:hidden"
-                    />
-                    <div className="min-w-0 w-full pt-1 text-foreground wrap-break-word">
+                    <div className="min-w-0 w-full text-foreground wrap-break-word">
                       {/* Built up live, in order: each step appears where the agent takes it, text continues below. */}
                       <AnswerTimeline
                         content={streamingContent}

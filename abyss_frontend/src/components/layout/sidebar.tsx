@@ -38,7 +38,6 @@ import { useAuth } from "@/providers";
 import { agentService, authService } from "@/services";
 import { useSidebarStore } from "@/store";
 import type { Agent } from "@/types";
-import { AgentAvatar } from "./agent-avatar";
 import { AbyssLogo, AbyssWordmark } from "./abyss-logo";
 
 function getEmailInitials(email?: string): string {
@@ -119,7 +118,9 @@ export function Sidebar() {
   const toggleCollapsed = useSidebarStore((state) => state.toggleCollapsed);
   const recentsOpen = useSidebarStore((state) => state.recentsOpen);
   const toggleRecents = useSidebarStore((state) => state.toggleRecents);
-  const showRecents = collapsed || recentsOpen;
+  // Agent rows are names only, so the icon-only sidebar has nothing to show for
+  // them: there the list is folded (agents are a click away, expanded or on /agents).
+  const showRecents = !collapsed && recentsOpen;
   const { data: agents = [], isLoading } = useQuery<Agent[]>({
     queryKey: ["agents"],
     queryFn: () => agentService.getAgents(),
@@ -219,7 +220,7 @@ export function Sidebar() {
 
         <div className="flex min-h-0 flex-1 flex-col">
           {!collapsed && (
-            <Heading as="div" size="xs" className="px-2 pb-1.5 pt-3">
+            <Heading as="div" size="xs" className="px-2 pb-1.5 pt-3 text-foreground">
               Platform
             </Heading>
           )}
@@ -233,7 +234,7 @@ export function Sidebar() {
                     href={item.href}
                     aria-label={collapsed ? item.label : undefined}
                     className={cn(
-                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground hover:bg-surface-hover",
                       active && "bg-accent font-medium text-foreground",
                     )}
                   >
@@ -254,7 +255,7 @@ export function Sidebar() {
                 onClick={toggleRecents}
                 aria-expanded={recentsOpen}
                 aria-controls="sidebar-recents"
-                className="-ml-1 flex items-center gap-1 rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                className="-ml-1 flex items-center gap-1 rounded-md px-1 py-0.5 text-foreground transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <Heading as="span" size="xs" className="text-inherit">
                   Recents
@@ -297,8 +298,7 @@ export function Sidebar() {
                     key={index}
                     className="flex items-center gap-2.5 px-2.5 py-2"
                   >
-                    <Skeleton className="size-6 rounded-md" />
-                    {!collapsed && <Skeleton className="h-3 flex-1" />}
+                    <Skeleton className="h-3 flex-1" />
                   </div>
                 ))
               : listedAgents.map((agent) => (
@@ -308,13 +308,12 @@ export function Sidebar() {
                         href={`/agents/${agent.id}`}
                         aria-label={collapsed ? agent.name : undefined}
                         className={cn(
-                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                          "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground hover:bg-surface-hover",
                           !collapsed && "pr-9",
                           isActive(`/agents/${agent.id}`) &&
                             "bg-accent font-medium text-foreground",
                         )}
                       >
-                        <AgentAvatar name={agent.name} className="size-6 text-xs" />
                         {!collapsed && (
                           <span data-agent-name className="truncate">{agent.name}</span>
                         )}
@@ -365,7 +364,7 @@ export function Sidebar() {
               href="/settings"
               aria-label={collapsed ? "Settings" : undefined}
               className={cn(
-                "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground",
+                "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground hover:bg-surface-hover",
                 isActive("/settings") && "bg-accent font-medium text-foreground",
               )}
             >
@@ -391,7 +390,7 @@ export function Sidebar() {
                   (isUserLoading ? (
                     <Skeleton className="h-3 flex-1" />
                   ) : (
-                    <span className="flex-1 truncate text-sm text-muted-foreground text-left">
+                    <span className="flex-1 truncate text-sm text-foreground text-left">
                       {user?.email ?? "Account"}
                     </span>
                   ))}
