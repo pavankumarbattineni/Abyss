@@ -13,6 +13,9 @@
  *   remark-math's singleDollarTextMath disabled, double dollars mark inline
  *   math and a lone "$5" in prose is never mistaken for math).
  *
+ * - A `$$ ... $$` formula spanning lines -> a display block with its `$$`
+ *   fences on lines of their own (fenceMultilineMath).
+ *
  * Code (fenced blocks and inline code) is never touched. Unclosed
  * delimiters -- e.g. mid-stream, before `\]` has arrived -- are left as-is
  * until they close.
@@ -68,6 +71,72 @@ function convertMath(text: string): string {
 // Math already in remark-math's $$ form (inline or a block): left alone.
 const DOUBLE_DOLLAR_MATH = /(\$\$[\s\S]*?\$\$)/;
 
+// A list item's marker ("- ", "* ", "1. "): a block under it is indented past it.
+const LIST_MARKER = /^([ \t]*)([-*+]|\d+[.)])[ \t]+/;
+// A blockquote's markers ("> ", "> > "): every line of a block inside it repeats them.
+const QUOTE_PREFIX = /^(?:[ \t]*>[ \t]?)+/;
+// Only punctuation after a display equation ("$$." "$$,"): it goes inside, as in LaTeX.
+const TRAILING_PUNCTUATION = /^[.,;:!?]+$/;
+
+/** The prefix that keeps a block on its own lines inside whatever `lead` (the
+ * text before it on its line) opens: quote markers, then a list item's
+ * indentation past its marker (or the line's own indentation). */
+function blockPrefix(lead: string): string {
+  const quote = lead.match(QUOTE_PREFIX)?.[0] ?? "";
+  const rest = lead.slice(quote.length);
+  const marker = rest.match(LIST_MARKER);
+  const indent = marker ? marker[1] + " ".repeat(marker[0].length - marker[1].length) : (rest.match(/^[ \t]*/)?.[0] ?? "");
+  return quote + indent;
+}
+
+/**
+ * A `$$ ... $$` formula that spans lines is a display equation, but
+ * remark-math only reads one as a block when each `$$` stands on a line of
+ * its own: text after an opening `$$` is taken as the block's label (and
+ * dropped), and a closing `$$` after text never closes it -- so the block
+ * swallows the rest of the answer, which KaTeX then shows as one red error.
+ * Models often write `$$R = \begin{pmatrix}` ... `\end{pmatrix}$$`. Each such
+ * formula gets its `$$` fences on lines of their own, kept inside its list
+ * item or blockquote (blockPrefix); text before it on the same line stays
+ * prose on its own line, as does text after it -- except bare punctuation
+ * ("$$."), which goes inside the equation, as LaTeX writes it. One-line
+ * formulas, and blocks already fenced this way, come out unchanged; an
+ * unclosed `$$` (mid-stream) is left until it closes.
+ */
+function fenceMultilineMath(text: string): string {
+  const parts = text.split(DOUBLE_DOLLAR_MATH);
+  for (let i = 1; i < parts.length; i += 2) {
+    const body = parts[i].slice(2, -2);
+    if (!body.includes("\n")) continue;
+    // The text on the formula's opening line, before its $$ (from the line's
+    // real start: earlier math on the same line is part of it).
+    const head = parts.slice(0, i).join("");
+    const lead = head.slice(head.lastIndexOf("\n") + 1);
+    const prefix = blockPrefix(lead);
+    const quoted = QUOTE_PREFIX.test(lead);
+    // Kept on its own line unless it is only indentation or quote markers (a
+    // bare list marker stays: the formula is that item's content). Such a lead
+    // holds no math, so it lies wholly in the text just before.
+    parts[i - 1] = lead.replace(QUOTE_PREFIX, "").trim()
+      ? `${parts[i - 1].replace(/[ \t]+$/, "")}\n`
+      : parts[i - 1].slice(0, parts[i - 1].length - lead.length);
+    // Its lines, without the quote markers the model repeated on them.
+    const lines = body.split("\n").map((line) => (quoted ? line.replace(QUOTE_PREFIX, "") : line).trim());
+    while (lines.length && !lines[0]) lines.shift();
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+    // The text on its closing line, after its $$.
+    const after = parts[i + 1] ?? "";
+    const lineEnd = after.indexOf("\n");
+    const tail = (lineEnd < 0 ? after : after.slice(0, lineEnd)).trim();
+    let rest = after.slice(lineEnd < 0 ? after.length : lineEnd);
+    if (TRAILING_PUNCTUATION.test(tail) && lines.length) lines[lines.length - 1] += tail;
+    else if (tail) rest = `\n${prefix}${tail}${rest}`;
+    parts[i] = `${prefix}$$\n${lines.map((line) => (line ? prefix + line : prefix.trimEnd())).join("\n")}\n${prefix}$$`;
+    parts[i + 1] = rest;
+  }
+  return parts.join("");
+}
+
 /**
  * `$...$` inline math, by Pandoc's rule so prices stay prose: the opening `$`
  * is followed by a non-space and isn't escaped (`\$`) or part of `$$`; the
@@ -82,7 +151,7 @@ export function normalizeMathDelimiters(content: string): string {
   // split() with a capture group puts code segments at the odd indices.
   return content
     .split(CODE_SEGMENT)
-    .map((segment, i) => (i % 2 === 1 ? segment : fixMathSlips(convertMath(segment))))
+    .map((segment, i) => (i % 2 === 1 ? segment : fixMathSlips(fenceMultilineMath(convertMath(segment)))))
     .join("");
 }
 
