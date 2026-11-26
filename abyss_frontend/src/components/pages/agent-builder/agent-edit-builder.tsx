@@ -9,7 +9,6 @@ import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { AgentAvatar } from "@/components/layout";
 import { ChatPanel } from "@/components/shared/chat-panel";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Button, Skeleton } from "@/components/ui";
@@ -354,7 +353,6 @@ export const AgentEditBuilderPage = ({ agentId }: AgentEditBuilderPageProps) => 
             <ArrowLeft className="size-4" />
           </Link>
         </Button>
-        <AgentAvatar name={displayAgent?.name ?? "Agent"} className="size-8 text-xs" />
         {isLoading ? (
           <Skeleton className="h-4 w-40" />
         ) : (

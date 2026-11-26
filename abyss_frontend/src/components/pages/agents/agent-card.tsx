@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 
-import { AgentAvatar } from "@/components/layout";
 import { DeleteAgentDialog } from "@/components/shared/delete-agent-dialog";
 import { Button, Card, Heading, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -25,7 +24,6 @@ export function AgentCard({ agent }: AgentCardProps) {
     // card opens the chat; Edit/Delete sit above it (relative z-10).
     <Card className="group relative flex flex-col gap-3 p-4 transition-colors focus-within:border-primary hover:border-primary">
       <div className="flex items-center gap-3">
-        <AgentAvatar name={agent.name} />
         <Link
           href={`/agents/${agent.id}`}
           className="min-w-0 rounded-sm after:absolute after:inset-0 after:rounded-[inherit] focus-visible:outline-none"
