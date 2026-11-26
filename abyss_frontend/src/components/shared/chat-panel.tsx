@@ -414,10 +414,10 @@ export function ChatPanel({
                     <div
                       className={cn(
                         "min-w-0 wrap-break-word",
-                        // The question in a compact bubble; the answer directly on the page (no card),
-                        // as in ChatGPT and Claude.
+                        // The question in a compact box (a rectangle, gently rounded -- not a pill);
+                        // the answer directly on the page (no card), as in ChatGPT and Claude.
                         message.role === "user"
-                          ? "max-w-full overflow-x-auto rounded-2xl bg-message-user px-4 py-2 text-sm text-foreground"
+                          ? "max-w-full overflow-x-auto rounded-lg bg-message-user px-4 py-[9px] text-sm text-foreground"
                           : "w-full text-foreground",
                       )}
                     >
