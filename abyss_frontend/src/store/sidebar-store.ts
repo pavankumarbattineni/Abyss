@@ -25,6 +25,9 @@ interface SidebarState {
   /** Phones only: whether the slide-in sidebar is open. Not persisted. */
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
+  /** Whether the "Recents" list (the user's agents, latest used first) is shown. */
+  recentsOpen: boolean;
+  toggleRecents: () => void;
 }
 
 export const useSidebarStore = create<SidebarState>()(
@@ -36,11 +39,13 @@ export const useSidebarStore = create<SidebarState>()(
       setCollapsed: (collapsed) => set({ collapsed }),
       mobileOpen: false,
       setMobileOpen: (mobileOpen) => set({ mobileOpen }),
+      recentsOpen: true,
+      toggleRecents: () => set((state) => ({ recentsOpen: !state.recentsOpen })),
     }),
     {
       name: "thinkloop-sidebar",
       skipHydration: true,
-      partialize: (state) => ({ collapsed: state.collapsed }),
+      partialize: (state) => ({ collapsed: state.collapsed, recentsOpen: state.recentsOpen }),
     },
   ),
 );
