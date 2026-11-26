@@ -117,24 +117,23 @@
   --viz-8: #e34948;
 }
 
-/* Dark: warm charcoal, in layers -- the sidebar recessed a step below the
-   page, the composer and menus raised a step above it, and the user's own
-   messages inset (darker than the page) so the conversation reads as
-   question-into-answer. Neutral surfaces leave the colour to Abyss's own
+/* Dark: warm charcoal, in layers -- the page the deepest, the sidebar a
+   step lighter, the composer and menus raised a step above it, and the user's own
+   messages a quiet step lighter than the page. Neutral surfaces leave the colour to Abyss's own
    accents: sage fills and text, Tomato highlights. Contrast on the page:
-   text 13.2:1, secondary text 6.8:1, subtle text 5.2:1. */
+   text 14.5:1, secondary text 7.5:1, subtle text 5.8:1. */
 .dark {
-  --background: #262624;
+  --background: #1f1e1d;
   --foreground: #f0efea;
   --card: #2c2b29;
   --card-foreground: #f0efea;
   --popover: #30302e;
   --popover-foreground: #f0efea;
-  --surface: #1f1e1d; /* sidebar */
+  --surface: #262624; /* sidebar, the phone's top bar */
   --surface-raised: #30302e; /* composer, raised panels */
   --surface-hover: #3a3936;
   --bg-elevated: #2c2b29;
-  --message-user: #141413; /* inset: 16:1 for its text */
+  --message-user: #32312e; /* a step lighter than the page (1.28:1 apart); 11.3:1 for its text */
 
   --primary: #9caf88;
   --primary-foreground: #141a12; /* 7.5:1 on sage */

@@ -265,7 +265,8 @@ export function Sidebar() {
                 />
               </button>
             )}
-            <NavTooltip label="New agent" show={collapsed}>
+            {/* Icon-only in both sidebar widths, so it's always named on hover. */}
+            <NavTooltip label="New Agent" show>
               <Button
                 type="button"
                 variant="ghost"
