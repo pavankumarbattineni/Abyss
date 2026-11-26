@@ -48,6 +48,23 @@ const cases = [
   ["code block", "```bash\necho $a $b\n```", "```bash\necho $a $b\n```"],
   // Unescaped % inside math is escaped (it would start a LaTeX comment).
   ["percent in math", "$50%$ of it", "$$50\\%$$ of it"],
+  // A $$ formula spanning lines gets its fences on lines of their own; otherwise
+  // remark-math drops its first line as a label and never closes it, and the
+  // rest of the answer turns into one red KaTeX error.
+  [
+    "multi-line $$ with text on its fence lines",
+    "Rotate:\n\n$$R = \\begin{pmatrix} \na & b \\\\\nc & d\n\\end{pmatrix}$$\n\nWhere $\\theta$ is the angle.",
+    "Rotate:\n\n$$\nR = \\begin{pmatrix}\na & b \\\\\nc & d\n\\end{pmatrix}\n$$\n\nWhere $$\\theta$$ is the angle.",
+  ],
+  ["prose around a multi-line $$", "so: $$x =\ny$$ done", "so:\n$$\nx =\ny\n$$\ndone"],
+  ["multi-line $$ in a list item", "- Rule: $$a =\nb$$\n- Next", "- Rule:\n  $$\n  a =\n  b\n  $$\n- Next"],
+  ["an indented fenced block stays", "  $$\n  x^2\n  $$", "  $$\n  x^2\n  $$"],
+  ["an unclosed multi-line $$ (mid-stream) waits", "$$x =\ny", "$$x =\ny"],
+  ["punctuation after it goes inside", "$$a =\nb$$.\nNext", "$$\na =\nb.\n$$\nNext"],
+  ["a list item that is the formula keeps its marker", "1. $$a =\nb$$", "1.\n   $$\n   a =\n   b\n   $$"],
+  ["inside a blockquote it stays quoted", "> $$a =\n> b$$\n> after", "> $$\n> a =\n> b\n> $$\n> after"],
+  ["two in a row, with an inline one before", "x $$y$$ and $$a =\nb$$ then $$c =\nd$$", "x $$y$$ and\n$$\na =\nb\n$$\nthen\n$$\nc =\nd\n$$"],
+  ["a \\[ \\] display mid-line spanning lines", "So \\[a =\nb\\] holds", "So\n$$\na =\nb\n$$\nholds"],
 ];
 for (const [name, input, expected] of cases) {
   assert.equal(norm(input), expected, name);
