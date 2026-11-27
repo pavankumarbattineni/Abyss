@@ -25,13 +25,14 @@ give it specialists that work in parallel, and approve anything sensitive before
 
 ## Features
 
-- **Agents without code**: a name, instructions and a model; edit them on a visual builder canvas.
-- **Real tools via MCP**: connect any MCP server; credentials are encrypted at rest (Fernet).
+- **Agents without code**: a name and instructions; design and edit them on the Agent Studio canvas.
+- **Connectors**: connect any MCP server and give its tools to your agents; credentials are encrypted at rest (Fernet).
 - **Specialists**: a main agent delegates to up to five sub-agents that run in parallel, then writes the answer.
-- **Human approval**: tools marked "requires approval" pause the run until you allow or deny them.
+- **Skills**: a library of reusable instructions; an agent loads a skill only when the task fits.
+- **Human approval**: tools set to "Needs approval" pause the run until you allow or deny them.
 - **Visible reasoning**: a timeline of each turn's thinking, delegations and tool calls, streamed live.
-- **Rich answers**: Markdown, maths, Mermaid diagrams, interactive charts and tables, copy buttons.
-- **Models**: runs on Gemini 3.5 Flash-Lite by default (the platform's key); bring your own OpenAI, Anthropic or Gemini key for other models.
+- **Rich answers**: Markdown, maths, natively drawn diagrams and charts, Mermaid, real images found on the web, interactive tables, copy buttons.
+- **Models**: three platform models on its own key (Default is Gemini 3.5 Flash-Lite, plus Default - 1 and Default - 2), picked in the chat box for all your agents; bring your own OpenAI, Anthropic or Gemini key for other models.
 - **Usage & cost**: tokens and cost per run, filterable and downloadable as CSV.
 - **Tracing**: every agent run copied from LangSmith (14 days): span tree on a timeline, LLM transcripts, tool calls, latency, tokens, cost and errors; each user sees only their own runs.
 - **API access**: personal API keys for calling agents from your own code.

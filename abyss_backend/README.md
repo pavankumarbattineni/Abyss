@@ -24,11 +24,11 @@ tables, marks streams orphaned by a restart as failed, and loads MCP tools into 
 | Path | What |
 |---|---|
 | `main.py` | App, startup sequence, `/health` (checks the DB, reports the running commit) |
-| `routers/` | HTTP endpoints under `/api/v1`: auth, agents, threads, streams, mcp, llm-credentials, api-keys, usage |
+| `routers/` | HTTP endpoints under `/api/v1`: auth, profile, agents, skills, threads, streams, mcp (Connectors), llm-credentials (Provider Keys), api-keys, usage, traces, images (image proxy) |
 | `services/` | Business logic; `chat_service.py` runs a turn, `stream_projector.py` turns graph events into SSE |
-| `abyss_agents/` | Agent graph: `factory.py` (parent + sub-agents as tools), `prompts.py`, approval middleware |
+| `abyss_agents/` | Agent graph: `factory.py` (parent + sub-agents as tools), `prompts.py`, middleware (approval, retries, visual repair), skills, image search (`images.py`, `image_sources/`) |
 | `database/` | Models, async session, Alembic runner, catalog seed, LangGraph checkpointer |
-| `migrations/` | Alembic revisions (`0001` baseline, `0002` legacy cleanup) |
+| `migrations/` | Alembic revisions `0001` (baseline) to `0012` |
 | `utils/` | Auth (JWT, API keys), Firebase, encryption, MCP client, pricing, title generation |
 | `scripts/` | `dev.py`, `migrate.py`, `update_model_prices.py` |
 | `tests/` | pytest, no external services needed |
@@ -38,18 +38,21 @@ tables, marks streams orphaned by a restart as failed, and loads MCP tools into 
 1. `POST /threads/{id}/messages` stores the message, creates a stream record and starts the
    run as a background task; it returns `{message_id, stream_id}` immediately (202).
 2. The parent agent answers directly or calls its specialists, which are exposed to it as
-   tools and run in parallel. Tools marked "requires approval" interrupt the run until
-   `POST /streams/{id}/tool-approvals` resumes it.
+   tools and run in parallel. Tools set to "Needs approval" interrupt the run
+   (`tool_approval_required`) until `POST /streams/{id}/tool-approvals` resumes it.
 3. `GET /streams/{id}` follows the run over Server-Sent Events, resumable with
    `Last-Event-ID`. Events: `token`, `reasoning_start` / `reasoning_token` / `reasoning_end`,
    `agent_start` / `agent_end`, `dispatch_decision`, `tool_start` / `tool_end`,
-   `synthesis_start`, then `done` or `error`.
+   `synthesis_start`, `answer_rewind` / `answer_replace` (a retried or repaired answer),
+   `thread_title`, `tool_approval_required`, then `done` or `error`. The run continues without
+   a listener: a page opening the thread later finds it with `GET /threads/{id}/active-stream`.
 4. When the run ends, the answer, its reasoning trace, token counts and cost are saved.
 
-Agents without a model of their own use the platform default (the catalog row flagged
-`is_platform_default`, Gemini 3.5 Flash-Lite) on the platform's key for that provider from
-`ABYSS_CONFIG.LLM.api_keys` (`utils/platform_llm.py`); thread titles use the same model. Any
-other model runs on the user's own key.
+Each user picks one model, in the chat box, for all of their agents (`users.llm_model_id`).
+"Default" (the catalog row flagged `is_platform_default`, Gemini 3.5 Flash-Lite) and
+"Default - 1" / "Default - 2" (`platform_slot`) run on the platform's key for that provider
+from `ABYSS_CONFIG.LLM.api_keys` (`utils/platform_llm.py`); thread titles use the default
+model. Any other model runs on the user's own key.
 
 Reasoning comes from a `<reasoning>…</reasoning>` block the prompt asks for
 (`utils/reasoning_splitter.py` separates it from the answer), or from the provider's own
