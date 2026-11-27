@@ -20,7 +20,7 @@ const bundled = await build({
   platform: "node",
   logLevel: "silent",
 });
-const { answerParts, visibleSteps, backgroundActivity } = await import("data:text/javascript;base64," + Buffer.from(bundled.outputFiles[0].text).toString("base64"));
+const { answerParts, visibleSteps, backgroundActivity, groupStepsByAgent } = await import("data:text/javascript;base64," + Buffer.from(bundled.outputFiles[0].text).toString("base64"));
 
 const step = (id, at) => ({ kind: "tool_call", id, agent: "agent", toolName: "search", status: "succeeded", at });
 const shape = (parts) =>
@@ -72,4 +72,31 @@ for (const [name, check] of background) {
     throw error;
   }
 }
-console.log(`answer layout check: all ${cases.length + background.length} cases pass`);
+// Each specialist's steps are listed under its own "Asked" row (display only).
+const ask = (id, target) => ({ kind: "delegation", id, agent: "agent", target, task: "t" });
+const by = (id, agent) => ({ kind: "tool_call", id, agent, toolName: "web_search", status: "succeeded" });
+const ids = (items) => groupStepsByAgent(items).map((i) => i.id).join(",");
+const grouping = [
+  ["parallel specialists' calls go under their own Asked rows", () =>
+    // Recorded interleaved, as parallel specialists run.
+    assert.equal(ids([ask("A", "x"), ask("B", "y"), by("x1", "x"), by("y1", "y"), by("x2", "x"), by("y2", "y")]), "A,x1,x2,B,y1,y2")],
+  ["the main agent's steps stay in time order around them", () =>
+    assert.equal(ids([by("m1", "agent"), ask("A", "x"), by("x1", "x"), by("m2", "agent")]), "m1,A,x1,m2")],
+  ["a specialist asked twice keeps each batch under its own request", () =>
+    assert.equal(ids([ask("A", "x"), by("x1", "x"), ask("A2", "x"), by("x2", "x")]), "A,x1,A2,x2")],
+  ["nothing is added, dropped or changed", () => {
+    const items = [ask("A", "x"), ask("B", "y"), by("y1", "y"), by("x1", "x"), by("m1", "agent")];
+    const out = groupStepsByAgent(items);
+    assert.equal(out.length, items.length);
+    assert.ok(items.every((i) => out.includes(i)));
+  }],
+];
+for (const [name, check] of grouping) {
+  try {
+    check();
+  } catch (error) {
+    error.message = `${name}: ${error.message}`;
+    throw error;
+  }
+}
+console.log(`answer layout check: all ${cases.length + background.length + grouping.length} cases pass`);
