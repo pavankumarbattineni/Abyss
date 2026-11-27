@@ -1,7 +1,7 @@
 # Abyss frontend
 
 The Next.js 16 web app of [Abyss](../README.md): React 19, TypeScript, Tailwind CSS 4,
-shadcn/ui on Radix, TanStack Query, React Flow (agent builder).
+shadcn/ui on Radix, TanStack Query, React Flow (the Agent Studio canvas).
 
 ## Run
 
@@ -20,9 +20,10 @@ npm run dev -- -p 3100       # http://localhost:3100 (the backend runs on 8100)
 | `src/app/` | Routes. Public: `/home`, `/about-trench`, `/auth/*`; everything else needs a session (`src/proxy.ts`) |
 | `src/components/pages/<route>/` | Each route's implementation (see `CLAUDE.md` for the conventions) |
 | `src/components/shared/` | Chat panel, Markdown rendering, Mermaid diagrams, interactive views, reasoning timeline |
+| `src/components/visuals/` | Diagrams, charts and image galleries drawn natively in answers (`visual` blocks) |
 | `src/components/ui/` | shadcn/ui primitives |
 | `src/services/` | All API calls (one Axios instance in `src/lib/axios.ts`); streaming in `stream-service.ts` |
-| `src/app/globals.css` | Design tokens: Sage `#9CAF88`, Off-White `#F7F5EF`, Tomato `#E8412C`, light and dark |
+| `src/app/globals.css` | Design tokens: Sage `#9CAF88`, Off-White `#F7F5EF`, Tomato `#E8412C`; light, and a warm-charcoal dark |
 
 ## Checks
 
