@@ -101,7 +101,7 @@ export function AddCredentialDialog() {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add provider secret</DialogTitle>
+          <DialogTitle>Add provider key</DialogTitle>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit((values) => mutate(values))}>
           <div className="flex flex-col gap-1.5">

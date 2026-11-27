@@ -1,10 +1,6 @@
-import type { Metadata } from "next";
-import { UsageSettingsPage } from "@/components/pages/settings";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Usage",
-};
-
-const Page = () => <UsageSettingsPage />;
-
-export default Page;
+// Usage moved out of Settings to /usage; old links and bookmarks still land there.
+export default function Page() {
+  redirect("/usage");
+}

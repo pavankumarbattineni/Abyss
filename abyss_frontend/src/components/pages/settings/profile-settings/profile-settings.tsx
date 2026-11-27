@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BotMessageSquare, Cpu, Key, LogOut, MessagesSquare, Trash2 } from "lucide-react";
+import { BotMessageSquare, Cpu, Key, MessagesSquare, Trash2 } from "lucide-react";
 
 import { McpLogo } from "@/components/shared/mcp-logo";
 import { toast } from "sonner";
@@ -12,8 +11,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button, Card, FormError, Heading, Input, Label, Skeleton } from "@/components/ui";
 import { parseServerDate } from "@/lib/server-date";
 import { getApiErrorMessage } from "@/lib/utils";
-import { useAuth } from "@/providers";
-import { authService, profileService } from "@/services";
+import { profileService } from "@/services";
 import type { Profile, User } from "@/types";
 import { DeleteAccountDialog } from "./delete-account-dialog";
 
@@ -56,20 +54,6 @@ export const ProfileSettingsPage = () => {
 
 function ProfileContent({ profile }: { profile: Profile }) {
   const [deleteOpen, setDeleteOpen] = useState<boolean>(false);
-  const router = useRouter();
-  const { refreshAuthState } = useAuth();
-  const [loggingOut, setLoggingOut] = useState<boolean>(false);
-  const logOut = async () => {
-    setLoggingOut(true);
-    try {
-      await authService.logout();
-      refreshAuthState();
-      router.push("/home");
-    } catch {
-      setLoggingOut(false);
-      toast.error("Couldn't log out. Please try again.");
-    }
-  };
   const memberSince = parseServerDate(profile.created_at).toLocaleDateString(undefined, {
     year: "numeric",
     month: "long",
@@ -133,27 +117,6 @@ function ProfileContent({ profile }: { profile: Profile }) {
             );
           })}
         </dl>
-      </Card>
-
-      {/* Logging out lives here (not in the sidebar's account menu), styled as Delete account. */}
-      <Card className="flex flex-col gap-4 border border-destructive/30 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex max-w-lg flex-col gap-1">
-          <Heading as="h2" size="sm" className="text-destructive">
-            Log out
-          </Heading>
-          <p className="text-sm text-muted-foreground">
-            Sign out of Abyss on this device. Your agents, conversations and settings stay saved for your next sign-in.
-          </p>
-        </div>
-        <Button
-          type="button"
-          className="shrink-0 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          onClick={logOut}
-          disabled={loggingOut}
-        >
-          <LogOut className="size-4" aria-hidden="true" />
-          {loggingOut ? "Logging out…" : "Log out"}
-        </Button>
       </Card>
 
       <Card className="flex flex-col gap-4 border border-destructive/30 p-5 sm:flex-row sm:items-center sm:justify-between">
