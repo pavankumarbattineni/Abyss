@@ -8,12 +8,10 @@ import {
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
-  LogOut,
   Pencil,
   Plus,
   Settings,
   Trash2,
-  User,
   X,
 } from "lucide-react";
 
@@ -35,7 +33,7 @@ import { DeleteAgentDialog } from "@/components/shared/delete-agent-dialog";
 import { MOBILE_QUERY, useMediaQuery } from "@/hooks";
 import { useStableOrder } from "@/hooks";
 import { useAuth } from "@/providers";
-import { agentService, authService } from "@/services";
+import { agentService } from "@/services";
 import { useSidebarStore } from "@/store";
 import type { Agent } from "@/types";
 import { AbyssLogo, AbyssWordmark } from "./abyss-logo";
@@ -127,7 +125,7 @@ export function Sidebar() {
   });
   // Recent-first, but never re-sorted under the pointer (see useStableOrder).
   const { items: listedAgents, bind: holdAgentOrder } = useStableOrder(agents, (agent) => agent.id);
-  const { user, isUserLoading, refreshAuthState } = useAuth();
+  const { user, isUserLoading } = useAuth();
   const [deletingAgent, setDeletingAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
@@ -358,21 +356,8 @@ export function Sidebar() {
           )}
         </div>
 
+        {/* The account: its menu leads to Settings (profile and logging out live there). */}
         <div className="flex flex-col gap-1 border-t border-border-soft pt-3">
-          <NavTooltip label="Settings" show={collapsed}>
-            <Link
-              href="/settings"
-              aria-label={collapsed ? "Settings" : undefined}
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground hover:bg-surface-hover",
-                isActive("/settings") && "bg-accent font-medium text-foreground",
-              )}
-            >
-              <Settings className="size-4 shrink-0" />
-              {!collapsed && <span>Settings</span>}
-            </Link>
-          </NavTooltip>
-
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -381,6 +366,8 @@ export function Sidebar() {
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-surface-hover",
                   collapsed && "flex-col gap-2",
+                  // On a Settings page the account row shows where you are.
+                  isActive("/settings") && "bg-accent",
                 )}
               >
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -403,25 +390,13 @@ export function Sidebar() {
             >
               <PopoverClose asChild>
                 <Link
-                  href="/settings/profile"
+                  href="/settings"
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
                 >
-                  <User className="size-3.5" />
-                  Profile
+                  <Settings className="size-3.5" />
+                  Settings
                 </Link>
               </PopoverClose>
-              <button
-                type="button"
-                onClick={async () => {
-                  await authService.logout();
-                  refreshAuthState();
-                  router.push("/home");
-                }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
-              >
-                <LogOut className="size-3.5" />
-                Log out
-              </button>
             </PopoverContent>
           </Popover>
         </div>
