@@ -120,6 +120,10 @@ export function ChatPanel({
   const messageRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const lastMessageIdRef = useRef<string | null>(null);
   const pendingScrollIdRef = useRef<string | null>(null);
+  // The question pinned to the top while its answer is written, and what the spacer is measured against.
+  const pinnedIdRef = useRef<string | null>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isMessagesLoading && scrollRef.current) {
@@ -140,11 +144,36 @@ export function ChatPanel({
         const available = container.clientHeight - node.offsetHeight - 24;
         setSpacerHeight(Math.max(available, 0));
         pendingScrollIdRef.current = lastMessage.id;
+        pinnedIdRef.current = lastMessage.id;
       }
     } else {
       setSpacerHeight(0);
+      pinnedIdRef.current = null;
     }
   }, [messages]);
+
+  // The spacer only ever fills the gap left below the pinned question: it
+  // shrinks as the answer grows (the page's total height stays the same, so
+  // nothing jumps), and it goes once the answer is done -- so the conversation
+  // never scrolls past its end into blank space.
+  const answering = isSending || isStreaming;
+  const shownSpacerHeight = answering ? spacerHeight : 0;
+  useEffect(() => {
+    const column = columnRef.current;
+    if (!column || !answering) return;
+    const fit = () => {
+      const container = scrollRef.current;
+      const question = pinnedIdRef.current ? messageRefs.current.get(pinnedIdRef.current) : undefined;
+      const spacer = spacerRef.current;
+      if (!container || !question || !spacer) return;
+      // From the question's top to the spacer's top: the question and its answer so far.
+      const below = spacer.getBoundingClientRect().top - question.getBoundingClientRect().top;
+      setSpacerHeight(Math.max(container.clientHeight - below - 24, 0));
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(column);
+    return () => observer.disconnect();
+  }, [answering]);
 
   useEffect(() => {
     const id = pendingScrollIdRef.current;
@@ -159,7 +188,7 @@ export function ChatPanel({
     const nodeRect = node.getBoundingClientRect();
     const offset = nodeRect.top - containerRect.top;
     container.scrollTo({ top: container.scrollTop + offset - 5, behavior: "smooth" });
-  }, [spacerHeight]);
+  }, [shownSpacerHeight]);
 
   // "Ask the agent to fix it" in a live preview prefills the message box (not sent).
   useEffect(() => {
@@ -375,7 +404,7 @@ export function ChatPanel({
               ref={scrollRef}
               className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 @lg:px-6"
             >
-              <div className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CONVERSATION_COLUMN)}>
+              <div ref={columnRef} className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CONVERSATION_COLUMN)}>
                 {messages.map((message, index) => message.role === "summary" ? (
                   <ConversationSummary key={message.id} content={message.content} />
                 ) : message.role === "error" ? (
@@ -494,7 +523,7 @@ export function ChatPanel({
                   </div>
                 )}
 
-                <div aria-hidden style={{ height: spacerHeight }} />
+                <div ref={spacerRef} aria-hidden style={{ height: shownSpacerHeight }} />
               </div>
             </div>
 
