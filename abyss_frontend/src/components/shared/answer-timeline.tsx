@@ -5,7 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { BookOpenText, Brain, ChevronRight, Loader2, UsersRound, Wrench } from "lucide-react";
 
-import { answerParts, backgroundActivity, humanizeIdentifier, mainAgentName, visibleSteps } from "@/lib/reasoning";
+import { answerParts, backgroundActivity, groupStepsByAgent, humanizeIdentifier, mainAgentName, visibleSteps } from "@/lib/reasoning";
 import { cn } from "@/lib/utils";
 import type { ReasoningTrace, TimelineItem } from "@/types";
 import { CopyButton } from "./copy-button";
@@ -101,12 +101,17 @@ function ActivityGroup({
     wasLive.current = live;
   }, [live]);
 
-  const isRunning = (item: TimelineItem, index: number): boolean =>
+  // A thought is the live one when it's the latest step recorded -- by identity,
+  // since the rows below are listed by agent rather than in recorded order.
+  const latestId = items.at(-1)?.id;
+  const isRunning = (item: TimelineItem): boolean =>
     item.kind === "tool_call"
       ? item.status === "running"
       : item.kind === "delegation"
         ? trace.agents[item.target]?.status === "running"
-        : live && index === items.length - 1;
+        : live && item.id === latestId;
+  // Each specialist's steps sit under its own "Asked …" row (display only).
+  const rows = groupStepsByAgent(items);
 
   const title = live ? currentActivity(items.at(-1), displayName, isMain, busyWith) : summarize(items, displayName);
   const pulse = live && (
@@ -145,11 +150,11 @@ function ActivityGroup({
       {/* A container: its rows lay out by the list's own width (StepRow). */}
       {open && (
         <ol className="@container mt-1.5 min-w-0 divide-y divide-border-soft overflow-hidden rounded-xl border border-border-soft">
-          {items.map((item, index) => (
+          {rows.map((item) => (
             <StepRow
               key={item.id}
               item={item}
-              running={isRunning(item, index)}
+              running={isRunning(item)}
               nested={!!trace.agents[item.agent]?.isDelegated}
               displayName={displayName}
             />

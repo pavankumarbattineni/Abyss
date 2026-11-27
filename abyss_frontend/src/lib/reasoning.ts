@@ -229,6 +229,31 @@ export function visibleSteps(timeline: TimelineItem[]): TimelineItem[] {
   return timeline.filter((item) => !isBackgroundStep(item));
 }
 
+/**
+ * A steps group as it reads best, not as it was recorded: each specialist's own
+ * steps (thinking, tool calls) are listed right under the "Asked …" row that
+ * started them, instead of interleaved with the other specialists' -- they run
+ * in parallel, so in time order their calls mix. A specialist asked twice keeps
+ * each batch under the request it answers. The main agent's steps stay in time
+ * order. Display only: no step is added, dropped or changed.
+ */
+export function groupStepsByAgent(items: TimelineItem[]): TimelineItem[] {
+  // Each delegation row collects the steps its specialist takes after it.
+  const blocks: { item: TimelineItem; children: TimelineItem[] }[] = [];
+  const openFor = new Map<string, TimelineItem[]>();
+  for (const item of items) {
+    const owner = item.kind === "delegation" ? undefined : openFor.get(item.agent);
+    if (owner) {
+      owner.push(item);
+      continue;
+    }
+    const block = { item, children: [] as TimelineItem[] };
+    blocks.push(block);
+    if (item.kind === "delegation") openFor.set(item.target, block.children);
+  }
+  return blocks.flatMap((block) => [block.item, ...block.children]);
+}
+
 /** What a running background step is doing ("Finding images…"), or null when none runs. */
 export function backgroundActivity(timeline: TimelineItem[]): string | null {
   const running = timeline.findLast((item) => isBackgroundStep(item) && item.kind === "tool_call" && item.status === "running");
