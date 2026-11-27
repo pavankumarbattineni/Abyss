@@ -39,10 +39,11 @@ import { useSidebarStore } from "@/store";
 import type { Agent } from "@/types";
 import { AbyssLogo, AbyssWordmark } from "./abyss-logo";
 
-function getEmailInitials(email?: string): string {
-  const localPart = email?.split("@")[0] ?? "";
-  const initials = localPart
-    .split(/[._-]/)
+/** Up to two initials of a name ("Pavan Kumar" -> "PK") or of an email's local part. */
+function getInitials(nameOrEmail?: string): string {
+  const source = nameOrEmail?.split("@")[0] ?? "";
+  const initials = source
+    .split(/[\s._-]/)
     .filter(Boolean)
     .map((part) => part[0])
     .slice(0, 2)
@@ -148,6 +149,9 @@ export function Sidebar() {
   // Recent-first, but never re-sorted under the pointer (see useStableOrder).
   const { items: listedAgents, bind: holdAgentOrder } = useStableOrder(agents, (agent) => agent.id);
   const { user, isUserLoading, refreshAuthState } = useAuth();
+  // The account row shows the user's name (as set on Profile), the email if
+  // there is none; the email itself heads the account menu.
+  const displayName = user?.username?.trim() || user?.email;
   const [deletingAgent, setDeletingAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
@@ -394,14 +398,14 @@ export function Sidebar() {
                 )}
               >
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                  {getEmailInitials(user?.email)}
+                  {getInitials(displayName)}
                 </span>
                 {!collapsed &&
                   (isUserLoading ? (
                     <Skeleton className="h-3 flex-1" />
                   ) : (
                     <span className="flex-1 truncate text-sm text-foreground text-left">
-                      {user?.email ?? "Account"}
+                      {displayName ?? "Account"}
                     </span>
                   ))}
               </button>
