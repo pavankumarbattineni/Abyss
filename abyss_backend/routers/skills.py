@@ -19,7 +19,7 @@ async def upsert_skill(
 ):
     """Create a skill, or update one when `id` is given.
 
-    Skills live in the user's library. With `agent_id` (the Agent Builder) the
+    Skills live in the user's library. With `agent_id` (Agent Studio) the
     skill is also assigned to that agent only; without it (the Skills screen)
     it is not assigned to any agent. An update reaches every agent the skill
     is assigned to from their next message.

@@ -78,12 +78,12 @@ export function ConnectorToolsDialog({
     mutationFn: () => mcpService.deleteConnection(connection.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mcp-connections"] });
-      toast.success("Server disconnected");
+      toast.success("Connector disconnected");
       setDisconnectOpen(false);
       onOpenChange(false);
     },
     onError: () => {
-      toast.error("Failed to disconnect server. Please try again.");
+      toast.error("Failed to disconnect connector. Please try again.");
     },
   });
 
@@ -263,7 +263,7 @@ export function ConnectorToolsDialog({
       <ConfirmDialog
         open={disconnectOpen}
         onOpenChange={setDisconnectOpen}
-        title="Disconnect MCP server"
+        title="Disconnect connector"
         description={`Disconnect "${connection.name}"? Agents using its tools will lose access.`}
         confirmLabel="Disconnect"
         variant="destructive"

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AgentCreatePage } from "@/components/pages/agent-create";
 
 export const metadata: Metadata = {
-  title: "Create Agent",
+  title: "Agent Studio",
 };
 
 const Page = () => <AgentCreatePage />;

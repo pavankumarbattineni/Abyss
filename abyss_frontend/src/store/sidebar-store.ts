@@ -1,18 +1,24 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Activity, Bot, ScrollText, Server, Workflow, type LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
+import { Activity, BotMessageSquare, PencilRuler, ScrollText } from "lucide-react";
+
+import { McpLogo } from "@/components/shared/mcp-logo";
 
 export interface SidebarNavItem {
   id: string;
   label: string;
   href: string;
-  icon: LucideIcon;
+  /** A Lucide icon, or a brand mark drawn the same way (e.g. the MCP logo). */
+  icon: ComponentType<{ className?: string }>;
 }
 
 export const SIDEBAR_NAV_ITEMS: SidebarNavItem[] = [
-  { id: "agents", label: "Agents", href: "/agents", icon: Bot },
-  { id: "agent-builder", label: "Agent Builder", href: "/agents/create", icon: Workflow },
-  { id: "mcp", label: "MCP Servers", href: "/mcp", icon: Server },
+  { id: "agents", label: "Agents", href: "/agents", icon: BotMessageSquare },
+  // Where agents are designed and edited (create at /agents/create).
+  { id: "agent-builder", label: "Agent Studio", href: "/agents/create", icon: PencilRuler },
+  // The user's remote MCP servers, named for what they do for agents.
+  { id: "mcp", label: "Connectors", href: "/mcp", icon: McpLogo },
   { id: "skills", label: "Skills", href: "/skills", icon: ScrollText },
   { id: "tracing", label: "Tracing", href: "/tracing", icon: Activity },
 ];

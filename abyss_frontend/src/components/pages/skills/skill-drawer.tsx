@@ -55,7 +55,7 @@ interface SkillDrawerProps {
   onOpenChange: (open: boolean) => void;
   /** The skill to edit; omit to create one. */
   skill?: Skill | null;
-  /** Agent Builder: a new skill is also assigned to this agent (and no other). */
+  /** Agent Studio: a new skill is also assigned to this agent (and no other). */
   agentId?: string;
   /** Called after a save, e.g. to add a new skill to an agent that isn't saved yet. */
   onSaved?: (skill: Skill, created: boolean) => void;

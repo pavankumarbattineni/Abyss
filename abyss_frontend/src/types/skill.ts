@@ -13,7 +13,7 @@ export interface Skill {
 
 /**
  * Create (no id) or update (with id) -- the backend's POST /skills. With
- * agent_id (Agent Builder) the skill is also assigned to that agent only.
+ * agent_id (Agent Studio) the skill is also assigned to that agent only.
  */
 export interface SkillUpsertRequest {
   id?: string;

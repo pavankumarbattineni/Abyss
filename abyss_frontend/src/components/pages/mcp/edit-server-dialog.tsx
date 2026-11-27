@@ -59,11 +59,11 @@ export function EditServerDialog({
       mcpService.updateConnection(connection.id, values),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mcp-connections"] });
-      toast.success("Server updated");
+      toast.success("Connector updated");
       onOpenChange(false);
     },
     onError: () => {
-      toast.error("Failed to update server. Please try again.");
+      toast.error("Failed to update connector. Please try again.");
     },
   });
 
@@ -71,7 +71,7 @@ export function EditServerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit MCP server</DialogTitle>
+          <DialogTitle>Edit connector</DialogTitle>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"

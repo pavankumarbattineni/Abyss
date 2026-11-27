@@ -121,7 +121,7 @@ export function DeleteAccountDialog({ profile, open, onOpenChange }: DeleteAccou
   const removed = [
     stats.agents > 0 && `${plural(stats.agents, "agent")} and ${stats.agents === 1 ? "its" : "their"} specialists`,
     stats.threads > 0 && `${plural(stats.threads, "conversation")} with all messages`,
-    stats.mcp_servers > 0 && `${plural(stats.mcp_servers, "MCP server")} and tool settings`,
+    stats.mcp_servers > 0 && `${plural(stats.mcp_servers, "connector")} and tool settings`,
     stats.api_keys > 0 && `${plural(stats.api_keys, "API key")}; apps using them stop working`,
     stats.provider_keys > 0 && plural(stats.provider_keys, "saved provider key"),
     "Your usage history and your sign-in",

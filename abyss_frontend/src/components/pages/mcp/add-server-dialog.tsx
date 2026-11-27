@@ -55,12 +55,12 @@ export function AddServerDialog({ trigger }: AddServerDialogProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mcp-connections"] });
       queryClient.invalidateQueries({ queryKey: ["agent-tools"] });
-      toast.success("MCP server connected");
+      toast.success("Connector added");
       reset();
       setOpen(false);
     },
     onError: (error) => {
-      toast.error(getApiErrorMessage(error, "Failed to connect MCP server. Please try again."));
+      toast.error(getApiErrorMessage(error, "Failed to add connector. Please try again."));
     },
   });
 
@@ -70,13 +70,13 @@ export function AddServerDialog({ trigger }: AddServerDialogProps) {
         {trigger ?? (
           <Button size="sm">
             <Plus className="size-4" />
-            Add server
+            Add connector
           </Button>
         )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add MCP server</DialogTitle>
+          <DialogTitle>Add connector</DialogTitle>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"

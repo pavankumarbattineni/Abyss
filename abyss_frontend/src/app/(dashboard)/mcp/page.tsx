@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { McpPage } from "@/components/pages/mcp";
 
 export const metadata: Metadata = {
-  title: "MCP Servers",
+  title: "Connectors",
 };
 
 const Page = () => <McpPage />;
