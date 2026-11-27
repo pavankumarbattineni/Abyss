@@ -25,11 +25,11 @@ export function ConnectionActions({ connection, onViewTools }: ConnectionActions
     mutationFn: () => mcpService.deleteConnection(connection.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mcp-connections"] });
-      toast.success("Server deleted");
+      toast.success("Connector deleted");
       setDeleteOpen(false);
     },
     onError: () => {
-      toast.error("Failed to delete server. Please try again.");
+      toast.error("Failed to delete connector. Please try again.");
     },
   });
 
@@ -38,10 +38,10 @@ export function ConnectionActions({ connection, onViewTools }: ConnectionActions
       mutationFn: () => mcpService.refreshConnection(connection.id),
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["mcp-connections"] });
-        toast.success("Server refreshed");
+        toast.success("Connector refreshed");
       },
       onError: () => {
-        toast.error("Failed to refresh server. Please try again.");
+        toast.error("Failed to refresh connector. Please try again.");
       },
     });
 
@@ -57,11 +57,11 @@ export function ConnectionActions({ connection, onViewTools }: ConnectionActions
         queryClient.setQueryData<McpConnection[]>(["mcp-connections"], (prev) =>
           prev?.map((item) => (item.id === updated.id ? updated : item)),
         );
-        toast.success(isConnected ? "Server disconnected" : "Server connected");
+        toast.success(isConnected ? "Connector disconnected" : "Connector connected");
       },
       onError: () => {
         toast.error(
-          `Failed to ${isConnected ? "disconnect" : "connect"} server. Please try again.`,
+          `Failed to ${isConnected ? "disconnect" : "connect"} connector. Please try again.`,
         );
       },
     });
@@ -108,7 +108,7 @@ export function ConnectionActions({ connection, onViewTools }: ConnectionActions
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete MCP server"
+        title="Delete connector"
         description={`Delete "${connection.name}"? This cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"

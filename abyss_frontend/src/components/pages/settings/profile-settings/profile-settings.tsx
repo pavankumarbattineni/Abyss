@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Cpu, Key, MessagesSquare, Server, Trash2 } from "lucide-react";
+import { BotMessageSquare, Cpu, Key, MessagesSquare, Trash2 } from "lucide-react";
+
+import { McpLogo } from "@/components/shared/mcp-logo";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/shared/page-header";
@@ -60,9 +62,9 @@ function ProfileContent({ profile }: { profile: Profile }) {
   const methods = profile.sign_in_methods.map((method) => METHOD_LABELS[method] ?? method);
 
   const owned = [
-    { label: "Agents", value: profile.stats.agents, icon: Bot },
+    { label: "Agents", value: profile.stats.agents, icon: BotMessageSquare },
     { label: "Conversations", value: profile.stats.threads, icon: MessagesSquare },
-    { label: "MCP servers", value: profile.stats.mcp_servers, icon: Server },
+    { label: "Connectors", value: profile.stats.mcp_servers, icon: McpLogo },
     { label: "API keys", value: profile.stats.api_keys, icon: Key },
     { label: "Provider keys", value: profile.stats.provider_keys, icon: Cpu },
   ];
@@ -123,7 +125,7 @@ function ProfileContent({ profile }: { profile: Profile }) {
             Delete account
           </Heading>
           <p className="text-sm text-muted-foreground">
-            Permanently remove your account with all of its agents, conversations, MCP servers and keys. This
+            Permanently remove your account with all of its agents, conversations, connectors and keys. This
             can&apos;t be undone.
           </p>
         </div>

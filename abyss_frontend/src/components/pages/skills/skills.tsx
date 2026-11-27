@@ -73,7 +73,7 @@ export const SkillsPage = () => {
     <div className="flex flex-col gap-5 p-6">
       <PageHeader
         title="Skills"
-        description="Your library of reusable instructions. Add a skill to an agent in the Agent Builder; the agent loads it only when the task fits."
+        description="Your library of reusable instructions. Add a skill to an agent in Agent Studio; the agent loads it only when the task fits."
         actions={
           <Button
             type="button"
@@ -101,7 +101,7 @@ export const SkillsPage = () => {
           emptyMessage={
             isError
               ? "Failed to load skills."
-              : "No skills yet. Create one here, then add it to any agent in the Agent Builder."
+              : "No skills yet. Create one here, then add it to any agent in Agent Studio."
           }
         />
       </Card>

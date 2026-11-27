@@ -80,15 +80,15 @@ export const McpPage = () => {
   return (
     <div className="flex flex-col gap-5 p-6">
       <PageHeader
-        title="MCP Servers"
-        description="Remote MCP servers that can be used by your agents."
+        title="Connectors"
+        description="Connect remote MCP servers so your agents can use their tools."
         actions={<AddServerDialog />}
       />
 
       <Card className="overflow-hidden p-0" suppressHydrationWarning>
         {!isLoading && (
           <div className="border-b border-border px-6 py-4 text-sm text-muted-foreground">
-            {connections.length} server{connections.length === 1 ? "" : "s"}
+            {connections.length} connector{connections.length === 1 ? "" : "s"}
           </div>
         )}
         <DataTable
@@ -97,7 +97,7 @@ export const McpPage = () => {
           isLoading={isLoading}
           onRowClick={setViewingConnection}
           emptyMessage={
-            isError ? "Failed to load MCP servers." : "No MCP servers connected yet."
+            isError ? "Failed to load connectors." : "No connectors yet."
           }
         />
       </Card>

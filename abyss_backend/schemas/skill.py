@@ -19,7 +19,7 @@ SKILL_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _-]*$"
 class SkillUpsert(BaseModel):
     """Create a skill (no id) or update the caller's skill with this id.
 
-    With agent_id (the Agent Builder), the skill is also assigned to that one
+    With agent_id (Agent Studio), the skill is also assigned to that one
     agent. Without it (the Skills screen), it only goes into the library.
     """
 
