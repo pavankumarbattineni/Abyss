@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ProviderSecretsSettingsPage } from "@/components/pages/settings";
 
 export const metadata: Metadata = {
-  title: "Provider Secrets",
+  title: "Provider Keys",
 };
 
 const Page = () => <ProviderSecretsSettingsPage />;

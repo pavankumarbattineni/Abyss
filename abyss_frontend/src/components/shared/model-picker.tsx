@@ -34,7 +34,7 @@ interface PickerModel {
  * Default (and Default - 1 / Default - 2) run on the platform's key; every
  * other model is BYOK -- including the Gemini models behind the defaults, under
  * their own names -- and can be
- * picked once its provider's key is saved in Provider Secrets.
+ * picked once its provider's key is saved in Provider Keys.
  */
 export function ModelPicker() {
   const { user } = useAuth();
@@ -128,7 +128,7 @@ export function ModelPicker() {
             <p className="px-2 py-1.5 text-xs text-muted-foreground">
               To use a BYOK model, add its provider key in{" "}
               <Link href="/settings/provider-secrets" className="underline hover:text-foreground">
-                Provider Secrets
+                Provider Keys
               </Link>
               .
             </p>

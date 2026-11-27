@@ -4,5 +4,6 @@ export * from "./memory-settings";
 export * from "./preferences-settings";
 export * from "./provider-secrets";
 export * from "./settings-nav";
+export * from "./settings-pages";
 export * from "./usage-settings";
 export * from "./profile-settings";

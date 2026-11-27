@@ -70,7 +70,7 @@ export const ProviderSecretsSettingsPage = () => {
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
-        title="Provider Secrets"
+        title="Provider Keys"
         description="Connect your own LLM provider API keys."
         actions={<AddCredentialDialog />}
       />

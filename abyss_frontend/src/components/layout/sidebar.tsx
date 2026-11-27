@@ -10,7 +10,7 @@ import {
   ChevronsRight,
   Pencil,
   Plus,
-  Settings,
+  LogOut,
   Trash2,
   X,
 } from "lucide-react";
@@ -32,8 +32,9 @@ import { ActionMenu } from "@/components/shared/action-menu";
 import { DeleteAgentDialog } from "@/components/shared/delete-agent-dialog";
 import { MOBILE_QUERY, useMediaQuery } from "@/hooks";
 import { useStableOrder } from "@/hooks";
+import { SETTINGS_PAGES, USAGE_PAGE, type AccountPage } from "@/components/pages/settings/settings-pages";
 import { useAuth } from "@/providers";
-import { agentService } from "@/services";
+import { agentService, authService } from "@/services";
 import { useSidebarStore } from "@/store";
 import type { Agent } from "@/types";
 import { AbyssLogo, AbyssWordmark } from "./abyss-logo";
@@ -104,6 +105,27 @@ function AgentNameTooltip({
   );
 }
 
+/** One page in the account menu; the current page is marked. Closes the menu on click. */
+function AccountMenuLink({ page, current }: { page: AccountPage; current: boolean }) {
+  const Icon = page.icon;
+  return (
+    <PopoverClose asChild>
+      <Link
+        href={page.href}
+        aria-current={current ? "page" : undefined}
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted",
+          current && "bg-accent font-medium",
+        )}
+      >
+        <Icon className="size-4 shrink-0" aria-hidden="true" />
+        {page.label}
+        {page.soon && <span className="ml-auto text-[11px] text-muted-foreground">Soon</span>}
+      </Link>
+    </PopoverClose>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -125,7 +147,7 @@ export function Sidebar() {
   });
   // Recent-first, but never re-sorted under the pointer (see useStableOrder).
   const { items: listedAgents, bind: holdAgentOrder } = useStableOrder(agents, (agent) => agent.id);
-  const { user, isUserLoading } = useAuth();
+  const { user, isUserLoading, refreshAuthState } = useAuth();
   const [deletingAgent, setDeletingAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
@@ -141,6 +163,7 @@ export function Sidebar() {
     ...navItems.map((item) => item.href),
     ...agents.map((agent) => `/agents/${agent.id}`),
     "/settings",
+    USAGE_PAGE.href,
   ];
   const activeHref = allHrefs
     .filter(
@@ -356,7 +379,7 @@ export function Sidebar() {
           )}
         </div>
 
-        {/* The account: its menu leads to Settings (profile and logging out live there). */}
+        {/* The account: its menu lists every Settings page, then Usage, then Log out. */}
         <div className="flex flex-col gap-1 border-t border-border-soft pt-3">
           <Popover>
             <PopoverTrigger asChild>
@@ -366,8 +389,8 @@ export function Sidebar() {
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-surface-hover",
                   collapsed && "flex-col gap-2",
-                  // On a Settings page the account row shows where you are.
-                  isActive("/settings") && "bg-accent",
+                  // On a page this menu leads to, the account row shows where you are.
+                  (isActive("/settings") || isActive(USAGE_PAGE.href)) && "bg-accent",
                 )}
               >
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
@@ -386,17 +409,31 @@ export function Sidebar() {
             <PopoverContent
               align="start"
               side="top"
-              className="w-48 gap-0.5 p-1"
+              className="w-60 gap-0.5 p-1"
             >
-              <PopoverClose asChild>
-                <Link
-                  href="/settings"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
-                >
-                  <Settings className="size-3.5" />
-                  Settings
-                </Link>
-              </PopoverClose>
+              <p className="truncate px-2 pt-1.5 pb-1 text-xs text-muted-foreground">
+                {user?.email ?? "Account"}
+              </p>
+              {/* Inside Settings */}
+              {SETTINGS_PAGES.map((page) => (
+                <AccountMenuLink key={page.href} page={page} current={pathname === page.href} />
+              ))}
+              <div className="my-1 h-px bg-border-soft" role="separator" />
+              {/* Outside Settings */}
+              <AccountMenuLink page={USAGE_PAGE} current={pathname === USAGE_PAGE.href} />
+              <div className="my-1 h-px bg-border-soft" role="separator" />
+              <button
+                type="button"
+                onClick={async () => {
+                  await authService.logout();
+                  refreshAuthState();
+                  router.push("/home");
+                }}
+                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted"
+              >
+                <LogOut className="size-4 shrink-0" aria-hidden="true" />
+                Log out
+              </button>
             </PopoverContent>
           </Popover>
         </div>
