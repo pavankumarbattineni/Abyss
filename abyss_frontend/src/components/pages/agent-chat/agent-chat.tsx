@@ -93,7 +93,9 @@ export const AgentChatPage = ({ agentId, threadId }: AgentChatPageProps) => {
   );
 
   return (
-    <div className="relative flex h-full">
+    // overflow-hidden: the chat scrolls inside its own panes; nothing here may
+    // make the page (the dashboard's <main>) scrollable around them.
+    <div className="relative flex h-full overflow-hidden">
       {isMobile && mobileThreadsOpen && (
         <div
           className="absolute inset-0 z-20 bg-foreground/20"

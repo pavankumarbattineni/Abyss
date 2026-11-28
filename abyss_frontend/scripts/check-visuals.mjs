@@ -107,6 +107,14 @@ assert.ok(items.ok && items.data.images.length === 1, JSON.stringify(items));
 const headed = m.parseVisual('{"format":"image"}\n' + JSON.stringify([{ src: "https://upload.wikimedia.org/a.png" }]));
 assert.ok(headed.ok && headed.data.images.length === 1, JSON.stringify(headed));
 
+// Valid JSON is never "repaired": curly quotes and ", ]" inside strings stay text
+// (a real job sheet broke on: listing says “Actively hiring.”).
+const quoted = m.parseVisual(JSON.stringify({ format: "spreadsheet", sheets: [{ name: "Jobs", columns: ["Note"], rows: [["listing says “Actively hiring.”"], ["a, ]"]] }] }));
+assert.ok(quoted.ok && quoted.data.sheets[0].rows[0][0] === "listing says “Actively hiring.”" && quoted.data.sheets[0].rows[1][0] === "a, ]", JSON.stringify(quoted));
+// ...while curly quotes used as JSON quotes, and trailing commas, are still forgiven.
+const curly = m.parseVisual('{“format”: “venn”, “sets”: [{“id”: “a”, “label”: “A”}, {“id”: “b”, “label”: “B”},]}');
+assert.ok(curly.ok, JSON.stringify(curly));
+
 // Lenient: a misspelt molecule key still draws; an entry with no structure is dropped.
 const typo = m.parseVisual(JSON.stringify({ format: "molecule", molecules: [{ smiles: "O" }, { smils: "C", name: "Methane" }, { name: "nothing" }] }));
 assert.ok(typo.ok && typo.data.molecules.length === 2 && typo.data.molecules[1].smiles === "C", JSON.stringify(typo));

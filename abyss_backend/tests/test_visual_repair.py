@@ -23,6 +23,16 @@ def test_good_blocks_pass_and_lenient_json_is_accepted():
     assert check_block("abyss-ui", json.dumps(ui))[0] == []
 
 
+def test_valid_json_is_never_repaired():
+    # Curly quotes and ", ]" inside strings are text, not JSON slips (a real job
+    # sheet was flagged broken over: listing says “Actively hiring.”).
+    sheet = {"format": "spreadsheet", "sheets": [{"name": "Jobs", "columns": ["Note"],
+                                                  "rows": [["listing says “Actively hiring.”"], ["a, ]"]]}]}
+    assert check_block("visual", json.dumps(sheet, ensure_ascii=False)) == ([], "spreadsheet")
+    # Curly quotes used as the JSON quotes are still forgiven.
+    assert check_block("visual", '{“format”: “venn”, “sets”: [{“id”: “a”, “label”: “A”}, {“id”: “b”, “label”: “B”}]}')[0] == []
+
+
 def test_fatal_problems_are_reported_with_the_field():
     assert "invalid JSON" in check_block("visual", '{"format":"plot",')[0][0]
     assert "unknown format" in check_block("visual", '{"format":"pie"}')[0][0]
