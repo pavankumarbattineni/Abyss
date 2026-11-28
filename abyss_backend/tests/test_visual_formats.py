@@ -12,7 +12,7 @@ EXPECTED = {
     "flowchart", "diagram", "blueprint", "tree", "timeline", "roadmap", "cycle", "layers",
     "iceberg", "decision-matrix", "canvas", "infographic", "handwritten", "sketchnotes",
     "exploded-view", "plot", "geometry", "vector-field", "number-line", "venn", "molecule",
-    "periodic-table", "energy-levels", "circuit", "steps", "image",
+    "periodic-table", "energy-levels", "circuit", "steps", "image", "spreadsheet",
 }
 
 

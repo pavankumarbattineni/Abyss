@@ -96,7 +96,14 @@ CATALOG: dict[str, tuple[str, list[tuple[str, str]]]] = {
 # prompt protocol, Gemini 3.5 Flash-Lite sometimes wrote tool calls as text or
 # stopped after its reasoning, so specialists were skipped (migration 0006).
 # All three platform models (Default, Default - 1, Default - 2) use it.
-NATIVE_REASONING_MODELS = {"gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-3-flash-preview"}
+# OpenAI: each model was called with reasoning on (migration 0013); these 12
+# return reasoning summaries. GPT-6.2 Astra / Sol reason but return no summary,
+# so they stay on the prompt protocol (native would show no thinking at all).
+NATIVE_REASONING_MODELS = {
+    "gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-3-flash-preview",
+    "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol", "gpt-6.1-terra",
+    "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.2",
+}
 
 # Input context windows (tokens) for catalog models LangChain has no profile
 # for -- the selected model's window sets when a conversation is summarized

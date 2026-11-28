@@ -273,6 +273,25 @@ _FORMATS: tuple[VisualFormat, ...] = (
         "subject. Never invent or guess an image URL. Put each image in the "
         "section it illustrates.",
     ),
+    VisualFormat(
+        "spreadsheet",
+        "data to download as an Excel workbook (tabs) or CSV, previewed in the chat",
+        '{"format":"spreadsheet","title","filename"?,"sheets":[{"name","columns":'
+        '[{"label","type":"text|number|integer|currency|percent|date|url"?,"currency"?:"INR|USD|..."}],'
+        '"rows":[[cells in column order]]}]}\n'
+        "- Only when the user asks for Excel, CSV, a spreadsheet or a file, or the answer is a "
+        "real dataset to sort, filter or reuse (about 10+ rows, or many columns). Small tables "
+        "stay Markdown tables (they can already be downloaded).\n"
+        "- One request, one block: related tables are its sheets (tabs) -- e.g. one per "
+        "location, or a Summary plus details -- never several spreadsheet blocks for one "
+        "request.\n"
+        "- Each row is an array in column order, as long as the columns. Numbers as plain "
+        "numbers (1200000, 12.5: no units, commas or symbols); percent as the number (12.5 = "
+        "12.5%); dates as YYYY-MM-DD; links as full URLs; null when empty.\n"
+        "- At most 500 rows per sheet and 10 sheets; sheet names short (31 characters max). "
+        "Every row comes from tools, the user or well-established knowledge -- never invented.\n"
+        "- In the text, say in a sentence or two what the workbook holds; don't repeat its rows.",
+    ),
 )
 
 #: Shared notes the specs refer to by name (appended to the specs that use them).

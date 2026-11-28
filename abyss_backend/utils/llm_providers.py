@@ -80,7 +80,9 @@ def _build_openai(model: str, api_key: str, native_reasoning: bool) -> BaseChatM
     # Completions ("Tool calling requires the Responses API"), and Abyss's
     # agents need tools. Every GPT-5.x model supports it too, and it is the
     # only way to get reasoning summaries.
-    reasoning = {"reasoning": {"effort": "medium", "summary": "auto"}} if native_reasoning else {}
+    # "detailed", not "auto": with "auto" some models (GPT-6 Sol) reasoned but
+    # returned no summary, and the summary is all the chat can show of it.
+    reasoning = {"reasoning": {"effort": "medium", "summary": "detailed"}} if native_reasoning else {}
     return ChatOpenAI(
         model=model, api_key=api_key, use_responses_api=True, timeout=MODEL_REQUEST_TIMEOUT_SECONDS, **reasoning,
     )

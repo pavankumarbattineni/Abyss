@@ -290,3 +290,16 @@ def test_a_made_up_image_in_a_gallery_under_another_key_is_still_replaced(monkey
     data = json.loads(find_blocks(text)[0].source)
     assert [i["src"] for i in data["images"]] == [good, REAL["src"]] and "items" not in data
     assert calls == [[("Human heart male adult autopsy", ["wikidata", "commons", "openverse"])]]
+
+
+def test_spreadsheet_checks_only_what_makes_data_wrong():
+    ok = {"format": "spreadsheet", "title": "Jobs", "sheets": [
+        {"name": "Bangalore", "columns": [{"label": "Role"}, {"label": "Pay", "type": "currency"}], "rows": [["A", 5], ["B"]]},
+        {"name": "Remote", "columns": [{"label": "Role"}], "rows": []},
+    ]}
+    assert check_block("visual", json.dumps(ok)) == ([], "spreadsheet")
+    shifted = {"format": "spreadsheet", "sheets": [{"name": "S", "columns": [{"label": "A"}], "rows": [["x", "y"]]}]}
+    assert "2 cells for 1 columns" in check_block("visual", json.dumps(shifted))[0][0]
+    assert "needs at least 1 item" in check_block("visual", json.dumps({"format": "spreadsheet", "sheets": []}))[0][0]
+    no_columns = {"format": "spreadsheet", "sheets": [{"name": "S", "columns": [], "rows": []}]}
+    assert "columns" in check_block("visual", json.dumps(no_columns))[0][0]
