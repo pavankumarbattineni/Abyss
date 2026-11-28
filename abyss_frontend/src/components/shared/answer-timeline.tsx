@@ -218,7 +218,8 @@ function StepRow({
   const duration = item.kind !== "delegation" ? formatDuration(item.durationMs) : null;
 
   return (
-    <li className="min-w-0">
+    // relative: anchors the row's sr-only "who:" label (position: absolute) to the row.
+    <li className="relative min-w-0">
       <button
         type="button"
         disabled={!hasDetails}

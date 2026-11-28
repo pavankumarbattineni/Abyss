@@ -19,14 +19,20 @@ export function sniffFormat(source: string): VisualFormatName | null {
   return match && isVisualFormat(match[1]) ? match[1] : null;
 }
 
-/** Small models' usual JSON slips: a stray fence, trailing commas, smart quotes. */
+/** Small models' usual JSON slips: a stray fence, trailing commas, smart quotes.
+ * Valid JSON is taken as it is: the repairs run only if it doesn't parse, since
+ * they would break text inside strings (`says “Actively hiring.”`, `"a, ]"`). */
 function lenientJson(source: string): unknown {
-  const cleaned = source
+  const unfenced = source
     .trim()
     .replace(/^```[\w-]*\s*/, "")
-    .replace(/```\s*$/, "")
-    .replace(/[“”]/g, '"')
-    .replace(/,\s*([}\]])/g, "$1");
+    .replace(/```\s*$/, "");
+  try {
+    return JSON.parse(unfenced);
+  } catch {
+    // not valid as written: try the repairs below
+  }
+  const cleaned = unfenced.replace(/[“”]/g, '"').replace(/,\s*([}\]])/g, "$1");
   try {
     return JSON.parse(cleaned);
   } catch (err) {

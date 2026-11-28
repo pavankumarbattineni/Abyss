@@ -400,9 +400,15 @@ export function ChatPanel({
           </div>
         ) : (
           <>
+            {/* relative: the containing block of every absolutely positioned
+                element in the conversation (sr-only labels, badges...), so
+                they're clipped and scroll with it -- otherwise one far down a
+                long answer makes the page itself scrollable and the whole
+                chat slides. overscroll-contain: reaching the top or end
+                never hands the wheel on to the page. */}
             <div
               ref={scrollRef}
-              className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 @lg:px-6"
+              className="relative flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-6 @lg:px-6"
             >
               <div ref={columnRef} className={cn("mx-auto flex w-full flex-col gap-4 sm:gap-6", CONVERSATION_COLUMN)}>
                 {messages.map((message, index) => message.role === "summary" ? (

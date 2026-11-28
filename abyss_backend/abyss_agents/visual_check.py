@@ -43,7 +43,13 @@ class Block:
 
 
 def lenient_json(source: str):
-    """Small models' usual slips, as the frontend forgives them: smart quotes, trailing commas."""
+    """Small models' usual slips, as the frontend forgives them: smart quotes, trailing commas.
+    Valid JSON is taken as it is: the repairs run only if it doesn't parse, since
+    they would break text inside strings (`says “Actively hiring.”`, `"a, ]"`)."""
+    try:
+        return json.loads(source.strip())
+    except json.JSONDecodeError:
+        pass  # not valid as written: try the repairs below
     cleaned = source.strip().replace("“", '"').replace("”", '"')
     cleaned = re.sub(r",\s*([}\]])", r"\1", cleaned)
     try:
