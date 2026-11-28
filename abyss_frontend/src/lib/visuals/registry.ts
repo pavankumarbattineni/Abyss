@@ -38,6 +38,7 @@ export const VISUAL_FORMATS: readonly VisualFormatMeta[] = [
   { name: "circuit", label: "Circuit", description: "An electric circuit in standard symbols" },
   { name: "steps", label: "Step by step", description: "A derivation, proof or algorithm, one step at a time" },
   { name: "image", label: "Image", description: "A real, credited image from Wikimedia Commons or the web" },
+  { name: "spreadsheet", label: "Spreadsheet", description: "Data to download as Excel (tabs) or CSV, previewed in the chat" },
 ];
 
 export const VISUAL_FORMAT_META = Object.fromEntries(VISUAL_FORMATS.map((meta) => [meta.name, meta])) as Record<
@@ -47,6 +48,14 @@ export const VISUAL_FORMAT_META = Object.fromEntries(VISUAL_FORMATS.map((meta) =
 
 /** Readable plain-text outline of any visual's data (for "Copy as text"). */
 export function visualToText(data: unknown): string {
+  // A spreadsheet copies as tab-separated rows per sheet: pastes straight into a spreadsheet app.
+  const sheet = data as { format?: string; sheets?: { name: string; columns: { label: string }[]; rows: unknown[][] }[] };
+  if (sheet?.format === "spreadsheet" && Array.isArray(sheet.sheets)) {
+    const cell = (v: unknown) => (v == null ? "" : String(v).replace(/[\t\r\n]+/g, " "));
+    return sheet.sheets
+      .map((s) => [s.name, s.columns.map((c) => cell(c.label)).join("\t"), ...s.rows.map((r) => r.map(cell).join("\t"))].join("\n"))
+      .join("\n\n");
+  }
   const lines: string[] = [];
   const nameOf = (obj: Record<string, unknown>) =>
     ["title", "label", "name", "heading", "term", "date"].map((k) => obj[k]).find((v) => typeof v === "string");

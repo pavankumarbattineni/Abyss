@@ -146,6 +146,24 @@ def _check_visual(data: dict) -> list[str]:
         _items(data, "loop", errors, 2)
     elif fmt == "steps":
         _items(data, "steps", errors, 1)
+    elif fmt == "spreadsheet":
+        sheets = _items(data, "sheets", errors, 1)
+        if len(sheets) > 10:
+            errors.append("sheets: at most 10")
+        for i, sheet in enumerate(sheets):
+            if not isinstance(sheet, dict):
+                errors.append(f"sheets.{i}: must be an object")
+                continue
+            columns = sheet.get("columns")
+            if not isinstance(columns, list) or not columns:
+                errors.append(f"sheets.{i}.columns: needs at least 1 item")
+                continue
+            # A row longer than the columns has its values shifted out of place;
+            # a shorter one only leaves trailing cells empty.
+            for r, row in enumerate(sheet.get("rows") or []):
+                if isinstance(row, list) and len(row) > len(columns):
+                    errors.append(f"sheets.{i}.rows.{r}: {len(row)} cells for {len(columns)} columns")
+                    break
     elif fmt == "image":
         images = data.get("images") if isinstance(data.get("images"), list) else [data]
         if not images:

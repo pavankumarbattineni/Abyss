@@ -31,7 +31,7 @@ give it specialists that work in parallel, and approve anything sensitive before
 - **Skills**: a library of reusable instructions; an agent loads a skill only when the task fits.
 - **Human approval**: tools set to "Needs approval" pause the run until you allow or deny them.
 - **Visible reasoning**: a timeline of each turn's thinking, delegations and tool calls, streamed live.
-- **Rich answers**: Markdown, maths, natively drawn diagrams and charts, Mermaid, real images found on the web, interactive tables, copy buttons.
+- **Rich answers**: Markdown, maths, natively drawn diagrams and charts, Mermaid, real images found on the web, spreadsheets (previewed in the chat, downloadable as one Excel workbook with tabs, or CSV), interactive tables, copy buttons.
 - **Models**: three platform models on its own key (Default is Gemini 3.5 Flash-Lite, plus Default - 1 and Default - 2), picked in the chat box for all your agents; bring your own OpenAI, Anthropic or Gemini key for other models.
 - **Usage & cost**: tokens and cost per run, filterable and downloadable as CSV.
 - **Tracing**: every agent run copied from LangSmith (14 days): span tree on a timeline, LLM transcripts, tool calls, latency, tokens, cost and errors; each user sees only their own runs.

@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import { evaluateFormula } from "@/lib/formula";
+import { COLUMN_TYPES, MAX_ROWS, MAX_SHEETS, excelSheetNames, type CellValue } from "@/lib/visuals/spreadsheet";
 
 const text = z.string().trim().min(1);
 const optText = z.string().trim().optional().transform((v) => v || undefined);
@@ -497,6 +498,59 @@ export const circuitSchema = z.object({
   loop: list(circuitItem, 12, 2),
 });
 
+/** A spreadsheet cell: text, a number, true/false or empty; anything else is empty. */
+const sheetCell = z.union([z.string(), z.number(), z.boolean(), z.null()]).catch(null);
+
+/**
+ * One workbook (the block) with one or more sheets (tabs). Rows may come as
+ * arrays in column order or as objects keyed by column label; either way each
+ * row is padded or cut to the columns. Sheet names are made Excel-safe and
+ * unique (lib/visuals/spreadsheet).
+ */
+export const spreadsheetSchema = z
+  .object({
+    ...base,
+    format: z.literal("spreadsheet"),
+    filename: optText,
+    sheets: list(
+      z.object({
+        name: optText,
+        columns: list(
+          z.union([
+            z.object({
+              label: text,
+              type: z.enum(COLUMN_TYPES).catch("text").default("text"),
+              currency: optText,
+            }),
+            // A bare label is a text column.
+            text.transform((label) => ({ label, type: "text" as const, currency: undefined })),
+          ]),
+          50,
+        ),
+        rows: z.array(z.unknown()).catch([]).default([]),
+      }),
+      MAX_SHEETS,
+    ),
+  })
+  .transform((data) => {
+    const names = excelSheetNames(data.sheets.map((s, i) => s.name ?? `Sheet ${i + 1}`));
+    return {
+      ...data,
+      sheets: data.sheets.map((sheet, index) => {
+        const width = sheet.columns.length;
+        const rows: CellValue[][] = sheet.rows.slice(0, MAX_ROWS).map((row) => {
+          const cells: unknown[] = Array.isArray(row)
+            ? row
+            : row && typeof row === "object"
+              ? sheet.columns.map((c) => (row as Record<string, unknown>)[c.label])
+              : [row];
+          return Array.from({ length: width }, (_, i) => sheetCell.parse(cells[i] ?? null));
+        });
+        return { name: names[index], columns: sheet.columns, rows };
+      }),
+    };
+  });
+
 export const stepsSchema = z.object({
   ...base,
   format: z.literal("steps"),
@@ -583,6 +637,7 @@ export const VISUAL_SCHEMAS = {
   "energy-levels": energyLevelsSchema,
   circuit: circuitSchema,
   steps: stepsSchema,
+  spreadsheet: spreadsheetSchema,
   image: imageSchema,
 } as const;
 
@@ -613,5 +668,6 @@ export type PeriodicTableData = VisualData<"periodic-table">;
 export type EnergyLevelsData = VisualData<"energy-levels">;
 export type CircuitData = VisualData<"circuit">;
 export type StepsData = VisualData<"steps">;
+export type SpreadsheetData = VisualData<"spreadsheet">;
 export type ImageData = VisualData<"image">;
 export type Param = z.output<typeof param>;

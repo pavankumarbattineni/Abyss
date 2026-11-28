@@ -1,7 +1,7 @@
 "use client";
 
 import type { RefObject } from "react";
-import { Copy, Download, Image as ImageIcon, Maximize2, Minimize2 } from "lucide-react";
+import { Copy, Download, FileSpreadsheet, Image as ImageIcon, Maximize2, Minimize2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui";
@@ -161,6 +161,22 @@ export function TableActions({
               downloadBlob(new Blob([tsvToCsv(tableToTsv(table.current))], { type: "text/csv" }), "table.csv");
             }
           },
+        },
+        {
+          label: "Download as Excel",
+          icon: FileSpreadsheet,
+          onClick: () =>
+            runWithFeedback(async () => {
+              if (!table.current) return;
+              // The Excel writer loads only when a workbook is asked for.
+              const [{ default: writeXlsxFile }, { sheetFromTsv, workbookSheets }] = await Promise.all([
+                import("write-excel-file/browser"),
+                import("@/lib/visuals/spreadsheet"),
+              ]);
+              const sheets = workbookSheets([sheetFromTsv(tableToTsv(table.current))]);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              downloadBlob(await writeXlsxFile(sheets as any).toBlob(), "table.xlsx");
+            }, "The Excel file couldn't be created. Try Download as CSV."),
         },
       ]}
     />

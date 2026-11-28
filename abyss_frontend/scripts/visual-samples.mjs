@@ -103,6 +103,29 @@ export const SAMPLES = {
       { title: "Compare", array: [5, 2, 9, "1"], highlight: ["0", 1], pointers: { i: 0, j: "1" } },
     ],
   },
+  spreadsheet: {
+    format: "spreadsheet",
+    title: "AI jobs: Bangalore and Remote",
+    filename: "ai-jobs",
+    sheets: [
+      {
+        name: "Bangalore / On-site",
+        columns: [
+          { label: "Role", type: "text" },
+          { label: "Salary", type: "currency", currency: "INR" },
+          { label: "Fit", type: "percent" },
+          { label: "Posted", type: "date" },
+          { label: "Apply", type: "url" },
+        ],
+        rows: [
+          ["Junior AI Engineer", 900000, 85, "2026-11-20", "https://jobs.lever.co/example/1"],
+          { Role: "=HYPERLINK(1)", Salary: "12,00,000", Fit: "70%", Posted: "2026-11-02", Apply: "javascript:alert(1)" },
+          ["Associate ML Engineer"],
+        ],
+      },
+      { name: "Bangalore / On-site", columns: ["Role", "Note"], rows: [["Remote LLM Engineer", "Open to India"]] },
+    ],
+  },
   image_gallery: {
     format: "image",
     title: "Mitochondria",
