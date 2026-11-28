@@ -109,7 +109,11 @@ def strip_reasoning(message: AIMessage) -> AIMessage | None:
                     text = _REASONING_BLOCK.sub("", block.get("text", "")).strip()
                     if not text:
                         continue
-                    block = {**block, "text": text}
+                    # Drop the provider's item id too: OpenAI's Responses API
+                    # rejects a message item (msg_...) sent back without the
+                    # reasoning item (rs_...) that preceded it -- the one just
+                    # stripped. Without an id the answer is sent as plain text.
+                    block = {k: v for k, v in block.items() if k != "id"} | {"text": text}
             elif isinstance(block, str):
                 block = _REASONING_BLOCK.sub("", block).strip()
                 if not block:

@@ -80,6 +80,26 @@ def test_native_thinking_blocks_are_removed():
     assert trimmed[1].content == [{"type": "text", "text": "Done."}]
 
 
+def test_openai_answer_is_sent_back_without_its_orphaned_item_id():
+    # A past GPT answer from the Responses API: reasoning item rs_..., then the
+    # message item msg_... With the reasoning stripped, the msg_ id must go too:
+    # OpenAI rejects a message item sent without its reasoning item (HTTP 400).
+    from langchain_openai.chat_models.base import _construct_responses_api_input
+
+    answer = AIMessage([
+        {"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "hmm"}]},
+        {"type": "text", "text": "Hello!", "id": "msg_1", "annotations": []},
+    ], response_metadata={"model_provider": "openai"})
+    trimmed = h.trim_past_turns([HumanMessage("hi"), answer, HumanMessage("find jobs")])
+    assert trimmed[1].content == [{"type": "text", "text": "Hello!", "annotations": []}]
+
+    items = _construct_responses_api_input(trimmed)
+    assert not any(item.get("type") == "reasoning" for item in items)
+    reply = next(item for item in items if item.get("role") == "assistant")
+    assert "id" not in reply
+    assert reply["content"][0]["text"] == "Hello!"
+
+
 def test_cancelled_turn_without_answer_keeps_the_question():
     messages = [HumanMessage("q1"), call("x", "a"), ToolMessage("r", tool_call_id="a"), HumanMessage("q2")]
     assert contents(h.trim_past_turns(messages)) == [("HumanMessage", "q1"), ("HumanMessage", "q2")]
